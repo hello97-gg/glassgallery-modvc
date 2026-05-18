@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Favicons & Manifest -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#181818" />
+
+    <!-- Default Social & SEO Meta Tags -->
+    <title>Glass Gallery</title>
+    <meta name="description" content="An image sharing platform with a modern, glass-like interface. Discover, upload, and share beautiful images." />
+    
+    <meta property="og:site_name" content="Glass Gallery" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Glass Gallery" />
+    <meta property="og:description" content="An image sharing platform with a modern, glass-like interface." />
+    <meta property="og:image" content="https://glassgallery.modvc.org/web-app-manifest-512x512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content="https://glassgallery.modvc.org/web-app-manifest-512x512.png" />
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'background': '#181818', // Dark charcoal
+              'surface': '#282828',    // Lighter gray for cards/modals
+              'primary': '#e5e5e5',    // Off-white for primary text
+              'secondary': '#a0a0a0',   // Muted gray for secondary text
+              'accent': '#f5c3b8',      // Soft, cute pink/peach accent
+              'accent-hover': '#f2b2a4',
+              'border': '#383838',      // Dark border color
+            },
+            keyframes: {
+              'fade-in': {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              },
+              'shimmer': {
+                '0%': { backgroundPosition: '-1000px 0' },
+                '100%': { backgroundPosition: '1000px 0' },
+              },
+              'like-bounce': {
+                '0%': { transform: 'scale(1)' },
+                '50%': { transform: 'scale(1.5)' },
+                '100%': { transform: 'scale(1)' },
+              }
+            },
+            animation: {
+              'fade-in': 'fade-in 0.3s ease-out',
+              'shimmer': 'shimmer 2s infinite linear',
+              'like-bounce': 'like-bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            },
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "node-fetch": "https://aistudiocdn.com/node-fetch@^3.3.2",
+    "form-data": "https://aistudiocdn.com/form-data@^4.0.4",
+    "sharp": "https://aistudiocdn.com/sharp@^0.34.5",
+    "browser-image-compression": "https://aistudiocdn.com/browser-image-compression@^2.0.2",
+    "jigsawstack": "https://aistudiocdn.com/jigsawstack@^0.3.7",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.1",
+    "@aws-sdk/client-s3": "https://aistudiocdn.com/@aws-sdk/client-s3@^3.943.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-background">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
