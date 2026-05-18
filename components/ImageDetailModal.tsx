@@ -604,7 +604,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           </div>
 
           {/* Main Image Container */}
-          <div className="bg-background flex items-center justify-center p-4 relative group select-none min-h-[300px]">
+          <div className="bg-background flex-shrink-0 flex items-center justify-center p-4 relative group select-none min-h-[300px]">
             <img 
               src={currentImage.imageUrl} 
               alt={currentImage.title || 'Pinterest Pin'} 

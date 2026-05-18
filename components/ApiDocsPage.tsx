@@ -114,6 +114,12 @@ Content-Type: application/json`}
                                     <td className="py-2 px-3 text-secondary">No</td>
                                     <td className="py-2 px-3 text-secondary">Custom License URL if license is set to "Other".</td>
                                 </tr>
+                                <tr className="border-b border-border/30">
+                                    <td className="py-2 px-3 font-mono text-accent">originalWorkUrl</td>
+                                    <td className="py-2 px-3 text-secondary">string</td>
+                                    <td className="py-2 px-3 text-secondary">No</td>
+                                    <td className="py-2 px-3 text-secondary">A source URL to the original work, used to credit the creator.</td>
+                                </tr>
                                 <tr>
                                     <td className="py-2 px-3 font-mono text-accent">tags</td>
                                     <td className="py-2 px-3 text-secondary">string[]</td>
@@ -179,6 +185,7 @@ Content-Type: application/json`}
   description: "A gorgeous panorama of the Yosemite granite mountains.",
   location: "California, USA",
   license: "CC-BY",
+  originalWorkUrl: "https://unsplash.com/photos/yosemite-valley",
   tags: ["Natural", "Landscape", "Travel"]
 };
 
