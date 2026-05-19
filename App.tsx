@@ -59,7 +59,7 @@ const SkeletonGrid: React.FC = () => {
 };
 
 // Smart "Addictive" sorting algorithm
-const smartSortImages = (images: ImageMeta[]): ImageMeta[] => {
+const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): ImageMeta[] => {
   const now = Date.now();
 
   // Extend ImageMeta with a temporary sortScore for sorting
@@ -89,10 +89,18 @@ const smartSortImages = (images: ImageMeta[]): ImageMeta[] => {
       const downloadCount = image.downloadCount || 0;
       const popularityScore = (likeCount * 15) + (downloadCount * 5); 
 
-      // 3. Variable Reward (Randomness)
+      // 3. Personalized Smart AI & Taste Profile Affinity Boost
+      let personalizationBoost = 0;
+      if (profile && profile.followedTags && profile.followedTags.length > 0) {
+          const imgTags = image.flags || [];
+          const overlap = imgTags.filter(t => profile.followedTags?.includes(t));
+          personalizationBoost += overlap.length * 1200; // Boost score by +1,200 per matching interest tag!
+      }
+
+      // 4. Variable Reward (Randomness)
       const randomFactor = Math.random() * 250;
 
-      const finalScore = recencyScore + popularityScore + randomFactor;
+      const finalScore = recencyScore + popularityScore + personalizationBoost + randomFactor;
 
       return { ...image, sortScore: finalScore };
     })
@@ -144,6 +152,7 @@ const App: React.FC = () => {
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
   const dragCounter = useRef(0);
   const deepLinkUnsubscribeRef = useRef<(() => void) | null>(null);
+  const isLoadingMore = useRef(false);
 
   const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -379,22 +388,26 @@ const App: React.FC = () => {
         unsubscribe = subscribeToImages((fetchedImages) => {
             setAllImages((prevImages) => {
                  // If this is the very first load, handle it cleanly
-                 if (prevImages.length === 0) {
-                     const sorted = smartSortImages(fetchedImages);
-                     setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-                     setCurrentIndex(PAGE_SIZE);
-                     setImagesLoading(false);
-                     return sorted;
-                 }
+                  if (prevImages.length === 0) {
+                      const sorted = smartSortImages(fetchedImages, currentUserProfile);
+                      setDisplayedImages(sorted.slice(0, PAGE_SIZE));
+                      setCurrentIndex(PAGE_SIZE);
+                      setImagesLoading(false);
+                      return sorted;
+                  }
                  
-                 // Merge updates logic
+                 // Merge updates logic - use base IDs (strip _loop_ suffixes) for matching
                  const newMap = new Map(fetchedImages.map(i => [i.id, i]));
-                 const currentIds = new Set(prevImages.map(i => i.id));
-                 const newUploads = fetchedImages.filter(i => !currentIds.has(i.id));
+                 const currentBaseIds = new Set(prevImages.map(i => i.id.split('_loop_')[0]));
+                 const newUploads = fetchedImages.filter(i => !currentBaseIds.has(i.id));
 
                  let updatedList = prevImages
-                    .filter(img => newMap.has(img.id))
-                    .map(img => newMap.get(img.id)!);
+                    .filter(img => newMap.has(img.id.split('_loop_')[0]))
+                    .map(img => {
+                        const baseId = img.id.split('_loop_')[0];
+                        const freshData = newMap.get(baseId);
+                        return freshData ? { ...freshData, id: img.id } : img;
+                    });
                  
                  if (newUploads.length > 0) {
                      const sortedNew = newUploads.sort((a, b) => {
@@ -405,16 +418,20 @@ const App: React.FC = () => {
                      updatedList = [...sortedNew, ...updatedList];
                  }
                  
-                 // Bulletproof unique filtering to eliminate any possible duplicate cards
+                 // Bulletproof unique filtering by base ID
                  const uniqueMapAll = new Map();
                  updatedList.forEach(img => uniqueMapAll.set(img.id, img));
                  updatedList = Array.from(uniqueMapAll.values());
 
-                 // Update display list quietly
+                 // Update display list quietly - preserve loop-suffixed IDs
                  setDisplayedImages(prevDisplayed => {
                     let updatedDisplayed = prevDisplayed
-                        .filter(d => newMap.has(d.id)) 
-                        .map(d => newMap.get(d.id)!); 
+                        .filter(d => newMap.has(d.id.split('_loop_')[0]))
+                        .map(d => {
+                            const baseId = d.id.split('_loop_')[0];
+                            const freshData = newMap.get(baseId);
+                            return freshData ? { ...freshData, id: d.id } : d;
+                        });
                     
                     if (newUploads.length > 0) {
                          const sortedNew = newUploads.sort((a, b) => {
@@ -438,12 +455,13 @@ const App: React.FC = () => {
     return () => {
         if (unsubscribe) unsubscribe();
     };
-  }, [activeView]);
+  }, [activeView, currentUserProfile]);
 
   // Sync selectedImage
   useEffect(() => {
     if (selectedImage && allImages.length > 0) {
-        const updated = allImages.find(img => img.id === selectedImage.id);
+        const baseId = selectedImage.id.split('_loop_')[0];
+        const updated = allImages.find(img => img.id.split('_loop_')[0] === baseId);
         if (updated && updated !== selectedImage) {
             setSelectedImage(updated);
         } else if (!updated) {
@@ -453,34 +471,60 @@ const App: React.FC = () => {
   }, [allImages, selectedImage]);
 
   const loadMoreImages = useCallback(() => {
-    if (imagesLoading || allImages.length === 0) return;
+    if (imagesLoading || allImages.length === 0 || isLoadingMore.current) return;
+
+    isLoadingMore.current = true;
+
+    let newImages: ImageMeta[] = [];
 
     if (currentIndex < allImages.length) {
         const nextIndex = currentIndex + PAGE_SIZE;
-        const newImages = allImages.slice(currentIndex, nextIndex);
-        setDisplayedImages(prev => [...prev, ...newImages]);
+        newImages = allImages.slice(currentIndex, nextIndex);
         setCurrentIndex(nextIndex);
     } else {
-        const newImages = allImages.slice(0, PAGE_SIZE);
-        setDisplayedImages(prev => [...prev, ...newImages]);
+        // Infinite scroll loop back to start! Reshuffle using our dynamic smart addictive sort!
+        const reshuffled = smartSortImages(allImages, currentUserProfile);
+        newImages = reshuffled.slice(0, PAGE_SIZE);
+        setCurrentIndex(PAGE_SIZE);
     }
-  }, [currentIndex, allImages, imagesLoading]);
+
+    if (newImages.length > 0) {
+        // Dynamic unique loop suffix keys to prevent any DOM/React duplicate key collisions
+        const uniqueTime = Date.now();
+        const processed = newImages.map((img, idx) => ({
+            ...img,
+            id: `${img.id}_loop_${uniqueTime}_${idx}`
+        }));
+        setDisplayedImages(prev => [...prev, ...processed]);
+    }
+
+    // Reset guard immediately - React batches state updates so DOM won't actually
+    // re-render until next frame, preventing double-fires naturally
+    requestAnimationFrame(() => { isLoadingMore.current = false; });
+  }, [currentIndex, allImages, imagesLoading, currentUserProfile]);
 
   useEffect(() => {
+    let ticking = false;
     const handleScroll = () => {
-      if (activeView === 'home') {
-          const scrollThreshold = 1000;
-          const isAtBottom = window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - scrollThreshold;
-          
-          if (isAtBottom) {
-            loadMoreImages();
-          }
-      }
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        if (activeView === 'home' && !isLoadingMore.current) {
+            // Aggressive preload: start loading 1500px BEFORE bottom so content
+            // is already rendered by the time the user scrolls there
+            const scrollThreshold = 1500;
+            const isNearBottom = window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - scrollThreshold;
+            
+            if (isNearBottom) {
+              loadMoreImages();
+            }
+        }
+        ticking = false;
+      });
     };
-    
-    const throttledScrollHandler = throttle(handleScroll, 200);
-    window.addEventListener('scroll', throttledScrollHandler);
-    return () => window.removeEventListener('scroll', throttledScrollHandler);
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, [loadMoreImages, activeView]);
 
   // --- Full-screen drag-and-drop ---
@@ -547,8 +591,10 @@ const App: React.FC = () => {
   }, [handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
   const handleImageClick = (image: ImageMeta) => {
-    setSelectedImage(image);
-    updateURL({ image: image.id });
+    const baseId = image.id.split('_loop_')[0];
+    const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
+    setSelectedImage(original);
+    updateURL({ image: original.id });
   };
   
   const handleImageClickFromNotification = (partialImage: Partial<ImageMeta>) => {
@@ -571,7 +617,7 @@ const App: React.FC = () => {
   const refetchImages = () => {
     setImagesLoading(true);
     getImagesFromFirestore().then(({ images }) => {
-         const sorted = smartSortImages(images);
+         const sorted = smartSortImages(images, currentUserProfile);
          setAllImages(sorted);
          setDisplayedImages(sorted.slice(0, PAGE_SIZE));
          setCurrentIndex(PAGE_SIZE);
@@ -621,7 +667,7 @@ const App: React.FC = () => {
     if (view === activeView && (view === 'home' || view === 'explore')) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setAllImages(prevImages => {
-             const reshuffled = smartSortImages(prevImages);
+             const reshuffled = smartSortImages(prevImages, currentUserProfile);
              setDisplayedImages(reshuffled.slice(0, PAGE_SIZE));
              setCurrentIndex(PAGE_SIZE);
              return reshuffled;
@@ -649,12 +695,23 @@ const App: React.FC = () => {
   };
 
   const handleImageUpdate = (updatedImage: ImageMeta) => {
-    const updater = (prevImages: ImageMeta[]) => prevImages.map(img => img.id === updatedImage.id ? updatedImage : img);
+    const baseId = updatedImage.id.split('_loop_')[0];
+    const updater = (prevImages: ImageMeta[]) => prevImages.map(img => {
+      const imgBaseId = img.id.split('_loop_')[0];
+      if (imgBaseId === baseId) {
+        // Retain the specific loop suffix ID key while updating all other properties
+        return { ...updatedImage, id: img.id };
+      }
+      return img;
+    });
     setDisplayedImages(updater);
     setAllImages(updater);
 
-    if (selectedImage && selectedImage.id === updatedImage.id) {
-        setSelectedImage(updatedImage);
+    if (selectedImage) {
+      const selectedBaseId = selectedImage.id.split('_loop_')[0];
+      if (selectedBaseId === baseId) {
+         setSelectedImage({ ...updatedImage, id: selectedImage.id });
+      }
     }
   };
 
@@ -664,20 +721,24 @@ const App: React.FC = () => {
         return;
     }
     
-    const oldLikedBy = image.likedBy || [];
+    // Resolve original base image and ID
+    const baseId = image.id.split('_loop_')[0];
+    const originalImage = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
+    
+    const oldLikedBy = originalImage.likedBy || [];
     const hasLiked = oldLikedBy.includes(user.uid);
     const newLikedBy = hasLiked
         ? oldLikedBy.filter(id => id !== user.uid)
         : [...oldLikedBy, user.uid];
 
-    const updatedImage = { ...image, likedBy: newLikedBy, likeCount: newLikedBy.length };
+    const updatedImage = { ...originalImage, likedBy: newLikedBy, likeCount: newLikedBy.length };
     handleImageUpdate(updatedImage); 
 
     try {
-        await toggleImageLike(image, user);
+        await toggleImageLike({ ...originalImage, id: baseId }, user);
     } catch (error) {
         console.error("Failed to toggle like:", error);
-        handleImageUpdate(image);
+        handleImageUpdate(originalImage);
     }
   };
 

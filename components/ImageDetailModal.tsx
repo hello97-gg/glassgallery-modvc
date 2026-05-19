@@ -120,6 +120,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [isEditing, setIsEditing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [zoomScale, setZoomScale] = useState(1.0);
   
   const [editedTitle, setEditedTitle] = useState(image.title || '');
   const [editedDescription, setEditedDescription] = useState(image.description || '');
@@ -252,6 +254,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     setEditedLicenseUrl(image.licenseUrl || '');
     setEditedFlags(image.flags || []);
     setRevealed(false);
+    setZoomScale(1.0);
+    setIsFullscreen(false);
   }, [image]);
 
   const isOwner = user?.uid === currentImage.uploaderUid;
@@ -391,20 +395,26 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       setTimeout(() => setIsLikeBtnAnimating(false), 400);
   };
 
-  const handleDoubleTap = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleImageTap = (e: React.MouseEvent) => {
+      e.stopPropagation();
       const now = Date.now();
       const DOUBLE_TAP_DELAY = 300;
       if (now - lastTap.current < DOUBLE_TAP_DELAY) {
-          // Trigger like if not already liked
+          // Double Tap: Like image
           if (!hasLiked) {
               onLikeToggle(currentImage);
           }
-          // Trigger both big heart animation and small button animation
           setShowHeartAnimation(true);
           setIsLikeBtnAnimating(true);
-          
           setTimeout(() => setShowHeartAnimation(false), 800);
           setTimeout(() => setIsLikeBtnAnimating(false), 400);
+      } else {
+          // Single Tap: Launch fullscreen theater mode after ensuring it's not a double-tap
+          setTimeout(() => {
+              if (Date.now() - lastTap.current >= DOUBLE_TAP_DELAY) {
+                  setIsFullscreen(true);
+              }
+          }, DOUBLE_TAP_DELAY);
       }
       lastTap.current = now;
   };
@@ -608,9 +618,24 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             <img 
               src={currentImage.imageUrl} 
               alt={currentImage.title || 'Pinterest Pin'} 
-              className={`max-w-full max-h-[48vh] object-contain rounded-2xl shadow-lg transition-transform duration-300 hover:scale-[1.01] ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : ''}`}
-              onClick={isFlagged && !revealed ? undefined : handleDoubleTap}
+              className={`max-w-full max-h-[48vh] object-contain rounded-2xl shadow-lg transition-transform duration-300 hover:scale-[1.01] ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
+              onClick={isFlagged && !revealed ? undefined : handleImageTap}
             />
+            {(!isFlagged || revealed) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsFullscreen(true);
+                }}
+                className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-all duration-300 bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white rounded-full px-4 py-2.5 text-xs font-bold flex items-center gap-1.5 shadow-lg active:scale-95 z-20 cursor-pointer"
+                title="View Fullscreen"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 20v-4m0 4h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5" />
+                </svg>
+                View Fullscreen
+              </button>
+            )}
             {isFlagged && !revealed && (
               <div className="absolute inset-0 bg-black/75 backdrop-blur-lg z-20 flex flex-col items-center justify-center p-6 text-center rounded-2xl transition-all duration-300">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-red-500 mb-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -766,6 +791,128 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         )}
       </div>
        {showAttribution && <AttributionModal image={currentImage} onClose={() => setShowAttribution(false)} />}
+
+      {/* Fullscreen Lightbox Theater Overlay */}
+      {isFullscreen && (
+        <div 
+          className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in select-none"
+          onClick={() => setIsFullscreen(false)}
+        >
+          {/* Ambient Glassmorphic Backdrop */}
+          <div 
+            className="absolute inset-0 bg-cover bg-center blur-3xl opacity-35 scale-105 pointer-events-none transition-all duration-700" 
+            style={{ backgroundImage: `url(${currentImage.imageUrl})` }}
+          />
+
+          {/* Top Bar Actions */}
+          <div className="absolute top-6 left-6 right-6 z-[90] flex items-center justify-between pointer-events-none">
+            {/* Close Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsFullscreen(false);
+              }}
+              className="pointer-events-auto w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center shadow-2xl transition-all active:scale-95 cursor-pointer hover:scale-105"
+              title="Close Fullscreen"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Quick social actions on fullscreen */}
+            <div className="flex items-center gap-3 pointer-events-auto">
+              {/* Share */}
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleShare();
+                }}
+                className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white font-semibold text-sm transition-all flex items-center gap-1.5 shadow-lg cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                {shareCopied ? 'Copied' : 'Share'}
+              </button>
+
+              {/* Profile */}
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleProfileClick();
+                }}
+                className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white font-semibold text-sm transition-all flex items-center gap-1.5 shadow-lg cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <img 
+                  src={currentImage.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`} 
+                  alt={currentImage.uploaderName} 
+                  className="w-5 h-5 rounded-full object-cover" 
+                />
+                Profile
+              </button>
+
+              {/* Like/Save */}
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLikeClick();
+                }}
+                className={`px-5 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-1.5 shadow-lg cursor-pointer hover:scale-105 active:scale-95 ${hasLiked ? 'bg-red-600 text-white' : 'bg-accent text-surface hover:opacity-90'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                </svg>
+                {hasLiked ? 'Saved' : 'Save'}
+              </button>
+            </div>
+          </div>
+
+          {/* Centered Image Container */}
+          <div 
+            className="relative z-10 flex items-center justify-center w-full h-full max-w-[90vw] max-h-[85vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img 
+              src={currentImage.imageUrl} 
+              alt={currentImage.title} 
+              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl transition-all duration-300 select-none pointer-events-none"
+              style={{ transform: `scale(${zoomScale})` }}
+            />
+          </div>
+
+          {/* Zoom Controls bottom-right */}
+          <div className="absolute bottom-6 right-6 z-[90] flex flex-col gap-3 pointer-events-auto">
+            {/* Zoom In */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomScale(prev => Math.min(prev + 0.25, 3.0));
+              }}
+              className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer hover:scale-105"
+              title="Zoom In"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {/* Zoom Out */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomScale(prev => Math.max(prev - 0.25, 1.0));
+              }}
+              className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer hover:scale-105"
+              title="Zoom Out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User } from 'firebase/auth';
 import type { ProfileUser, ImageMeta } from '../types';
-import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser } from '../services/firestoreService';
+import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore } from '../services/firestoreService';
 import ImageGrid from './ImageGrid';
 import Spinner from './Spinner';
 import Button from './Button';
@@ -33,10 +33,23 @@ interface ProfilePageProps {
 
 const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, onImageClick, onViewProfile, onLikeToggle, onLocationClick }) => {
   const [profileData, setProfileData] = useState<ProfileUser>(user);
+  
+  // Tab Management
+  const [activeTab, setActiveTab] = useState<'created' | 'saved'>('created');
+
+  // Created/Uploads Gallery State
   const [allImages, setAllImages] = useState<ImageMeta[]>([]);
   const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Saved/Likes Gallery State
+  const [likedImages, setLikedImages] = useState<ImageMeta[]>([]);
+  const [displayedLikedImages, setDisplayedLikedImages] = useState<ImageMeta[]>([]);
+  const [likedCurrentIndex, setLikedCurrentIndex] = useState(0);
+  const [isLoadingLikes, setIsLoadingLikes] = useState(false);
+
+  // Modals & Controls State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -45,23 +58,21 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   const [isFollowPending, setIsFollowPending] = useState(false);
   const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
 
-  // Fetch Follow Stats
+  // Fetch Follow Stats (Uses stable user.uploaderUid to prevent any state evaluation loops!)
   const fetchFollowStats = useCallback(async () => {
-    console.log("[DEBUG PROFILE] fetchFollowStats called for target:", profileData.uploaderUid, "by loggedInUser:", loggedInUser?.uid);
     try {
-      const stats = await getFollowStats(profileData.uploaderUid, loggedInUser?.uid);
-      console.log("[DEBUG PROFILE] getFollowStats returned stats:", stats);
+      const stats = await getFollowStats(user.uploaderUid, loggedInUser?.uid);
       setFollowersCount(stats.followersCount);
       setFollowingCount(stats.followingCount);
       setIsFollowingUser(stats.isFollowing);
     } catch (err) {
       console.error("Failed to fetch follow stats:", err);
     }
-  }, [profileData.uploaderUid, loggedInUser?.uid]);
+  }, [user.uploaderUid, loggedInUser?.uid]);
 
   useEffect(() => {
     fetchFollowStats();
-  }, [fetchFollowStats, profileData.uploaderUid, loggedInUser?.uid]);
+  }, [fetchFollowStats, user.uploaderUid, loggedInUser?.uid]);
 
   const handleFollowToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -78,7 +89,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     try {
       const res = await toggleFollowUser(
         loggedInUser.uid,
-        profileData.uploaderUid,
+        user.uploaderUid,
         loggedInUser.displayName || 'Someone',
         loggedInUser.photoURL || ''
       );
@@ -98,22 +109,20 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     setIsFollowersModalOpen(true);
   };
 
-  // 1. Sync state with props immediately if user changes (Defensive programming)
-  useEffect(() => {
-    if (user.uploaderUid !== profileData.uploaderUid) {
-        setProfileData(user);
-    }
-  }, [user, profileData.uploaderUid]);
-
-  // 2. Fetch full profile data from 'users' collection
+  // Single bulletproof profile loaders to reset states immediately when viewing another profile
   useEffect(() => {
     let mounted = true;
-    const fetchProfile = async () => {
-        // Ensure we show the latest user basic info while loading extended info
-        if (user.uploaderUid !== profileData.uploaderUid) {
-            setProfileData(user);
-        }
+    
+    // Reset states immediately when shifting profiles
+    setProfileData(user);
+    setAllImages([]);
+    setDisplayedImages([]);
+    setIsLoading(true);
+    setLikedImages([]);
+    setDisplayedLikedImages([]);
+    setActiveTab('created');
 
+    const fetchProfile = async () => {
         const fullProfile = await getUserProfile(user.uploaderUid);
         if (mounted && fullProfile) {
             setProfileData(prev => ({ ...prev, ...fullProfile }));
@@ -123,7 +132,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     return () => { mounted = false; };
   }, [user.uploaderUid]);
 
-  // 3. Fetch images
+  // Fetch Created/Uploaded Images
   const fetchUserImages = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -142,6 +151,29 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     fetchUserImages();
   }, [fetchUserImages]);
 
+  // Fetch Liked/Saved Images
+  const fetchLikedImages = useCallback(async () => {
+    setIsLoadingLikes(true);
+    try {
+      const { images } = await getImagesFromFirestore();
+      // Filter images liked by this profile user
+      const liked = images.filter(img => img.likedBy?.includes(user.uploaderUid));
+      setLikedImages(liked);
+      setDisplayedLikedImages(liked.slice(0, PAGE_SIZE));
+      setLikedCurrentIndex(PAGE_SIZE);
+    } catch (error) {
+      console.error("Failed to fetch liked images:", error);
+    } finally {
+      setIsLoadingLikes(false);
+    }
+  }, [user.uploaderUid]);
+
+  useEffect(() => {
+    if (activeTab === 'saved') {
+      fetchLikedImages();
+    }
+  }, [activeTab, fetchLikedImages]);
+
   const loadMoreUserImages = useCallback(() => {
     if (isLoading || allImages.length === 0) return;
 
@@ -150,24 +182,36 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
         const newImages = allImages.slice(currentIndex, nextIndex);
         setDisplayedImages(prev => [...prev, ...newImages]);
         setCurrentIndex(nextIndex);
-    } else {
-        // Loop
-        const newImages = allImages.slice(0, PAGE_SIZE);
-        setDisplayedImages(prev => [...prev, ...newImages]);
-        setCurrentIndex(PAGE_SIZE);
     }
   }, [currentIndex, allImages, isLoading]);
+
+  const loadMoreLikedImages = useCallback(() => {
+    if (isLoadingLikes || likedImages.length === 0) return;
+
+    if (likedCurrentIndex < likedImages.length) {
+        const nextIndex = likedCurrentIndex + PAGE_SIZE;
+        const newImages = likedImages.slice(likedCurrentIndex, nextIndex);
+        setDisplayedLikedImages(prev => [...prev, ...newImages]);
+        setLikedCurrentIndex(nextIndex);
+    }
+  }, [likedCurrentIndex, likedImages, isLoadingLikes]);
 
   useEffect(() => {
     const handleScroll = () => {
         const scrollThreshold = 800;
         const isAtBottom = window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - scrollThreshold;
-        if (isAtBottom) loadMoreUserImages();
+        if (isAtBottom) {
+            if (activeTab === 'created') {
+                loadMoreUserImages();
+            } else {
+                loadMoreLikedImages();
+            }
+        }
     };
     const throttledScrollHandler = throttle(handleScroll, 200);
     window.addEventListener('scroll', throttledScrollHandler);
     return () => window.removeEventListener('scroll', throttledScrollHandler);
-  }, [loadMoreUserImages]);
+  }, [loadMoreUserImages, loadMoreLikedImages, activeTab]);
 
   // Wrapper to handle local state update for likes, as the prop only updates App state
   const handleLocalLikeToggle = (image: ImageMeta) => {
@@ -175,6 +219,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
           onLikeToggle(image); // Will trigger login modal from App
           return;
       }
+
+      // Secure checking: is this profile owner the current logged in user?
+      const isOwner = loggedInUser.uid === user.uploaderUid;
 
       // Optimistic update logic
       const oldLikedBy = image.likedBy || [];
@@ -189,10 +236,24 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
           likeCount: newLikedBy.length 
       };
 
-      // Update local state
+      // Update local uploads state
       const updater = (prev: ImageMeta[]) => prev.map(img => img.id === image.id ? updatedImage : img);
       setAllImages(updater);
       setDisplayedImages(updater);
+
+      // Update local liked/saved pins state with seamless removal animation if unliked on owner's profile page
+      setLikedImages(prev => {
+          if (isOwner && hasLiked) {
+              return prev.filter(img => img.id !== image.id);
+          }
+          return prev.map(img => img.id === image.id ? updatedImage : img);
+      });
+      setDisplayedLikedImages(prev => {
+          if (isOwner && hasLiked) {
+              return prev.filter(img => img.id !== image.id);
+          }
+          return prev.map(img => img.id === image.id ? updatedImage : img);
+      });
 
       // Call parent to handle Firestore and App-wide state
       onLikeToggle(image);
@@ -371,16 +432,77 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
          </div>
       </div>
 
-      <div className="border-t border-border my-6 mx-6 md:mx-10"></div>
+      {/* Pinterest-style Slide Animated Tab Bar */}
+      <div className="flex justify-center gap-8 mb-8 border-b border-border/40 pb-3 mx-6 md:mx-10 select-none">
+        <button
+          onClick={() => setActiveTab('created')}
+          className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer ${
+            activeTab === 'created' ? 'text-primary' : 'text-secondary hover:text-primary'
+          }`}
+        >
+          Created
+          {activeTab === 'created' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('saved')}
+          className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer ${
+            activeTab === 'saved' ? 'text-primary' : 'text-secondary hover:text-primary'
+          }`}
+        >
+          Saved
+          {activeTab === 'saved' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
+          )}
+        </button>
+      </div>
       
-      {isLoading ? (
-        <div className="flex justify-center items-center py-20">
-          <Spinner />
-        </div>
+      {/* Gallery Content switcher */}
+      {activeTab === 'created' ? (
+        isLoading ? (
+          <div className="flex justify-center items-center py-20">
+            <Spinner />
+          </div>
+        ) : allImages.length === 0 ? (
+          <div className="text-center py-20 px-4">
+            <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-primary mb-1">Nothing created yet</h3>
+            <p className="text-sm text-secondary max-w-sm mx-auto">
+              {isOwner ? "Share your first masterpiece with the Glass Gallery community!" : "This creator hasn't published any images yet."}
+            </p>
+          </div>
+        ) : (
+          <div className="px-4 md:px-8">
+            <ImageGrid user={loggedInUser} images={displayedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} />
+          </div>
+        )
       ) : (
-        <div className="px-4 md:px-8">
-             <ImageGrid user={loggedInUser} images={displayedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} />
-        </div>
+        isLoadingLikes ? (
+          <div className="flex justify-center items-center py-20">
+            <Spinner />
+          </div>
+        ) : likedImages.length === 0 ? (
+          <div className="text-center py-20 px-4">
+            <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-primary mb-1">No saved items</h3>
+            <p className="text-sm text-secondary max-w-sm mx-auto">
+              {isOwner ? "Curate your inspiration board! Click the Save button on any image to store it here." : "This user hasn't saved any images yet."}
+            </p>
+          </div>
+        ) : (
+          <div className="px-4 md:px-8">
+            <ImageGrid user={loggedInUser} images={displayedLikedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} />
+          </div>
+        )
       )}
 
       {isEditModalOpen && (
