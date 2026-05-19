@@ -181,6 +181,17 @@ export default async function handler(req, res) {
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 0.5; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 0.5; });
             });
+
+            // 4.5 Normalize the Taste Profile weights to prevent unbounded growth from swamping local similarities
+            let maxWeight = 0;
+            Object.values(tasteProfile).forEach(w => {
+              if (w > maxWeight) maxWeight = w;
+            });
+            if (maxWeight > 0) {
+              for (const key in tasteProfile) {
+                tasteProfile[key] = tasteProfile[key] / maxWeight;
+              }
+            }
           } catch (err) {
             console.error("[Smart Suggestions] Failed to build Taste Vector:", err);
           }
@@ -192,10 +203,21 @@ export default async function handler(req, res) {
           const fl = row.flags ? JSON.parse(row.flags) : [];
           const co = row.aiConcepts ? JSON.parse(row.aiConcepts) : [];
 
-          // AI Concept Overlap (Weight = 4)
+          // AI Concept Overlap (Weight = 4) - Tokenized keyword matching for soft semantic similarity
           let conceptOverlap = 0;
+          const targetWords = new Set();
+          targetConcepts.forEach(c => {
+            c.toLowerCase().split(/[\s-_]+/).forEach(w => {
+              if (w.length > 3) targetWords.add(w);
+            });
+          });
+
           co.forEach(c => {
-            if (targetConcepts.includes(c)) conceptOverlap++;
+            c.toLowerCase().split(/[\s-_]+/).forEach(w => {
+              if (w.length > 3 && targetWords.has(w)) {
+                conceptOverlap += 0.5;
+              }
+            });
           });
 
           // Tag Overlap (Weight = 3)
@@ -223,6 +245,10 @@ export default async function handler(req, res) {
           co.forEach(c => {
             if (tasteProfile[c]) tasteScore += tasteProfile[c];
           });
+          // Cap the tasteScore sum at a reasonable threshold (e.g., 2.0)
+          // so a user's tastes acts as a gentle, personalized nudge
+          // rather than overriding primary visual concept/tag matches.
+          tasteScore = Math.min(tasteScore, 2.0);
 
           // Popularity (Weight = 0.1)
           const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05;
