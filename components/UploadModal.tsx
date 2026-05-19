@@ -33,20 +33,22 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   const [isDragging, setIsDragging] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [isAutoTagging, setIsAutoTagging] = useState(false);
+  const [tagSearch, setTagSearch] = useState('');
+
+  const DEFAULT_FLAGS = [
+    'AI Generated',
+    'Natural',
+    'Photography',
+    'Abstract',
+    'Minimalist',
+    'Fantasy',
+    'Sci-Fi',
+    'Minecraft',
+    'Games'
+  ];
 
   const dynamicTags = React.useMemo(() => {
     const tagsSet = new Set<string>();
-    const DEFAULT_FLAGS = [
-      'AI Generated',
-      'Natural',
-      'Photography',
-      'Abstract',
-      'Minimalist',
-      'Fantasy',
-      'Sci-Fi',
-      'Minecraft',
-      'Games'
-    ];
     DEFAULT_FLAGS.forEach(flag => tagsSet.add(flag));
     
     allImages.forEach(image => {
@@ -65,7 +67,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
       }
     });
 
-    return Array.from(tagsSet);
+    const allTags = Array.from(tagsSet);
+    // Keep defaults first in their original order, then sort the rest alphabetically
+    const defaults = allTags.filter(t => DEFAULT_FLAGS.includes(t));
+    const extras = allTags.filter(t => !DEFAULT_FLAGS.includes(t)).sort((a, b) => a.localeCompare(b));
+    return [...defaults, ...extras];
   }, [allImages, selectedFlags]);
 
   const handleAutoTag = async () => {
@@ -332,12 +338,39 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
 
                   <div>
                       <label className="block text-sm font-medium text-secondary">Tags (select at least one)</label>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                          {dynamicTags.map(flag => (
-                              <button key={flag} type="button" onClick={() => handleFlagToggle(flag)} className={`px-3 py-1 text-sm rounded-full transition-colors ${selectedFlags.includes(flag) ? 'bg-accent text-primary' : 'bg-border text-secondary hover:bg-border/80'}`}>
+                      <div className="relative mt-2 mb-2">
+                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary/50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                          </svg>
+                          <input 
+                              type="text" 
+                              value={tagSearch} 
+                              onChange={(e) => setTagSearch(e.target.value)} 
+                              placeholder="Search tags..." 
+                              className="block w-full bg-background border border-border rounded-md py-2 pl-9 pr-3 text-sm text-primary placeholder-secondary/40 focus:outline-none focus:ring-accent focus:border-accent" 
+                          />
+                      </div>
+                      {selectedFlags.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {selectedFlags.map(flag => (
+                            <button key={`selected-${flag}`} type="button" onClick={() => handleFlagToggle(flag)} className="px-3 py-1 text-sm rounded-full bg-accent text-primary flex items-center gap-1 transition-colors">
+                                {flag}
+                                <svg className="h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                          {dynamicTags
+                            .filter(flag => !selectedFlags.includes(flag) && flag.toLowerCase().includes(tagSearch.toLowerCase()))
+                            .map(flag => (
+                              <button key={flag} type="button" onClick={() => handleFlagToggle(flag)} className="px-3 py-1 text-sm rounded-full transition-colors bg-border text-secondary hover:bg-border/80">
                                   {flag}
                               </button>
                           ))}
+                          {dynamicTags.filter(flag => !selectedFlags.includes(flag) && flag.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && (
+                            <p className="text-xs text-secondary/50 py-1">No tags match "{tagSearch}"</p>
+                          )}
                       </div>
                   </div>
 

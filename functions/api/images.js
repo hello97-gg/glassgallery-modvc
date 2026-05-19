@@ -34,13 +34,7 @@ export async function onRequest(context) {
           return Response.json({ success: false, error: "Missing imageId or id parameter." }, { status: 400, headers: corsHeaders });
         }
 
-        // 1. Increment download count in DB
-        await db.execute({
-          sql: "UPDATE images SET downloadCount = downloadCount + 1 WHERE id = ?",
-          args: [targetId]
-        });
-
-        // 2. Fetch the direct R2/CDN image URL
+        // 1. Check if image exists and fetch the CDN URL
         const targetRes = await db.execute({
           sql: "SELECT imageUrl FROM images WHERE id = ?",
           args: [targetId]
@@ -49,6 +43,12 @@ export async function onRequest(context) {
         if (targetRes.rows.length === 0) {
           return Response.json({ success: false, error: "Image not found." }, { status: 404, headers: corsHeaders });
         }
+
+        // 2. Increment download count only for valid images
+        await db.execute({
+          sql: "UPDATE images SET downloadCount = downloadCount + 1 WHERE id = ?",
+          args: [targetId]
+        });
 
         const imageUrl = targetRes.rows[0].imageUrl;
         // 3. Redirect the browser/client to the download file URL
