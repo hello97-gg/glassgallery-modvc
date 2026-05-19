@@ -27,6 +27,39 @@
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:image" content="https://glassgallery.modvc.org/web-app-manifest-512x512.png" />
 
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://glassgallery.modvc.org/" />
+
+    <!-- Static JSON-LD Structured Data (always visible to crawlers) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Glass Gallery",
+      "url": "https://glassgallery.modvc.org",
+      "description": "A modern image sharing platform. Discover and share beautiful images.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://glassgallery.modvc.org/?search={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Glass Gallery",
+      "url": "https://glassgallery.modvc.org",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://glassgallery.modvc.org/web-app-manifest-512x512.png",
+        "width": 512,
+        "height": 512
+      }
+    }
+    </script>
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.tailwindcss.com"></script>

@@ -3,6 +3,14 @@
     {
       "source": "/sitemap.xml",
       "destination": "/api/sitemap"
+    },
+    {
+      "source": "/image/:id",
+      "destination": "/api/og-image?id=:id"
+    },
+    {
+      "source": "/((?!api|_next|favicon|apple-touch|web-app|robots|google|site\\.webmanifest|manifest).*)",
+      "destination": "/index.html"
     }
   ]
 }

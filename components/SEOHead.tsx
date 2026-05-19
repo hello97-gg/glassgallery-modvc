@@ -77,72 +77,126 @@ const SEOHead: React.FC<SEOHeadProps> = ({
     }
 
     // 7. Structured Data (JSON-LD) - Critical for Google Images & SEO
-    let script = document.querySelector('script[type="application/ld+json"]');
-    if (!script) {
-        script = document.createElement('script');
-        script.setAttribute('type', 'application/ld+json');
-        document.head.appendChild(script);
-    }
+    // Remove all existing JSON-LD scripts to rebuild cleanly
+    document.querySelectorAll('script[type="application/ld+json"]').forEach(el => {
+      // Don't remove static schemas from index.html (WebSite, Organization)
+      try {
+        const content = JSON.parse(el.textContent || '');
+        if (content['@type'] === 'WebSite' || content['@type'] === 'Organization') return;
+      } catch {}
+      el.remove();
+    });
 
-    const baseSchema = {
-        "@context": "https://schema.org",
-        "url": url || "https://glassgallery.modvc.org",
-    };
-
-    let schema: any = { ...baseSchema };
+    const baseUrl = 'https://glassgallery.modvc.org';
+    const schemas: any[] = [];
 
     if ((type === 'article' || tags || license) && imageUrl) {
         // ImageObject schema for image details
-        // This structure tells Google: "Here is an image, here is who made it, and here is how to get it."
-        schema = {
-            ...baseSchema,
+        const imageSchema: any = {
+            "@context": "https://schema.org",
             "@type": "ImageObject",
             "contentUrl": imageUrl,
-            "license": license || "https://creativecommons.org/licenses/by/4.0/",
-            "acquireLicensePage": url,
+            "url": url || baseUrl,
             "name": title,
             "description": description,
             "thumbnail": imageUrl,
-            "keywords": tags ? tags.join(', ') : '',
-            "locationCreated": location ? {
-                "@type": "Place",
-                "name": location
-            } : undefined,
-            "author": {
+            "license": license || "https://creativecommons.org/licenses/by/4.0/",
+            "acquireLicensePage": url || baseUrl,
+            "creditText": authorName || author || "Glass Gallery User",
+            "creator": {
                  "@type": "Person",
                  "name": authorName || author || "Glass Gallery User"
             },
-            "creator": {
+            "copyrightHolder": {
                  "@type": "Person",
                  "name": authorName || author || "Glass Gallery User"
             }
         };
+        if (tags && tags.length > 0) {
+            imageSchema.keywords = tags.join(', ');
+        }
+        if (location) {
+            imageSchema.locationCreated = {
+                "@type": "Place",
+                "name": location
+            };
+        }
+        schemas.push(imageSchema);
+
+        // BreadcrumbList for image detail pages
+        schemas.push({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "Glass Gallery",
+                    "item": baseUrl
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "name": authorName || author || "Creator",
+                    "item": author ? `${baseUrl}/?user=${author}` : baseUrl
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 3,
+                    "name": title
+                }
+            ]
+        });
     } else if (type === 'profile') {
         // Profile schema
-        schema = {
-             ...baseSchema,
+        schemas.push({
+             "@context": "https://schema.org",
              "@type": "ProfilePage",
              "mainEntity": {
                  "@type": "Person",
                  "name": title.replace("'s Profile", ""),
                  "image": imageUrl
              }
-         };
+         });
+        // Breadcrumb for profile
+        schemas.push({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "name": "Glass Gallery",
+                    "item": baseUrl
+                },
+                {
+                    "@type": "ListItem",
+                    "position": 2,
+                    "name": title.replace("'s Profile", "")
+                }
+            ]
+        });
     } else {
-        // WebSite schema for homepage with search box
-        schema = {
-            ...baseSchema,
-            "@type": "WebSite",
-            "name": "Glass Gallery",
-            "potentialAction": {
-                "@type": "SearchAction",
-                "target": "https://glassgallery.modvc.org/?search={search_term_string}",
-                "query-input": "required name=search_term_string"
-            }
-        };
+        // Homepage - WebSite schema handled statically in index.html
+        // Add CollectionPage for explore views
+        if (title === 'Explore Images') {
+            schemas.push({
+                "@context": "https://schema.org",
+                "@type": "CollectionPage",
+                "name": "Explore Images - Glass Gallery",
+                "description": description,
+                "url": `${baseUrl}/?view=explore`
+            });
+        }
     }
-    
-    script.textContent = JSON.stringify(schema);
+
+    // Inject all schemas
+    schemas.forEach(schema => {
+        const script = document.createElement('script');
+        script.setAttribute('type', 'application/ld+json');
+        script.textContent = JSON.stringify(schema);
+        document.head.appendChild(script);
+    });
 
     // Cleanup: Reset title when component unmounts
     return () => {

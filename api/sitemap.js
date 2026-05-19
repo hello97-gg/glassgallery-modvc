@@ -28,10 +28,20 @@ export default async function handler(req, res) {
 
   try {
     // Fetch all images from SQLite
-    const result = await db.execute("SELECT id, imageUrl, title, description, uploadedAt FROM images ORDER BY uploadedAt DESC LIMIT 1000");
+    const result = await db.execute("SELECT id, imageUrl, title, description, uploadedAt, license, uploaderUid FROM images ORDER BY uploadedAt DESC LIMIT 1000");
     
     dynamicUrls = result.rows.map(row => {
       const timestamp = row.uploadedAt;
+      const license = row.license || 'CC0';
+      const licenseUrls = {
+        'CC0': 'https://creativecommons.org/publicdomain/zero/1.0/',
+        'CC-BY': 'https://creativecommons.org/licenses/by/4.0/',
+        'CC BY': 'https://creativecommons.org/licenses/by/4.0/',
+        'CC-BY-SA': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'CC BY-SA': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'CC-BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
+        'CC BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
+      };
       return {
         loc: `${baseUrl}/image/${row.id}`,
         lastmod: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString(),
@@ -39,7 +49,8 @@ export default async function handler(req, res) {
         priority: "0.7",
         imageLoc: row.imageUrl,
         imageTitle: row.title || "",
-        imageCaption: row.description || ""
+        imageCaption: row.description || "",
+        imageLicense: licenseUrls[license] || license
       };
     });
   } catch (error) {
@@ -60,6 +71,7 @@ export default async function handler(req, res) {
       <image:loc>${escapeXml(url.imageLoc)}</image:loc>
       ${url.imageTitle ? `<image:title>${escapeXml(url.imageTitle)}</image:title>` : ""}
       ${url.imageCaption ? `<image:caption>${escapeXml(url.imageCaption)}</image:caption>` : ""}
+      ${url.imageLicense ? `<image:license>${escapeXml(url.imageLicense)}</image:license>` : ""}
     </image:image>`;
       }
       return `
