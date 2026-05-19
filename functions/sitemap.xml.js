@@ -1,4 +1,4 @@
-import { getDb } from "./lib/turso.js";
+import { getDb } from "./api/lib/turso.js";
 
 function escapeXml(unsafe) {
   if (!unsafe) return "";
