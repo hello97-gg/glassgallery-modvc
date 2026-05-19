@@ -28,6 +28,33 @@ export async function onRequest(context) {
       const imageId = url.searchParams.get('imageId') || url.searchParams.get('id');
       const userUid = url.searchParams.get('userUid');
 
+      if (action === 'download') {
+        const targetId = imageId;
+        if (!targetId) {
+          return Response.json({ success: false, error: "Missing imageId or id parameter." }, { status: 400, headers: corsHeaders });
+        }
+
+        // 1. Increment download count in DB
+        await db.execute({
+          sql: "UPDATE images SET downloadCount = downloadCount + 1 WHERE id = ?",
+          args: [targetId]
+        });
+
+        // 2. Fetch the direct R2/CDN image URL
+        const targetRes = await db.execute({
+          sql: "SELECT imageUrl FROM images WHERE id = ?",
+          args: [targetId]
+        });
+
+        if (targetRes.rows.length === 0) {
+          return Response.json({ success: false, error: "Image not found." }, { status: 404, headers: corsHeaders });
+        }
+
+        const imageUrl = targetRes.rows[0].imageUrl;
+        // 3. Redirect the browser/client to the download file URL
+        return Response.redirect(imageUrl, 302);
+      }
+
       if (action === 'get_single') {
         const targetId = imageId;
         if (!targetId) {

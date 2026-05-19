@@ -37,7 +37,7 @@ const ApiDocsPage: React.FC = () => {
             </p>
         </div>
 
-        {/* Endpoint Card */}
+        {/* Random Fetch Endpoint Card */}
         <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden">
             <div className="flex flex-col gap-3 mb-4">
                 <span className="self-start px-3 py-1 rounded-md bg-accent/20 text-accent font-bold text-sm">GET</span>
@@ -45,6 +45,40 @@ const ApiDocsPage: React.FC = () => {
             </div>
             <p className="text-secondary mb-0 text-sm md:text-base">
                 Fetches a random set of images from the gallery, optionally filtered by category or title.
+            </p>
+        </div>
+
+        {/* Fetch Image by ID Endpoint Card */}
+        <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden">
+            <div className="flex flex-col gap-3 mb-4">
+                <span className="self-start px-3 py-1 rounded-md bg-accent/20 text-accent font-bold text-sm">GET</span>
+                <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=get_single&imageId=&#123;id&#125;</code>
+            </div>
+            <p className="text-secondary mb-0 text-sm md:text-base">
+                Fetches complete JSON metadata for a specific image by its unique ID. Returns the image URL, title, uploader details, tags, and license.
+            </p>
+        </div>
+
+        {/* Download & Track Endpoint Card */}
+        <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden">
+            <div className="flex flex-col gap-3 mb-4">
+                <span className="self-start px-3 py-1 rounded-md bg-accent/20 text-accent font-bold text-sm">GET</span>
+                <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=download&imageId=&#123;id&#125;</code>
+            </div>
+            <p className="text-secondary mb-0 text-sm md:text-base">
+                Direct file download endpoint. Automatically increments the image's download counter in the database and immediately returns a 302 Redirect to the full-resolution image file.
+            </p>
+        </div>
+
+        {/* Dynamic Image Resizing Info Card */}
+        <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div className="flex flex-col gap-3 mb-4 relative z-10">
+                <span className="self-start px-3 py-1 rounded-md bg-purple-500/20 text-purple-400 font-bold text-sm">EDGE FEATURE</span>
+                <code className="text-primary font-mono text-sm md:text-lg break-all">https://cdn.modvc.org/cdn-cgi/image/width=W,height=H/&#123;filename.jpg&#125;</code>
+            </div>
+            <p className="text-secondary mb-0 text-sm md:text-base relative z-10">
+                <strong>Dynamic Resizing API:</strong> Because images are served via Cloudflare R2 Edge, you can dynamically resize and compress any image on the fly simply by prepending <code className="text-accent bg-accent/10 px-1 py-0.5 rounded">/cdn-cgi/image/width=X,height=Y/</code> to the CDN URL path!
             </p>
         </div>
 
@@ -173,7 +207,100 @@ Content-Type: application/json`}
         {/* Examples */}
         <div className="mb-12 w-full">
             <h2 className="text-2xl font-bold text-primary mb-6">Examples</h2>
-            
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">JavaScript (Fetch Random Images)</h3>
+                <p className="text-secondary text-sm">Fetch 3 random images filtered by the "Nature" category.</p>
+                <CodeBlock 
+                    language="javascript" 
+                    code={`fetch('https://gg.modvc.org/api/random?limit=3&category=Nature')
+  .then(res => res.json())
+  .then(data => {
+    if(data.success) {
+      console.log('Random Images:', data.data);
+    }
+  })
+  .catch(console.error);`} 
+                />
+            </div>
+
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">JavaScript (Trigger File Download)</h3>
+                <p className="text-secondary text-sm">Download an image by ID (this also updates the database download counter).</p>
+                <CodeBlock 
+                    language="javascript" 
+                    code={`// You can simply use an anchor tag in HTML:
+// <a href="https://gg.modvc.org/api/images?action=download&imageId=img_xyz">Download</a>
+
+// Or trigger it programmatically via JavaScript:
+window.location.href = 'https://gg.modvc.org/api/images?action=download&imageId=img_xyz';`} 
+                />
+            </div>
+
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">HTML (Dynamic CDN Resizing)</h3>
+                <p className="text-secondary text-sm">Use Cloudflare Edge resizing directly in your image tags to get optimized sizes.</p>
+                <CodeBlock 
+                    language="html" 
+                    code={`<!-- Load a lightweight 400x300 thumbnail -->
+<img 
+  src="https://cdn.modvc.org/cdn-cgi/image/width=400,height=300,fit=cover/image_name.jpg" 
+  alt="Resized Image" 
+/>`} 
+                />
+            </div>
+
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">Advanced Node.js (Fetch, Resize & Download)</h3>
+                <p className="text-secondary text-sm">A full backend script to fetch a random image, generate a dynamically resized CDN URL, and download it locally via Node.js streams.</p>
+                <CodeBlock 
+                    language="javascript" 
+                    code={`import https from 'https';
+import fs from 'fs';
+import path from 'path';
+
+const BASE_URL = 'https://gg.modvc.org';
+const WIDTH = 1920;
+const HEIGHT = 1080;
+
+async function downloadFile(url, filepath) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(filepath);
+    https.get(url, (response) => {
+      // Handle redirects
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        file.close();
+        return downloadFile(response.headers.location, filepath).then(resolve).catch(reject);
+      }
+      response.pipe(file);
+      file.on('finish', () => { file.close(); resolve(filepath); });
+    }).on('error', (err) => { fs.unlink(filepath, () => {}); reject(err); });
+  });
+}
+
+async function fetchAndDownloadRandom() {
+  // 1. Fetch a random image from the API
+  const res = await fetch(\`\${BASE_URL}/api/random?limit=1\`);
+  const data = await res.json();
+  const image = data.data[0];
+  
+  console.log('Found Image:', image.title);
+
+  // 2. Build the dynamically resized Cloudflare Edge URL
+  const imagePath = new URL(image.imageUrl).pathname;
+  const resizedUrl = \`https://cdn.modvc.org/cdn-cgi/image/width=\${WIDTH},height=\${HEIGHT},fit=cover\${imagePath}\`;
+  
+  console.log('Optimized CDN URL:', resizedUrl);
+
+  // 3. Stream the file to disk
+  const filename = \`download_\${image.id}.jpg\`;
+  await downloadFile(resizedUrl, path.join(__dirname, filename));
+  console.log('Download complete!');
+}
+
+fetchAndDownloadRandom();`} 
+                />
+            </div>
+
             <div className="mb-8 w-full">
                 <h3 className="text-lg font-semibold text-primary mb-2">JavaScript (Fetch Image Upload)</h3>
                 <p className="text-secondary text-sm">Upload a new landscape photo with CC-BY license and tags.</p>
