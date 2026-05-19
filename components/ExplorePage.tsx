@@ -130,7 +130,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
         
         <div className="mt-8 flex justify-center gap-4">
             <a 
-              href="https://github.com/hello97-gg/glassgallery/"
+              href="https://github.com/hello97-gg/glassgallery-modvc"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2 bg-surface text-primary rounded-lg border border-border hover:bg-border transition-colors"
@@ -219,7 +219,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
         
         {/* Open Source Promo Card */}
         <a 
-          href="https://github.com/hello97-gg/glassgallery/"
+          href="https://github.com/hello97-gg/glassgallery-modvc"
           target="_blank"
           rel="noopener noreferrer"
           className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1 border border-border flex flex-col items-center justify-center p-6 text-center"

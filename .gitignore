@@ -25,6 +25,11 @@ dist-ssr
 
 # Sensitive Credentials
 .env
+.dev.vars
 *.db
 *.sqlite
 local.db
+
+# Wrangler Dev Cache
+.wrangler/
+.wrangler

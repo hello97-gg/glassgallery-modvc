@@ -109,7 +109,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
              
             {/* Open Source Link */}
             <a 
-              href="https://github.com/hello97-gg/glassgallery/" 
+              href="https://github.com/hello97-gg/glassgallery-modvc" 
               target="_blank" 
               rel="noopener noreferrer"
               className="flex items-center w-full p-3 my-3 rounded-lg transition-all duration-200 group-hover:space-x-4 text-secondary hover:text-primary hover:bg-surface/80"
