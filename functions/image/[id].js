@@ -159,7 +159,7 @@ export async function onRequest(context) {
     );
     indexHtml = indexHtml.replace(/<meta property="og:title" content="Glass Gallery"[^>]*\/?>/, '');
     indexHtml = indexHtml.replace(/<meta property="og:description"[^>]*\/?>/, '');
-    indexHtml = indexHtml.replace(/<meta property="og:image" content="https:\/\/glassgallery\.modvc\.org\/web-app-manifest[^"]*"[^>]*\/?>/, '');
+    indexHtml = indexHtml.replace(/<meta property="og:image" content="https:\/\/(glassgallery|gg)\.modvc\.org\/web-app-manifest[^"]*"[^>]*\/?>/, '');
 
     return new Response(indexHtml, {
       status: 200,
