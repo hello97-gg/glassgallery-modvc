@@ -42,6 +42,8 @@ export default async function handler(req, res) {
         location: row.location || '',
         email: row.email || '',
         bio: row.bio || '',
+        onboarded: parseInt(row.onboarded || 0) === 1,
+        followedTags: row.followedTags ? JSON.parse(row.followedTags) : [],
         ...(includeApiKey === 'true' ? { apiKey: row.apiKey || null } : {})
       };
 
@@ -78,8 +80,8 @@ export default async function handler(req, res) {
       if (checkRes.rows.length === 0) {
         // Insert new user
         await db.execute({
-          sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             uid,
             data.uploaderName || 'Anonymous',
@@ -87,19 +89,27 @@ export default async function handler(req, res) {
             data.backgroundImageURL || '',
             data.location || '',
             data.email || '',
-            data.bio || ''
+            data.bio || '',
+            data.onboarded ? 1 : 0,
+            JSON.stringify(data.followedTags || [])
           ]
         });
       } else {
         // Update user with dynamic fields to support merge updates
-        const fields = ['uploaderName', 'uploaderPhotoURL', 'backgroundImageURL', 'location', 'email', 'bio'];
+        const fields = ['uploaderName', 'uploaderPhotoURL', 'backgroundImageURL', 'location', 'email', 'bio', 'onboarded', 'followedTags'];
         const keys = [];
         const args = [];
 
         fields.forEach(f => {
           if (data[f] !== undefined) {
             keys.push(`${f} = ?`);
-            args.push(data[f]);
+            if (f === 'onboarded') {
+              args.push(data[f] ? 1 : 0);
+            } else if (f === 'followedTags') {
+              args.push(JSON.stringify(data[f] || []));
+            } else {
+              args.push(data[f]);
+            }
           }
         });
 

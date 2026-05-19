@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { Notification, ImageMeta } from '../types';
+import type { Notification, ImageMeta, ProfileUser } from '../types';
 import { markNotificationsAsRead } from '../services/firestoreService';
 import Button from './Button';
 
@@ -8,6 +7,7 @@ interface NotificationProps {
   notifications: Notification[];
   onImageClick: (image: Partial<ImageMeta>) => void;
   onClose: () => void;
+  onViewProfile?: (user: ProfileUser) => void;
 }
 
 const timeAgo = (date: Date): string => {
@@ -26,7 +26,7 @@ const timeAgo = (date: Date): string => {
 };
 
 // Reusable component for the list of notifications
-const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick }) => {
+const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile }) => {
     const handleMarkAllRead = () => {
         const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
         markNotificationsAsRead(unreadIds);
@@ -36,7 +36,15 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
         if (!notification.read) {
             markNotificationsAsRead([notification.id]);
         }
-        onImageClick({ id: notification.imageId, imageUrl: notification.imageUrl });
+        if (notification.type === 'follow' && onViewProfile && notification.actorUid) {
+            onViewProfile({
+                uploaderUid: notification.actorUid,
+                uploaderName: notification.actorName,
+                uploaderPhotoURL: notification.actorPhotoURL || ''
+            });
+        } else {
+            onImageClick({ id: notification.imageId, imageUrl: notification.imageUrl });
+        }
         onClose();
     };
     
@@ -68,12 +76,16 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
                 <div className="flex-grow text-sm">
                   {n.type === 'flagged' ? (
                     <p className="text-primary">Your image was <span className="text-red-500 font-semibold">flagged</span> for content safety review.</p>
+                  ) : n.type === 'follow' ? (
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> followed you.</p>
                   ) : (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> liked your image.</p>
                   )}
                   <p className="text-xs text-secondary">{timeAgo(n.createdAt.toDate())} ago</p>
                 </div>
-                <img src={n.imageUrl} alt="notification thumbnail" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                {n.type !== 'follow' && n.imageUrl ? (
+                  <img src={n.imageUrl} alt="notification thumbnail" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                ) : null}
               </div>
             ))
           ) : (
@@ -85,20 +97,20 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
 }
 
 // For desktop sidebar popover
-const NotificationsPanel: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick }) => {
+const NotificationsPanel: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile }) => {
     return (
         <div className="absolute left-full top-0 ml-4 w-96 animate-fade-in z-40">
-           <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} />
+           <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} onViewProfile={onViewProfile} />
         </div>
     );
 };
 
 // For mobile full-screen modal
-export const MobileNotificationsModal: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick }) => {
+export const MobileNotificationsModal: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile }) => {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm md:hidden animate-fade-in" onClick={onClose}>
             <div className="w-full flex justify-center" onClick={(e) => e.stopPropagation()}>
-                <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} />
+                <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} onViewProfile={onViewProfile} />
             </div>
         </div>
     )
@@ -109,7 +121,8 @@ export const NotificationBell: React.FC<{
   notifications: Notification[];
   onImageClick: (image: Partial<ImageMeta>) => void;
   isSidebar?: boolean;
-}> = ({ notifications, onImageClick, isSidebar = false }) => {
+  onViewProfile?: (user: ProfileUser) => void;
+}> = ({ notifications, onImageClick, isSidebar = false, onViewProfile }) => {
     const [isOpen, setIsOpen] = useState(false);
     const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
     const ref = useRef<HTMLDivElement>(null);
@@ -144,7 +157,7 @@ export const NotificationBell: React.FC<{
                      </div>
                      <span className="text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Notifications</span>
                 </button>
-                {isOpen && <NotificationsPanel notifications={notifications} onClose={() => setIsOpen(false)} onImageClick={onImageClick} />}
+                {isOpen && <NotificationsPanel notifications={notifications} onClose={() => setIsOpen(false)} onImageClick={onImageClick} onViewProfile={onViewProfile} />}
             </div>
         );
     }

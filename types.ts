@@ -36,6 +36,8 @@ export interface ProfileUser {
   location?: string;
   email?: string;
   bio?: string;
+  onboarded?: boolean;
+  followedTags?: string[];
 }
 
 export interface Notification {
@@ -44,7 +46,7 @@ export interface Notification {
   actorUid: string;
   actorName: string;
   actorPhotoURL: string;
-  type: 'like';
+  type: 'like' | 'follow' | 'flagged';
   imageId: string;
   imageUrl: string;
   createdAt: firebase.firestore.Timestamp;

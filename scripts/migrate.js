@@ -54,7 +54,9 @@ async function main() {
       location TEXT,
       email TEXT,
       bio TEXT,
-      apiKey TEXT UNIQUE
+      apiKey TEXT UNIQUE,
+      onboarded INTEGER DEFAULT 0,
+      followedTags TEXT
     );
   `);
   console.log("✓ Created 'users' table.");
@@ -148,6 +150,20 @@ async function main() {
     );
   `);
   console.log("✓ Created 'notifications' table.");
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS follows (
+      followerUid TEXT NOT NULL,
+      followingUid TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (followerUid, followingUid),
+      FOREIGN KEY (followerUid) REFERENCES users(uploaderUid) ON DELETE CASCADE,
+      FOREIGN KEY (followingUid) REFERENCES users(uploaderUid) ON DELETE CASCADE
+    );
+  `);
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(followerUid);");
+  await db.execute("CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(followingUid);");
+  console.log("✓ Created 'follows' table and indexes.");
 
   console.log("\n--- Step 2: Fetching data from Firestore REST API ---");
 

@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
-import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore } from './services/firestoreService';
+import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getUserProfile, updateUserProfile } from './services/firestoreService';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 
 import Sidebar from './components/Header';
@@ -19,6 +19,7 @@ import LegalModal from './components/LegalModal';
 import { MobileNotificationsModal } from './components/Notifications';
 import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
+import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
 
 // --- Favicon SVG Data URIs ---
 // Compass Icon for Explore
@@ -144,6 +145,95 @@ const App: React.FC = () => {
   const dragCounter = useRef(0);
   const deepLinkUnsubscribeRef = useRef<(() => void) | null>(null);
 
+  const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // derivation of tags with at least 5 images along with up to 3 previews each
+  const popularTags = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const tagImages: Record<string, string[]> = {};
+
+    allImages.forEach(img => {
+      if (Array.isArray(img.flags)) {
+        img.flags.forEach(tag => {
+          if (tag && tag.toLowerCase() !== 'flagged') {
+            counts[tag] = (counts[tag] || 0) + 1;
+            if (!tagImages[tag]) {
+              tagImages[tag] = [];
+            }
+            if (img.imageUrl && tagImages[tag].length < 3) {
+              tagImages[tag].push(img.imageUrl);
+            }
+          }
+        });
+      }
+    });
+
+    return Object.keys(counts)
+      .filter(tag => counts[tag] >= 5)
+      .sort((a, b) => counts[b] - counts[a])
+      .map(tag => ({
+        name: tag,
+        previews: tagImages[tag] || []
+      }));
+  }, [allImages]);
+
+  // derivation of active popular creators
+  const popularCreators = useMemo(() => {
+    if (!user) return [];
+    const map = new Map<string, { uploaderUid: string, uploaderName: string, uploaderPhotoURL: string, count: number }>();
+    allImages.forEach(img => {
+      if (img.uploaderUid && img.uploaderUid !== user.uid) {
+        const existing = map.get(img.uploaderUid);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          map.set(img.uploaderUid, {
+            uploaderUid: img.uploaderUid,
+            uploaderName: img.uploaderName,
+            uploaderPhotoURL: img.uploaderPhotoURL || '',
+            count: 1
+          });
+        }
+      }
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [allImages, user]);
+
+  const handleOnboardingComplete = async (selectedTags: string[], followedCreators: string[], customName: string, customPhoto: string) => {
+    if (!user) return;
+    try {
+      const updatedProfile = {
+        ...currentUserProfile,
+        uploaderName: customName,
+        uploaderPhotoURL: customPhoto,
+        onboarded: true,
+        followedTags: selectedTags
+      };
+      await updateUserProfile(user.uid, updatedProfile);
+      setCurrentUserProfile(updatedProfile as ProfileUser);
+      setShowOnboarding(false);
+    } catch (err) {
+      console.error("Failed to complete onboarding:", err);
+    }
+  };
+
+  const handleOnboardingSkip = async () => {
+    if (!user) return;
+    try {
+      const updatedProfile = {
+        ...currentUserProfile,
+        onboarded: true
+      };
+      await updateUserProfile(user.uid, updatedProfile);
+      setCurrentUserProfile(updatedProfile as ProfileUser);
+      setShowOnboarding(false);
+    } catch (err) {
+      console.error("Failed to skip onboarding:", err);
+    }
+  };
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
@@ -151,6 +241,35 @@ const App: React.FC = () => {
       setAuthLoading(false);
       if (currentUser) {
         setLoginModalOpen(false);
+        // Load user profile & onboarding state in background
+        getUserProfile(currentUser.uid).then(async (profile) => {
+          if (!profile) {
+            // New signup profile initialization in DB with instant SVG avatar & unique generated name
+            const defaultName = currentUser.displayName || generateUniqueName();
+            const defaultPhoto = currentUser.photoURL || generateSvgAvatar(currentUser.uid);
+            const newProfile: ProfileUser = {
+              uploaderUid: currentUser.uid,
+              uploaderName: defaultName,
+              uploaderPhotoURL: defaultPhoto,
+              email: currentUser.email || '',
+              onboarded: false,
+              followedTags: []
+            };
+            await updateUserProfile(currentUser.uid, newProfile);
+            setCurrentUserProfile(newProfile);
+            setShowOnboarding(true);
+          } else {
+            setCurrentUserProfile(profile);
+            if (!profile.onboarded) {
+              setShowOnboarding(true);
+            }
+          }
+        }).catch(err => {
+          console.error("Failed to fetch logged in user profile:", err);
+        });
+      } else {
+        setCurrentUserProfile(null);
+        setShowOnboarding(false);
       }
     });
 
@@ -723,6 +842,7 @@ const App: React.FC = () => {
                 setNotificationsPanelOpen(false);
                 handleImageClickFromNotification(image);
             }}
+            onViewProfile={handleViewProfile}
         />
       )}
 
@@ -753,6 +873,18 @@ const App: React.FC = () => {
           onLikeToggle={handleLikeToggle}
           onLocationClick={handleLocationClick}
           onSelectImage={handleImageClick}
+        />
+      )}
+
+      {showOnboarding && user && (
+        <OnboardingModal
+          currentUserUid={user.uid}
+          initialName={currentUserProfile?.uploaderName || ''}
+          initialPhotoURL={currentUserProfile?.uploaderPhotoURL || ''}
+          popularTags={popularTags}
+          popularCreators={popularCreators}
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingSkip}
         />
       )}
     </div>

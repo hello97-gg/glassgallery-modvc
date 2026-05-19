@@ -146,6 +146,24 @@ export default async function handler(req, res) {
         const tasteProfile = {};
         if (userUid) {
           try {
+            // Seed followedTags from user profile (weight = 2.0)
+            const userProfileRes = await db.execute({
+              sql: "SELECT followedTags FROM users WHERE uploaderUid = ?",
+              args: [userUid]
+            });
+            if (userProfileRes.rows.length > 0 && userProfileRes.rows[0].followedTags) {
+              try {
+                const tagsArray = JSON.parse(userProfileRes.rows[0].followedTags);
+                if (Array.isArray(tagsArray)) {
+                  tagsArray.forEach(tag => {
+                    tasteProfile[tag] = (tasteProfile[tag] || 0) + 2.0;
+                  });
+                }
+              } catch (parseErr) {
+                console.error("[Smart Suggestions] Failed to parse user followedTags:", parseErr);
+              }
+            }
+
             // Uploads history (weight = 1.5)
             const userUploads = await db.execute({
               sql: "SELECT flags, aiConcepts FROM images WHERE uploaderUid = ?",
@@ -194,6 +212,67 @@ export default async function handler(req, res) {
             }
           } catch (err) {
             console.error("[Smart Suggestions] Failed to build Taste Vector:", err);
+          }
+        }
+
+        // 4.6 Fetch follow data for scoring personalization
+        const followerCountMap = {};
+        try {
+          const countsRes = await db.execute("SELECT followingUid, COUNT(*) as cnt FROM follows GROUP BY followingUid");
+          countsRes.rows.forEach(r => {
+            followerCountMap[r.followingUid] = parseInt(r.cnt || 0);
+          });
+        } catch (err) {
+          console.error("[Smart Suggestions] Failed to fetch global follow counts:", err);
+        }
+
+        const targetFollowing = new Set();
+        const targetFollowers = new Set();
+        try {
+          const targetFollowsRes = await db.execute({
+            sql: "SELECT followerUid, followingUid FROM follows WHERE followerUid = ? OR followingUid = ?",
+            args: [target.uploaderUid, target.uploaderUid]
+          });
+          targetFollowsRes.rows.forEach(r => {
+            if (r.followerUid === target.uploaderUid) {
+              targetFollowing.add(r.followingUid);
+            }
+            if (r.followingUid === target.uploaderUid) {
+              targetFollowers.add(r.followerUid);
+            }
+          });
+        } catch (err) {
+          console.error("[Smart Suggestions] Failed to fetch target creator follow relationships:", err);
+        }
+
+        const followingUids = new Set();
+        const secondDegreeUids = new Set();
+        if (userUid) {
+          try {
+            const followingRes = await db.execute({
+              sql: "SELECT followingUid FROM follows WHERE followerUid = ?",
+              args: [userUid]
+            });
+            followingRes.rows.forEach(r => followingUids.add(r.followingUid));
+
+            if (followingUids.size > 0) {
+              const secondDegreeRes = await db.execute({
+                sql: `
+                  SELECT f2.followingUid 
+                  FROM follows f1 
+                  JOIN follows f2 ON f1.followingUid = f2.followerUid 
+                  WHERE f1.followerUid = ? AND f2.followingUid != ?
+                `,
+                args: [userUid, userUid]
+              });
+              secondDegreeRes.rows.forEach(r => {
+                if (!followingUids.has(r.followingUid)) {
+                  secondDegreeUids.add(r.followingUid);
+                }
+              });
+            }
+          } catch (err) {
+            console.error("[Smart Suggestions] Failed to fetch user follow graph:", err);
           }
         }
 
@@ -250,10 +329,36 @@ export default async function handler(req, res) {
           // rather than overriding primary visual concept/tag matches.
           tasteScore = Math.min(tasteScore, 2.0);
 
+          // Follower Graph personalization
+          let followBoostScore = 0;
+          const candidateUploader = row.uploaderUid;
+          if (userUid) {
+            if (followingUids.has(candidateUploader)) {
+              followBoostScore += 5.0; // Direct connection boost
+            } else if (secondDegreeUids.has(candidateUploader)) {
+              followBoostScore += 2.0; // Second-degree community connection boost
+            }
+          }
+
+          // Target creator network alignment
+          let targetCreatorRelationBoost = 0;
+          if (candidateUploader !== target.uploaderUid) {
+            if (targetFollowing.has(candidateUploader)) {
+              targetCreatorRelationBoost += 1.5; // Target creator follows candidate creator
+            }
+            if (targetFollowers.has(candidateUploader)) {
+              targetCreatorRelationBoost += 1.5; // Candidate creator follows target creator
+            }
+          }
+
+          // Creator popularity boost
+          const uploaderFollowers = followerCountMap[candidateUploader] || 0;
+          const globalFollowerBoost = Math.min(uploaderFollowers * 0.2, 3.0);
+
           // Popularity (Weight = 0.1)
           const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05;
 
-          const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity;
+          const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost;
 
           return {
             image: {

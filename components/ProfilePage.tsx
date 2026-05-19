@@ -2,11 +2,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User } from 'firebase/auth';
 import type { ProfileUser, ImageMeta } from '../types';
-import { getImagesByUploader, PAGE_SIZE, getUserProfile } from '../services/firestoreService';
+import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser } from '../services/firestoreService';
 import ImageGrid from './ImageGrid';
 import Spinner from './Spinner';
 import Button from './Button';
 import EditProfileModal from './EditProfileModal';
+import FollowersModal from './FollowersModal';
 
 // Throttle utility
 const throttle = (func: (...args: any[]) => void, limit: number) => {
@@ -37,6 +38,65 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [isFollowingUser, setIsFollowingUser] = useState(false);
+  const [followersModalType, setFollowersModalType] = useState<'followers' | 'following'>('followers');
+  const [isFollowPending, setIsFollowPending] = useState(false);
+  const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
+
+  // Fetch Follow Stats
+  const fetchFollowStats = useCallback(async () => {
+    console.log("[DEBUG PROFILE] fetchFollowStats called for target:", profileData.uploaderUid, "by loggedInUser:", loggedInUser?.uid);
+    try {
+      const stats = await getFollowStats(profileData.uploaderUid, loggedInUser?.uid);
+      console.log("[DEBUG PROFILE] getFollowStats returned stats:", stats);
+      setFollowersCount(stats.followersCount);
+      setFollowingCount(stats.followingCount);
+      setIsFollowingUser(stats.isFollowing);
+    } catch (err) {
+      console.error("Failed to fetch follow stats:", err);
+    }
+  }, [profileData.uploaderUid, loggedInUser?.uid]);
+
+  useEffect(() => {
+    fetchFollowStats();
+  }, [fetchFollowStats, profileData.uploaderUid, loggedInUser?.uid]);
+
+  const handleFollowToggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!loggedInUser || isFollowPending) return;
+
+    setIsFollowPending(true);
+    const prevIsFollowing = isFollowingUser;
+    const prevFollowersCount = followersCount;
+
+    // Optimistically update
+    setIsFollowingUser(!prevIsFollowing);
+    setFollowersCount(prevIsFollowing ? prevFollowersCount - 1 : prevFollowersCount + 1);
+
+    try {
+      const res = await toggleFollowUser(
+        loggedInUser.uid,
+        profileData.uploaderUid,
+        loggedInUser.displayName || 'Someone',
+        loggedInUser.photoURL || ''
+      );
+      setIsFollowingUser(res.isFollowing);
+    } catch (err) {
+      console.error("Failed to toggle follow:", err);
+      // Revert
+      setIsFollowingUser(prevIsFollowing);
+      setFollowersCount(prevFollowersCount);
+    } finally {
+      setIsFollowPending(false);
+    }
+  };
+
+  const handleOpenFollowersModal = (type: 'followers' | 'following') => {
+    setFollowersModalType(type);
+    setIsFollowersModalOpen(true);
+  };
 
   // 1. Sync state with props immediately if user changes (Defensive programming)
   useEffect(() => {
@@ -162,13 +222,27 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
                     </svg>
                  </button>
             </div>
-            {isOwner && (
+            {isOwner ? (
                 <div className="absolute bottom-4 right-4 z-10">
                     <Button onClick={() => setIsEditModalOpen(true)} variant="secondary" size="sm" className="!bg-black/50 !text-white backdrop-blur-sm border-none hover:!bg-black/70">
                         Edit Profile
                     </Button>
                 </div>
-            )}
+            ) : loggedInUser ? (
+                <div className="absolute bottom-4 right-4 z-10">
+                    <button
+                        onClick={handleFollowToggle}
+                        disabled={isFollowPending}
+                        className={`font-bold px-6 py-2 rounded-full cursor-pointer transition-all duration-200 shadow-md ${
+                          isFollowingUser
+                            ? 'bg-black/50 text-white hover:bg-black/70 backdrop-blur-sm border border-white/20'
+                            : 'bg-red-600 text-white hover:bg-red-500 hover:scale-[1.03]'
+                        } ${isFollowPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                        {isFollowPending ? '...' : (isFollowingUser ? 'Following' : 'Follow')}
+                    </button>
+                </div>
+            ) : null}
         </div>
 
         {/* Profile Info Container - Floating overlap */}
@@ -179,7 +253,39 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
                 className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-background bg-surface object-cover shadow-lg"
             />
             <div className="mb-2 hidden md:block">
-                <h1 className="text-3xl font-bold text-primary">{profileData.uploaderName}</h1>
+                <div className="flex items-center gap-3">
+                    <h1 className="text-3xl font-bold text-primary">{profileData.uploaderName}</h1>
+                    {!isOwner && loggedInUser && (
+                        <button
+                          onClick={handleFollowToggle}
+                          disabled={isFollowPending}
+                          className={`text-xs font-bold px-4 py-2 rounded-full cursor-pointer transition-all duration-200 ${
+                            isFollowingUser
+                              ? 'bg-border/60 text-secondary hover:bg-border/90 border border-border/80'
+                              : 'bg-red-600 text-white hover:bg-red-500 hover:scale-[1.03]'
+                          } ${isFollowPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          {isFollowPending ? '...' : (isFollowingUser ? 'Following' : 'Follow')}
+                        </button>
+                    )}
+                </div>
+                
+                {/* Followers & Following Counts (desktop) */}
+                <div className="flex items-center gap-2 text-xs text-secondary mt-1">
+                    <button 
+                        onClick={() => handleOpenFollowersModal('followers')} 
+                        className="hover:text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                        {followersCount} follower{followersCount !== 1 ? 's' : ''}
+                    </button>
+                    <span>&middot;</span>
+                    <button 
+                        onClick={() => handleOpenFollowersModal('following')} 
+                        className="hover:text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                        {followingCount} following
+                    </button>
+                </div>
             </div>
         </div>
       </div>
@@ -187,7 +293,40 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
       {/* Mobile Name / Bio Section */}
       <div className="px-6 md:px-10 mt-4">
          <div className="md:hidden mb-2">
-             <h1 className="text-2xl font-bold text-primary">{profileData.uploaderName}</h1>
+             <div className="flex items-center justify-between gap-3">
+                 <div>
+                     <h1 className="text-2xl font-bold text-primary">{profileData.uploaderName}</h1>
+                     {/* Followers & Following Counts (mobile) */}
+                     <div className="flex items-center gap-2 text-xs text-secondary mt-0.5">
+                         <button 
+                             onClick={() => handleOpenFollowersModal('followers')} 
+                             className="hover:text-primary hover:underline font-semibold cursor-pointer"
+                         >
+                             {followersCount} follower{followersCount !== 1 ? 's' : ''}
+                         </button>
+                         <span>&middot;</span>
+                         <button 
+                             onClick={() => handleOpenFollowersModal('following')} 
+                             className="hover:text-primary hover:underline font-semibold cursor-pointer"
+                         >
+                             {followingCount} following
+                         </button>
+                     </div>
+                 </div>
+                 {!isOwner && loggedInUser && (
+                      <button
+                        onClick={handleFollowToggle}
+                        disabled={isFollowPending}
+                        className={`text-xs font-bold px-4 py-2 rounded-full cursor-pointer transition-all duration-200 ${
+                          isFollowingUser
+                            ? 'bg-border/60 text-secondary hover:bg-border/90 border border-border/80'
+                            : 'bg-red-600 text-white hover:bg-red-500'
+                        } ${isFollowPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {isFollowPending ? '...' : (isFollowingUser ? 'Following' : 'Follow')}
+                      </button>
+                 )}
+             </div>
          </div>
 
          {/* Bio & Meta */}
@@ -249,6 +388,18 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
             user={profileData} 
             onClose={() => setIsEditModalOpen(false)} 
             onUpdateSuccess={(updated) => setProfileData(updated)} 
+        />
+      )}
+
+      {isFollowersModalOpen && (
+        <FollowersModal
+          uid={profileData.uploaderUid}
+          type={followersModalType}
+          title={followersModalType === 'followers' ? 'Followers' : 'Following'}
+          loggedInUser={loggedInUser}
+          onClose={() => setIsFollowersModalOpen(false)}
+          onUserClick={onViewProfile}
+          onFollowToggleParent={fetchFollowStats}
         />
       )}
     </div>

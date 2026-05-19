@@ -91,6 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
                 notifications={notifications} 
                 onImageClick={onImageClick} 
                 isSidebar={true}
+                onViewProfile={onViewProfile}
             />
         )}
         <NavItem label="Create" onClick={onCreateClick} isProminent>

@@ -311,3 +311,68 @@ export const updateUserProfile = async (uid: string, data: Partial<ProfileUser>)
         throw error;
     }
 };
+
+export const getFollowStats = async (uid: string, currentUserUid?: string): Promise<{ followersCount: number; followingCount: number; isFollowing: boolean }> => {
+    try {
+        const url = `/api/follows?action=stats&uid=${uid}${currentUserUid ? `&currentUserUid=${currentUserUid}` : ''}&t=${Date.now()}`;
+        const response = await fetch(url, { cache: 'no-store' });
+        const data = await response.json();
+        if (data.success) {
+            return {
+                followersCount: data.followersCount,
+                followingCount: data.followingCount,
+                isFollowing: data.isFollowing
+            };
+        }
+        return { followersCount: 0, followingCount: 0, isFollowing: false };
+    } catch (error) {
+        console.error("Error getting follow stats:", error);
+        return { followersCount: 0, followingCount: 0, isFollowing: false };
+    }
+};
+
+export const getFollowersList = async (uid: string): Promise<ProfileUser[]> => {
+    try {
+        const response = await fetch(`/api/follows?action=followers&uid=${uid}`);
+        const data = await response.json();
+        if (data.success && data.list) {
+            return data.list as ProfileUser[];
+        }
+        return [];
+    } catch (error) {
+        console.error("Error getting followers list:", error);
+        return [];
+    }
+};
+
+export const getFollowingList = async (uid: string): Promise<ProfileUser[]> => {
+    try {
+        const response = await fetch(`/api/follows?action=following&uid=${uid}`);
+        const data = await response.json();
+        if (data.success && data.list) {
+            return data.list as ProfileUser[];
+        }
+        return [];
+    } catch (error) {
+        console.error("Error getting following list:", error);
+        return [];
+    }
+};
+
+export const toggleFollowUser = async (followerUid: string, followingUid: string, actorName?: string, actorPhotoURL?: string): Promise<{ isFollowing: boolean }> => {
+    try {
+        const response = await fetch('/api/follows', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ followerUid, followingUid, actorName, actorPhotoURL })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to toggle follow.");
+        }
+        return { isFollowing: data.isFollowing };
+    } catch (error) {
+        console.error("Error toggling follow:", error);
+        throw error;
+    }
+};
