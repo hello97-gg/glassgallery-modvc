@@ -15,7 +15,7 @@ function escapeXml(unsafe) {
 }
 
 export async function onRequest(context) {
-  const baseUrl = "https://glassgallery.modvc.org";
+  const baseUrl = "https://gg.modvc.org";
 
   // Static routes
   const staticUrls = [
@@ -67,12 +67,13 @@ export async function onRequest(context) {
     .map((url) => {
       let imgXml = "";
       if (url.imageLoc) {
+        const hasValidLicense = url.imageLicense && (url.imageLicense.startsWith("http://") || url.imageLicense.startsWith("https://"));
         imgXml = `
     <image:image>
       <image:loc>${escapeXml(url.imageLoc)}</image:loc>
       ${url.imageTitle ? `<image:title>${escapeXml(url.imageTitle)}</image:title>` : ""}
       ${url.imageCaption ? `<image:caption>${escapeXml(url.imageCaption)}</image:caption>` : ""}
-      ${url.imageLicense ? `<image:license>${escapeXml(url.imageLicense)}</image:license>` : ""}
+      ${hasValidLicense ? `<image:license>${escapeXml(url.imageLicense)}</image:license>` : ""}
     </image:image>`;
       }
       return `

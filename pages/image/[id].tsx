@@ -55,7 +55,7 @@ const ImagePage: React.FC<ImagePageProps> = ({ image, error }) => {
         description={image.description || "View this beautiful image on Glass Gallery."}
         imageUrl={image.imageUrl}
         type="article"
-        url={`https://glassgallery.modvc.org/image/${image.id}`}
+        url={`https://gg.modvc.org/image/${image.id}`}
         authorName={image.uploaderName}
         tags={tagsList}
         location={image.location}

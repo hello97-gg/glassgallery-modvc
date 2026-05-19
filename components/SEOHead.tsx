@@ -87,7 +87,7 @@ const SEOHead: React.FC<SEOHeadProps> = ({
       el.remove();
     });
 
-    const baseUrl = 'https://glassgallery.modvc.org';
+    const baseUrl = 'https://gg.modvc.org';
     const schemas: any[] = [];
 
     if ((type === 'article' || tags || license) && imageUrl) {

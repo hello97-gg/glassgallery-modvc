@@ -22,7 +22,7 @@ function escapeHtml(unsafe) {
 
 export async function onRequest(context) {
   const id = context.params.id;
-  const baseUrl = "https://glassgallery.modvc.org";
+  const baseUrl = "https://gg.modvc.org";
   const url = new URL(context.request.url);
 
   if (!id) {
