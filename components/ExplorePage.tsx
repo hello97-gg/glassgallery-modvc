@@ -1,9 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import ImageGrid from './ImageGrid';
 import Button from './Button';
+import { recordSearchInterest } from '../services/interestTracker';
 
 interface ExplorePageProps {
   images: ImageMeta[];
@@ -61,6 +62,18 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
         setSearchQuery(initialSearchTerm);
     }
   }, [initialSearchTerm]);
+
+  // Track search intent with debounce (saves to localStorage for personalization)
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (searchQuery.trim().length >= 3) {
+      searchDebounceRef.current = setTimeout(() => {
+        recordSearchInterest(searchQuery.trim());
+      }, 800);
+    }
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+  }, [searchQuery]);
 
   // Aggregate images by tags (flags)
   const imagesByFlag = useMemo(() => {

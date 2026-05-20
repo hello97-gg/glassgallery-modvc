@@ -84,6 +84,51 @@ export const getImagesFromFirestore = async (): Promise<{ images: ImageMeta[] }>
     }
 };
 
+// Fetch personalized feed sorted by user's taste profile (uploads, likes, views, follows, aiConcepts, search intent)
+export const getPersonalizedFeed = async (userUid: string): Promise<{ images: ImageMeta[], personalized: boolean }> => {
+    try {
+        // Read client-side search interests and send to server for taste matching
+        let searchTerms = '';
+        try {
+            const interests = JSON.parse(localStorage.getItem('gg_user_interests') || '{}');
+            searchTerms = Object.keys(interests).slice(0, 10).join(','); // Top 10 search interests
+        } catch {}
+
+        const url = `/api/images?action=personalized_feed&userUid=${userUid}${searchTerms ? `&searchTerms=${encodeURIComponent(searchTerms)}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+        }
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to fetch personalized feed.");
+        }
+
+        const images = data.images.map((item: any) => ({
+            ...item,
+            uploadedAt: mapTimestamp(item.uploadedAt)
+        })) as ImageMeta[];
+
+        return { images, personalized: data.personalized || false };
+    } catch (error) {
+        console.error("Error getting personalized feed: ", error);
+        throw error;
+    }
+};
+
+// Record an image view for taste profile building (fire-and-forget)
+export const recordImageView = async (imageId: string, userUid: string): Promise<void> => {
+    try {
+        await fetch('/api/images?action=view', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageId: imageId.split('_loop_')[0], userUid })
+        });
+    } catch (error) {
+        // Silent fail — view tracking is non-critical
+    }
+};
+
 // Real-time subscription for the feed (simulated via client polling)
 export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
     let active = true;

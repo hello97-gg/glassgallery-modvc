@@ -5,7 +5,8 @@ import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getUserProfile, updateUserProfile } from './services/firestoreService';
+import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile } from './services/firestoreService';
+import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 
 import Sidebar from './components/Header';
@@ -124,13 +125,16 @@ const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): Ima
       if (profile && profile.followedTags && profile.followedTags.length > 0) {
           const imgTags = image.flags || [];
           const overlap = imgTags.filter(t => profile.followedTags?.includes(t));
-          personalizationBoost += overlap.length * 1200; // Boost score by +1,200 per matching interest tag!
+          personalizationBoost += overlap.length * 1200;
       }
 
-      // 4. Variable Reward (Randomness)
+      // 4. Client-side interest boost (search history + click history from localStorage)
+      const interestBoost = getInterestBoost(image);
+
+      // 5. Variable Reward (Randomness)
       const randomFactor = Math.random() * 250;
 
-      const finalScore = recencyScore + popularityScore + personalizationBoost + randomFactor;
+      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + randomFactor;
 
       return { ...image, sortScore: finalScore };
     })
@@ -538,7 +542,22 @@ const App: React.FC = () => {
             setImagesLoading(true);
         }
         
-        // Real-time listener
+        // For logged-in users: fetch personalized feed first (with 5-min cache to save DB costs)
+        if (user && allImages.length === 0 && shouldFetchPersonalizedFeed()) {
+          getPersonalizedFeed(user.uid).then(({ images: personalizedImages }) => {
+            if (personalizedImages.length > 0) {
+              markPersonalizedFeedFetched();
+              setAllImages(personalizedImages);
+              setDisplayedImages(personalizedImages.slice(0, PAGE_SIZE));
+              setCurrentIndex(PAGE_SIZE);
+              setImagesLoading(false);
+            }
+          }).catch(() => {
+            // Silent fail — polling will handle it
+          });
+        }
+
+        // Real-time listener (keeps data fresh, handles new uploads)
         unsubscribe = subscribeToImages((fetchedImages) => {
             setAllImages((prevImages) => {
                  // If this is the very first load, handle it cleanly
@@ -749,6 +768,12 @@ const App: React.FC = () => {
     const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
     setSelectedImage(original);
     updateURL({ image: original.id });
+    // Record view for server-side taste profile (fire-and-forget)
+    if (user) {
+      recordImageView(original.id, user.uid);
+    }
+    // Record click interest for client-side personalization (localStorage)
+    recordClickInterest(original);
   };
   
   const handleImageClickFromNotification = (partialImage: Partial<ImageMeta>) => {
@@ -770,15 +795,27 @@ const App: React.FC = () => {
 
   const refetchImages = () => {
     setImagesLoading(true);
-    getImagesFromFirestore().then(({ images }) => {
-         const sorted = smartSortImages(images, currentUserProfile);
+    const fetchFn = user 
+      ? getPersonalizedFeed(user.uid).then(({ images }) => images)
+      : getImagesFromFirestore().then(({ images }) => images);
+    
+    fetchFn.then((images) => {
+         // For personalized feed, images are already sorted by the server
+         const sorted = user ? images : smartSortImages(images, currentUserProfile);
          setAllImages(sorted);
          setDisplayedImages(sorted.slice(0, PAGE_SIZE));
          setCurrentIndex(PAGE_SIZE);
          setImagesLoading(false);
     }).catch(err => {
         console.error("Refetch failed", err);
-        setImagesLoading(false);
+        // Fallback to generic fetch
+        getImagesFromFirestore().then(({ images }) => {
+          const sorted = smartSortImages(images, currentUserProfile);
+          setAllImages(sorted);
+          setDisplayedImages(sorted.slice(0, PAGE_SIZE));
+          setCurrentIndex(PAGE_SIZE);
+          setImagesLoading(false);
+        }).catch(() => setImagesLoading(false));
     });
   };
 

@@ -355,6 +355,177 @@ export async function onRequest(context) {
         return Response.json({ success: true, images: suggestions }, { status: 200, headers: cacheHeaders });
       }
 
+      // --- Personalized Feed: Full feed sorted by user's taste profile ---
+      if (action === 'personalized_feed' && userUid) {
+        const searchTerms = url.searchParams.get('searchTerms') || ''; // Client-side search history
+
+        // Optimized: Combined taste profile query (uploads + likes + views in one UNION ALL) — reduces 7→5 DB calls
+        const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes] = await Promise.all([
+          db.execute("SELECT * FROM images ORDER BY uploadedAt DESC"),
+          db.execute("SELECT * FROM likes"),
+          db.execute({ sql: "SELECT followedTags FROM users WHERE uploaderUid = ?", args: [userUid] }),
+          // Single combined query for uploads + likes + views taste signals
+          db.execute({
+            sql: `
+              SELECT flags, aiConcepts, 'upload' as source FROM images WHERE uploaderUid = ?
+              UNION ALL
+              SELECT i.flags, i.aiConcepts, 'like' as source FROM likes l JOIN images i ON l.imageId = i.id WHERE l.userUid = ?
+              UNION ALL
+              SELECT i.flags, i.aiConcepts, 'view' as source FROM views v JOIN images i ON v.imageId = i.id WHERE v.userUid = ?
+            `,
+            args: [userUid, userUid, userUid]
+          }),
+          db.execute({ sql: "SELECT followingUid FROM follows WHERE followerUid = ?", args: [userUid] }),
+        ]);
+
+        // Build likes map
+        const likesMap = {};
+        likesRes.rows.forEach(like => {
+          if (!likesMap[like.imageId]) likesMap[like.imageId] = [];
+          likesMap[like.imageId].push(like.userUid);
+        });
+
+        // Build follow set
+        const followingUids = new Set();
+        followingRes.rows.forEach(r => followingUids.add(r.followingUid));
+
+        // Build taste profile from combined results + followed tags
+        const tasteProfile = {};
+        try {
+          // Followed tags (strongest signal)
+          if (userProfileRes.rows.length > 0 && userProfileRes.rows[0].followedTags) {
+            const tagsArray = JSON.parse(userProfileRes.rows[0].followedTags);
+            if (Array.isArray(tagsArray)) {
+              tagsArray.forEach(tag => { tasteProfile[tag] = (tasteProfile[tag] || 0) + 2.0; });
+            }
+          }
+
+          // Process combined taste signals with source-based weighting
+          const sourceWeights = { upload: 1.5, like: 1.0, view: 0.5 };
+          combinedTasteRes.rows.forEach(row => {
+            const weight = sourceWeights[row.source] || 0.5;
+            let fl = []; let co = [];
+            try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
+            try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+            fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + weight; });
+            co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + weight; });
+          });
+
+          // Search intent: add search terms as taste signals (medium weight)
+          if (searchTerms) {
+            searchTerms.split(',').forEach(term => {
+              const t = term.trim().toLowerCase();
+              if (t.length >= 3) {
+                tasteProfile[t] = (tasteProfile[t] || 0) + 1.2;
+              }
+            });
+          }
+
+          // Normalize taste profile
+          let maxWeight = 0;
+          Object.values(tasteProfile).forEach(w => { if (w > maxWeight) maxWeight = w; });
+          if (maxWeight > 0) {
+            for (const key in tasteProfile) { tasteProfile[key] = tasteProfile[key] / maxWeight; }
+          }
+        } catch (err) {
+          console.error("[Personalized Feed] Taste profile build error:", err);
+        }
+
+        // Followed users' liked images: social proof boost
+        // Build a set of imageIds that people you follow have liked
+        const followLikedImageIds = new Set();
+        if (followingUids.size > 0) {
+          likesRes.rows.forEach(like => {
+            if (followingUids.has(like.userUid)) {
+              followLikedImageIds.add(like.imageId);
+            }
+          });
+        }
+
+        const hasProfile = Object.keys(tasteProfile).length > 0;
+        const now = Date.now();
+
+        // Parse search terms for metadata matching
+        const searchWords = searchTerms ? searchTerms.split(',').map(t => t.trim().toLowerCase()).filter(t => t.length >= 3) : [];
+
+        // Score all images
+        const scoredImages = allImagesRes.rows.map(row => {
+          let fl = []; let co = [];
+          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
+          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+
+          // 1. Taste affinity score
+          let tasteScore = 0;
+          if (hasProfile) {
+            fl.forEach(f => { if (tasteProfile[f]) tasteScore += tasteProfile[f]; });
+            co.forEach(c => { if (tasteProfile[c]) tasteScore += tasteProfile[c]; });
+            tasteScore = Math.min(tasteScore, 3.0);
+          }
+
+          // 2. Follow boost (direct follow)
+          let followBoost = followingUids.has(row.uploaderUid) ? 2.0 : 0;
+
+          // 3. Social proof: images liked by people you follow
+          let socialProof = followLikedImageIds.has(row.id) ? 1.5 : 0;
+
+          // 4. Search intent: match search history against image metadata
+          let searchBoost = 0;
+          if (searchWords.length > 0) {
+            const candidateText = `${row.title || ''} ${row.description || ''} ${row.location || ''} ${fl.join(' ')} ${co.join(' ')}`.toLowerCase();
+            searchWords.forEach(word => {
+              if (candidateText.includes(word)) searchBoost += 0.8;
+            });
+            searchBoost = Math.min(searchBoost, 2.0);
+          }
+
+          // 5. Recency
+          const uploadedAt = row.uploadedAt ? new Date(row.uploadedAt).getTime() : now;
+          const ageInHours = (now - uploadedAt) / (1000 * 60 * 60);
+          let recencyScore = 0;
+          if (ageInHours < 1) recencyScore = 3.0;
+          else if (ageInHours < 6) recencyScore = 2.0;
+          else if (ageInHours < 24) recencyScore = 1.5;
+          else if (ageInHours < 72) recencyScore = 0.8;
+          else recencyScore = 0.3;
+
+          // 6. Popularity
+          const popularity = Math.min(((row.likeCount || 0) * 0.15 + (row.downloadCount || 0) * 0.05), 2.0);
+
+          // 7. Discovery randomness
+          const randomFactor = Math.random() * 1.5;
+
+          const totalScore = (tasteScore * 4.0) + (followBoost * 2.0) + (socialProof * 2.0) + (searchBoost * 3.0) + (recencyScore * 2.0) + popularity + randomFactor;
+
+          return {
+            image: {
+              id: row.id,
+              imageUrl: row.imageUrl,
+              uploaderUid: row.uploaderUid,
+              uploaderName: row.uploaderName,
+              uploaderPhotoURL: row.uploaderPhotoURL || '',
+              title: row.title || '',
+              description: row.description || '',
+              license: row.license,
+              licenseUrl: row.licenseUrl || '',
+              originalWorkUrl: row.originalWorkUrl || '',
+              uploadedAt: row.uploadedAt,
+              location: row.location || '',
+              likeCount: parseInt(row.likeCount || 0),
+              downloadCount: parseInt(row.downloadCount || 0),
+              flags: fl,
+              aiConcepts: co,
+              likedBy: likesMap[row.id] || [],
+            },
+            score: totalScore
+          };
+        });
+
+        scoredImages.sort((a, b) => b.score - a.score);
+        const images = scoredImages.map(item => item.image);
+
+        return Response.json({ success: true, images, personalized: true }, { status: 200, headers: cacheHeaders });
+      }
+
       let imagesQuery = "SELECT * FROM images ORDER BY uploadedAt DESC";
       let imagesArgs = [];
 
