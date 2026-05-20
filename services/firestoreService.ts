@@ -89,6 +89,7 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
     let active = true;
 
     const poll = async () => {
+        if (document.visibilityState !== 'visible') return;
         try {
             const { images } = await getImagesFromFirestore();
             if (active) {
@@ -100,11 +101,19 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
     };
 
     poll();
-    const interval = setInterval(poll, 30000); // Polling reduced to every 30 seconds to avoid Cloudflare 503 limits
+    const interval = setInterval(poll, 60000); // Poll every 60 seconds when active
+
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            poll();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
         active = false;
         clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
 };
 
@@ -113,6 +122,7 @@ export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) =
     let active = true;
 
     const poll = async () => {
+        if (document.visibilityState !== 'visible') return;
         try {
             const response = await fetch(`/api/images?action=get_single&imageId=${imageId}`);
             if (!response.ok) {
@@ -132,11 +142,19 @@ export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) =
     };
 
     poll();
-    const interval = setInterval(poll, 15000); // Poll every 15 seconds for single image
+    const interval = setInterval(poll, 30000); // Poll every 30 seconds when active
+
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            poll();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
         active = false;
         clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
 };
 
@@ -232,6 +250,7 @@ export const getNotificationsForUser = (userId: string, callback: (notifications
     let active = true;
 
     const poll = async () => {
+        if (document.visibilityState !== 'visible') return;
         try {
             const response = await fetch(`/api/notifications?userId=${userId}`);
             const data = await response.json();
@@ -248,11 +267,19 @@ export const getNotificationsForUser = (userId: string, callback: (notifications
     };
 
     poll();
-    const interval = setInterval(poll, 10000); // Poll every 10 seconds
+    const interval = setInterval(poll, 45000); // Poll every 45 seconds when active
+
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            poll();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
         active = false;
         clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
 };
 

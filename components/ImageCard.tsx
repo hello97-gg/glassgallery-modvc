@@ -26,8 +26,43 @@ const HeartIconOutline = () => (
 
 const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfile, onLikeToggle, className = '' }) => {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [imageSrc, setImageSrc] = useState(image.imageUrl);
   const [isLikeAnimating, setIsLikeAnimating] = useState(false);
   const [revealed, setRevealed] = useState(false);
+
+  const imgRef = React.useRef<HTMLImageElement>(null);
+
+  React.useEffect(() => {
+    setImageSrc(image.imageUrl);
+    setHasError(false);
+    setRetryCount(0);
+    setIsLoaded(false);
+
+    // If browser already has it cached and completed, skip loading indicator immediately
+    const checkComplete = () => {
+      if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+        setIsLoaded(true);
+      }
+    };
+
+    checkComplete();
+    const timeout = setTimeout(checkComplete, 50); // Frame backup check
+    return () => clearTimeout(timeout);
+  }, [image.imageUrl]);
+
+  const handleImageError = () => {
+    if (retryCount < 3) {
+      setTimeout(() => {
+        setRetryCount(prev => prev + 1);
+        const separator = image.imageUrl.includes('?') ? '&' : '?';
+        setImageSrc(`${image.imageUrl}${separator}retry=${retryCount + 1}`);
+      }, 1500 * (retryCount + 1)); // Exponential backoff to give connections time to clean up
+    } else {
+      setHasError(true);
+    }
+  };
   
   const isFlagged = image.flags?.includes('Flagged');
   const combinedClassName = `block group relative bg-surface rounded-xl overflow-hidden cursor-pointer transition-transform duration-300 hover:scale-[1.03] mb-4 md:mb-6 break-inside-avoid ${className}`;
@@ -67,19 +102,32 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
       className={combinedClassName}
       onClick={handleCardClick}
     >
-      {!isLoaded && (
-        <div className="absolute inset-0 bg-gradient-to-r from-surface via-border to-surface bg-[length:200%_100%] animate-shimmer" />
+      {!isLoaded && !hasError && (
+        <div className="absolute inset-0 bg-gradient-to-r from-surface via-border/50 to-surface bg-[length:200%_100%] animate-shimmer flex items-center justify-center min-h-[150px]">
+          <div className="w-5 h-5 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
+        </div>
       )}
       
       {/* Anchor tag wraps the image for proper Google Images indexation */}
       <a href={`/image/${image.id}`} className="block w-full h-full" onClick={(e) => e.preventDefault()}>
-        <img
-          src={image.imageUrl}
-          alt={image.title || "Image on Glass Gallery"}
-          className={`w-full h-auto min-h-[150px] object-cover transition-all duration-500 ease-in-out ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
-          loading="lazy"
-          onLoad={() => setIsLoaded(true)}
-        />
+        {hasError ? (
+          <div className="w-full min-h-[150px] aspect-[4/3] bg-gradient-to-br from-neutral-800 to-neutral-900 flex flex-col items-center justify-center p-4 text-center border border-white/5">
+            <svg className="w-8 h-8 text-neutral-600 mb-2" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+            </svg>
+            <span className="text-[10px] text-neutral-500 font-medium">Image temporarily unavailable</span>
+          </div>
+        ) : (
+          <img
+            ref={imgRef}
+            src={imageSrc}
+            alt={image.title || "Image on Glass Gallery"}
+            className={`w-full h-auto min-h-[150px] object-cover scale-[1.05] transition-all duration-500 ease-in-out ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
+            loading="lazy"
+            onLoad={() => setIsLoaded(true)}
+            onError={handleImageError}
+          />
+        )}
       </a>
 
       {isFlagged && !revealed && (

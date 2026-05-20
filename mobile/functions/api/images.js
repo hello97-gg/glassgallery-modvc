@@ -9,6 +9,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
 };
 
+const cacheHeaders = {
+  ...corsHeaders,
+  'Cache-Control': 'public, max-age=15, s-maxage=60'
+};
+
 export async function onRequest(context) {
   const request = context.request;
   const env = context.env;
@@ -105,7 +110,7 @@ export async function onRequest(context) {
           likedBy: likedBy
         };
 
-        return Response.json({ success: true, image }, { status: 200, headers: corsHeaders });
+        return Response.json({ success: true, image }, { status: 200, headers: cacheHeaders });
       }
 
       if (action === 'suggestions') {
@@ -347,7 +352,7 @@ export async function onRequest(context) {
         scoredImages.sort((a, b) => b.score - a.score);
         const suggestions = scoredImages.map(item => item.image).slice(0, 12);
 
-        return Response.json({ success: true, images: suggestions }, { status: 200, headers: corsHeaders });
+        return Response.json({ success: true, images: suggestions }, { status: 200, headers: cacheHeaders });
       }
 
       let imagesQuery = "SELECT * FROM images ORDER BY uploadedAt DESC";
@@ -397,7 +402,7 @@ export async function onRequest(context) {
         };
       });
 
-      return Response.json({ success: true, images }, { status: 200, headers: corsHeaders });
+      return Response.json({ success: true, images }, { status: 200, headers: cacheHeaders });
     }
 
     // --- POST Method: Upload, Edit, Like, Download, Delete ---

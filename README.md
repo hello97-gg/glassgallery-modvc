@@ -61,15 +61,36 @@ Glass Gallery is a modern, aesthetically pleasing image sharing platform built w
     npm run dev
     ```
 
-### Local Network and Mobile Testing
+### Development Shortcuts
 
-To test the application on mobile devices or other computers on the same local network, run the development server using:
+Use the following commands during development:
 
-```bash
-npm run dev
-```
+* **Start Dev Server (Local Network Enabled):**
+  ```bash
+  npm run dev
+  ```
+  This runs the wrangler pages dev server bound to all network interfaces on port 8788. You can access it locally or from your mobile device/testing clients on your local network at `http://192.168.0.209:8788`.
 
-This binds the server to all network interfaces on port 8788. You can then access the platform on your phone or tablet using your computer's local IP address, for example: `http://192.168.0.209:8788`.
+* **Production Web Build:**
+  ```bash
+  npm run build
+  ```
+  Compiles the React, TypeScript, and Vite frontend into optimized static assets in the dist directory.
+
+* **Capacitor Mobile Sync:**
+  ```bash
+  cd mobile
+  npm run build
+  npx cap sync
+  ```
+  Builds the mobile frontend assets and syncs them directly to the native Android platform wrappers.
+
+* **Run Android App:**
+  ```bash
+  cd mobile
+  npx cap run android
+  ```
+  Syncs the latest assets and boots the Android application directly on a connected device or emulator.
 
 ## Public API
 

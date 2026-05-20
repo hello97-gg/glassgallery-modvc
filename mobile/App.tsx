@@ -1080,8 +1080,11 @@ const App: React.FC = () => {
         <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#0a0a0a]/95 border-b border-white/5 flex items-center justify-between px-5 backdrop-blur-md md:hidden select-none">
           {/* Left Side: Logo & App Name */}
           <div className="flex items-center gap-2" onClick={() => handleSetView('home')}>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-red-600 to-amber-500 flex items-center justify-center shadow-md">
-              <span className="text-white font-extrabold text-sm font-sans">G</span>
+            <div className="w-8 h-8 bg-gradient-to-tr from-red-600 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/10">
+              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M19 10V19C19 20.1 18.1 21 17 21H7C5.9 21 5 20.1 5 19V10"/>
+                <path d="M12 2L2 9L12 16L22 9L12 2Z" fill="currentColor"/>
+              </svg>
             </div>
             <span className="text-white font-bold tracking-tight text-lg">Glass Gallery</span>
           </div>

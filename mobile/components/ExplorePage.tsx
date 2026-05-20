@@ -17,11 +17,37 @@ interface ExplorePageProps {
 }
 
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
   return (
     <div onClick={onClick} className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1">
-      <img src={image.imageUrl} alt={flag} className="w-full h-full object-cover transition-transform duration-500 ease-in-out group-hover:scale-110" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex items-end justify-start p-4">
-        <h2 className="text-white text-xl font-bold tracking-tight">{flag}</h2>
+      {/* Loading Shimmer / Spinner */}
+      {!isLoaded && !hasError && (
+        <div className="absolute inset-0 bg-[#121212] flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Fallback for Broken Images */}
+      {hasError ? (
+        <div className="absolute inset-0 bg-gradient-to-br from-neutral-800 to-neutral-900 flex flex-col items-center justify-center p-4 border border-white/5">
+          <svg className="w-8 h-8 text-neutral-600 mb-1" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+        </div>
+      ) : (
+        <img 
+          src={image.imageUrl} 
+          alt={flag} 
+          className={`w-full h-full object-cover transition-all duration-500 ease-in-out group-hover:scale-110 ${isLoaded ? 'opacity-100' : 'opacity-0'}`} 
+          onLoad={() => setIsLoaded(true)}
+          onError={() => setHasError(true)}
+        />
+      )}
+
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent flex items-end justify-start p-4">
+        <h2 className="text-white text-base md:text-xl font-bold tracking-tight truncate w-full">{flag}</h2>
       </div>
     </div>
   );
