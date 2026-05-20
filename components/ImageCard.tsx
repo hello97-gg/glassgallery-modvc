@@ -34,6 +34,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   const hasLiked = user && image.likedBy?.includes(user.uid);
 
   const handleProfileClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation(); // Prevent the main card's onClick from firing
     onViewProfile({
       uploaderUid: image.uploaderUid,
@@ -43,6 +44,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   };
   
   const handleLikeClick = (e: React.MouseEvent) => {
+      e.preventDefault();
       e.stopPropagation();
       setIsLikeAnimating(true);
       onLikeToggle(image);
@@ -65,20 +67,21 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
       className={combinedClassName}
       onClick={handleCardClick}
     >
-      {/* Invisible anchor link for SEO crawler indexation */}
-      <a href={`/image/${image.id}`} className="sr-only" aria-hidden="true" tabIndex={-1}>
-        View {image.title || "Image"} Details
-      </a>
       {!isLoaded && (
         <div className="absolute inset-0 bg-gradient-to-r from-surface via-border to-surface bg-[length:200%_100%] animate-shimmer" />
       )}
-      <img
-        src={image.imageUrl}
-        alt="User upload"
-        className={`w-full h-auto min-h-[150px] object-cover transition-all duration-500 ease-in-out ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
-        loading="lazy"
-        onLoad={() => setIsLoaded(true)}
-      />
+      
+      {/* Anchor tag wraps the image for proper Google Images indexation */}
+      <a href={`/image/${image.id}`} className="block w-full h-full" onClick={(e) => e.preventDefault()}>
+        <img
+          src={image.imageUrl}
+          alt={image.title || "Image on Glass Gallery"}
+          className={`w-full h-auto min-h-[150px] object-cover transition-all duration-500 ease-in-out ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
+          loading="lazy"
+          onLoad={() => setIsLoaded(true)}
+        />
+      </a>
+
       {isFlagged && !revealed && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-20 flex flex-col items-center justify-center p-3 text-center transition-all duration-300">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-500 mb-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -97,8 +100,8 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
         </div>
       )}
       {/* Hidden on mobile (md:flex) to avoid sticky hover states. Added z-10 to ensure clicks are captured. */}
-      <div className={`absolute inset-0 z-10 bg-gradient-to-t from-black/60 to-transparent hidden md:flex items-end justify-between p-3 transition-opacity duration-300 ${isLoaded && (!isFlagged || revealed) ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}>
-        <button onClick={handleProfileClick} className="flex items-center space-x-2 group/profile hover:scale-105 transition-transform z-20">
+      <div className={`absolute inset-0 z-10 pointer-events-none bg-gradient-to-t from-black/60 to-transparent hidden md:flex items-end justify-between p-3 transition-opacity duration-300 ${isLoaded && (!isFlagged || revealed) ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}>
+        <button onClick={handleProfileClick} className="pointer-events-auto flex items-center space-x-2 group/profile hover:scale-105 transition-transform z-20">
             <img 
                 src={image.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${image.uploaderName}&backgroundColor=ff5722,e91e63,9c27b0,673ab7,3f51b5,2196f3,03a9f4,00bcd4,009688,4caf50,8bc34a,cddc39,ffeb3b,ffc107,ff9800`}
                 className="w-6 h-6 rounded-full border-2 border-surface"
@@ -106,7 +109,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
             />
             <p className="text-white text-xs font-semibold group-hover/profile:underline">{image.uploaderName}</p>
         </button>
-        <button onClick={handleLikeClick} className="flex items-center space-x-1.5 text-white bg-black/20 backdrop-blur-sm rounded-full py-1 px-2.5 hover:text-accent hover:scale-105 transition-all z-20">
+        <button onClick={handleLikeClick} className="pointer-events-auto flex items-center space-x-1.5 text-white bg-black/20 backdrop-blur-sm rounded-full py-1 px-2.5 hover:text-accent hover:scale-105 transition-all z-20">
             <div className={isLikeAnimating ? 'animate-like-bounce' : ''}>
                 {hasLiked ? <HeartIconSolid/> : <HeartIconOutline/>}
             </div>

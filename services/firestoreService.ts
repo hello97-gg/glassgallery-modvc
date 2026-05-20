@@ -64,6 +64,9 @@ export const addImageToFirestore = async (
 export const getImagesFromFirestore = async (): Promise<{ images: ImageMeta[] }> => {
     try {
         const response = await fetch('/api/images');
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+        }
         const data = await response.json();
         if (!data.success) {
             throw new Error(data.error || "Failed to fetch images.");
@@ -97,7 +100,7 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
     };
 
     poll();
-    const interval = setInterval(poll, 8000); // Poll every 8 seconds
+    const interval = setInterval(poll, 30000); // Polling reduced to every 30 seconds to avoid Cloudflare 503 limits
 
     return () => {
         active = false;
@@ -111,10 +114,17 @@ export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) =
 
     const poll = async () => {
         try {
-            const { images } = await getImagesFromFirestore();
-            if (active) {
-                const img = images.find(i => i.id === imageId);
-                if (img) callback(img);
+            const response = await fetch(`/api/images?action=get_single&imageId=${imageId}`);
+            if (!response.ok) {
+                throw new Error(`Server returned status ${response.status}`);
+            }
+            const data = await response.json();
+            if (active && data.success && data.image) {
+                const img = {
+                    ...data.image,
+                    uploadedAt: mapTimestamp(data.image.uploadedAt)
+                } as ImageMeta;
+                callback(img);
             }
         } catch (error) {
             console.error("Error in image detail polling:", error);
@@ -122,7 +132,7 @@ export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) =
     };
 
     poll();
-    const interval = setInterval(poll, 8000);
+    const interval = setInterval(poll, 15000); // Poll every 15 seconds for single image
 
     return () => {
         active = false;
