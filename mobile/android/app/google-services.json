@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "887421330432",
+    "project_id": "primn-f0fa8",
+    "storage_bucket": "primn-f0fa8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:887421330432:android:d3b89ef3931e85d51164e5",
+        "android_client_info": {
+          "package_name": "org.modvc.glassgallery"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "887421330432-ut8erp9kijcepbpbshrm1q76eug60obu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCimK5g_RyOQd4nYw04bCatT_P1fQc9emg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "887421330432-ut8erp9kijcepbpbshrm1q76eug60obu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

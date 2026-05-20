@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getUserProfile, updateUserProfile } from './services/firestoreService';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 
@@ -20,6 +22,34 @@ import { MobileNotificationsModal } from './components/Notifications';
 import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
 import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
+import MobileAppPromo from './components/MobileAppPromo';
+
+// Global Fetch Interceptor for Capacitor Native Platform to reroute relative paths to the production API
+if (Capacitor.isNativePlatform()) {
+  const originalFetch = window.fetch;
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    let url = '';
+    if (typeof input === 'string') {
+      url = input;
+    } else if (input instanceof URL) {
+      url = input.toString();
+    } else if (input && typeof input === 'object' && 'url' in input) {
+      url = (input as any).url;
+    }
+
+    if (url.startsWith('/')) {
+      const newUrl = `https://gg.modvc.org${url}`;
+      if (typeof input === 'string') {
+        input = newUrl;
+      } else if (input instanceof URL) {
+        input = new URL(newUrl);
+      } else if (input && typeof input === 'object') {
+        input = new Request(newUrl, input as any);
+      }
+    }
+    return originalFetch(input, init);
+  };
+}
 
 // --- Favicon SVG Data URIs ---
 // Compass Icon for Explore
@@ -125,10 +155,83 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  const [allImages, setAllImages] = useState<ImageMeta[]>([]);
-  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
-  const [imagesLoading, setImagesLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Offline LocalStorage Cache Initialization (like Instagram)
+  const [allImages, setAllImages] = useState<ImageMeta[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_all_images');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_displayed_images');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [imagesLoading, setImagesLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_displayed_images');
+      return cached ? false : true;
+    } catch {
+      return true;
+    }
+  });
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_displayed_images');
+      return cached ? JSON.parse(cached).length : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  // Track network status online/offline for instant background auto-refreshes
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Caching Synchronizers to update LocalStorage dynamically when states modify
+  useEffect(() => {
+    if (allImages.length > 0) {
+      try {
+        localStorage.setItem('cached_all_images', JSON.stringify(allImages));
+      } catch (err) {
+        console.error("Failed to write to offline all-images cache:", err);
+      }
+    }
+  }, [allImages]);
+
+  useEffect(() => {
+    if (displayedImages.length > 0) {
+      try {
+        localStorage.setItem('cached_displayed_images', JSON.stringify(displayedImages));
+      } catch (err) {
+        console.error("Failed to write to offline displayed-images cache:", err);
+      }
+    }
+  }, [displayedImages]);
+
+  // Network Status Monitor
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log("Device is online! Triggering silent background feed refresh...");
+      setIsOnline(true);
+    };
+    const handleOffline = () => {
+      console.log("Device is offline. Serving content from robust local cache.");
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   
   const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
@@ -153,6 +256,7 @@ const App: React.FC = () => {
   const dragCounter = useRef(0);
   const deepLinkUnsubscribeRef = useRef<(() => void) | null>(null);
   const isLoadingMore = useRef(false);
+  const scrollPositions = useRef<Record<string, number>>({});
 
   const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -355,6 +459,56 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Native Push Notifications Hook
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const registerPush = async () => {
+      let permStatus = await PushNotifications.checkPermissions();
+      
+      if (permStatus.receive === 'prompt') {
+        permStatus = await PushNotifications.requestPermissions();
+      }
+      
+      if (permStatus.receive !== 'granted') {
+        console.warn('User denied push notifications permissions.');
+        return;
+      }
+      
+      // Create high-importance default notification channel (Required for Android 8+ headers)
+      try {
+        await PushNotifications.createChannel({
+          id: 'default',
+          name: 'General Notifications',
+          description: 'General updates and notifications',
+          importance: 5, // Urgent (Forces heads-up banners on screen)
+          visibility: 1, // Public visibility
+          sound: 'default',
+          vibration: true
+        });
+        console.log('FCM default notification channel registered.');
+      } catch (channelErr) {
+        console.error('Failed to register native channel:', channelErr);
+      }
+      
+      await PushNotifications.register();
+      
+      PushNotifications.addListener('registration', (token) => {
+        console.log('Push registration success, token:', token.value);
+      });
+      
+      PushNotifications.addListener('registrationError', (err) => {
+        console.error('Push registration error:', err);
+      });
+      
+      PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        console.log('Push notification received:', notification);
+      });
+    };
+
+    registerPush();
+  }, []);
+
   const updateURL = (params: { image?: string; user?: string; search?: string; view?: string } | null) => {
     const url = new URL(window.location.href);
     url.search = ''; 
@@ -455,7 +609,7 @@ const App: React.FC = () => {
     return () => {
         if (unsubscribe) unsubscribe();
     };
-  }, [activeView, currentUserProfile]);
+  }, [activeView, currentUserProfile, isOnline]);
 
   // Sync selectedImage
   useEffect(() => {
@@ -647,7 +801,21 @@ const App: React.FC = () => {
     }
   };
 
+  const saveScrollPosition = () => {
+      scrollPositions.current[activeView] = window.scrollY;
+  };
+
+  // Restore scroll position whenever the view changes
+  useEffect(() => {
+      const savedPosition = scrollPositions.current[activeView] || 0;
+      // Use setTimeout to ensure DOM is updated before restoring scroll
+      setTimeout(() => {
+          window.scrollTo({ top: savedPosition, behavior: 'instant' });
+      }, 10);
+  }, [activeView]);
+
   const handleViewProfile = (userToView: ProfileUser) => {
+    saveScrollPosition();
     if (activeView !== 'profile') {
         setLastView(activeView as 'home' | 'explore' | 'api');
     }
@@ -658,6 +826,7 @@ const App: React.FC = () => {
   };
 
   const handleBack = () => {
+    saveScrollPosition();
     setActiveView(lastView);
     setProfileUser(null);
     updateURL(null);
@@ -677,6 +846,7 @@ const App: React.FC = () => {
             updateURL(null);
         }
     } else {
+        saveScrollPosition();
         setActiveView(view);
         setProfileUser(null);
         setExploreSearchTerm('');
@@ -836,7 +1006,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex min-h-screen w-full bg-background text-primary font-sans">
-      <div className="hidden md:flex md:flex-shrink-0">
+      <div className="hidden md:flex md:w-20 md:flex-shrink-0">
          <Sidebar 
             user={user} 
             onCreateClick={handleCreateClick} 
@@ -948,6 +1118,8 @@ const App: React.FC = () => {
           onSkip={handleOnboardingSkip}
         />
       )}
+
+      <MobileAppPromo />
     </div>
   );
 };

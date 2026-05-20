@@ -1,0 +1,38 @@
+{
+  "name": "glass-gallery-android",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "sync": "npx cap sync",
+    "open:android": "npx cap open android",
+    "android": "npx cap run android"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.943.0",
+    "@capacitor-firebase/authentication": "^6.1.0",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/camera": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/geolocation": "^6.0.2",
+    "@capacitor/push-notifications": "^6.0.2",
+    "@cf-wasm/photon": "^0.1.0",
+    "@google/genai": "^1.29.1",
+    "@libsql/client": "^0.17.3",
+    "browser-image-compression": "^2.0.2",
+    "firebase": "^12.6.0",
+    "jigsawstack": "^0.3.7",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

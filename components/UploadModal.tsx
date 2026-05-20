@@ -8,6 +8,9 @@ import Button from './Button';
 import Spinner from './Spinner';
 import LocationPicker from './LocationPicker';
 import imageCompression from 'browser-image-compression';
+import { Capacitor } from '@capacitor/core';
+import { Camera, CameraResultType } from '@capacitor/camera';
+import { Geolocation } from '@capacitor/geolocation';
 
 interface UploadModalProps {
   user: User;
@@ -100,6 +103,57 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         setError("Failed to auto-tag image. Please try again.");
     } finally {
         setIsAutoTagging(false);
+    }
+  };
+
+  const handleNativePhotoSelect = async () => {
+    if (isLoading) return;
+    try {
+      const image = await Camera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.Uri
+      });
+      
+      if (image.webPath) {
+        setIsLoading(true);
+        setLoadingMessage('Loading captured photo...');
+        const response = await fetch(image.webPath);
+        const blob = await response.blob();
+        const rawFile = new File([blob], `photo_${Date.now()}.${image.format}`, { type: `image/${image.format}` });
+        setIsLoading(false);
+        handleFileSelect(rawFile);
+      }
+    } catch (err) {
+      console.warn("User cancelled or camera failed:", err);
+    }
+  };
+
+  const handleNativeLocation = async () => {
+    try {
+      setIsLoading(true);
+      setLoadingMessage('Fetching GPS coordinates...');
+      const coordinates = await Geolocation.getCurrentPosition({
+         enableHighAccuracy: true,
+         timeout: 10000
+      });
+      const { latitude, longitude } = coordinates.coords;
+      
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+      const data = await res.json();
+      if (data && data.address) {
+        const address = data.address;
+        const shortLocation = address.city || address.town || address.village || address.suburb || address.state || data.display_name.split(',')[0];
+        const country = address.country ? `, ${address.country}` : '';
+        setLocation(`${shortLocation}${country}`);
+      } else {
+        setLocation(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+      }
+    } catch (err) {
+      console.error("Native geolocation failed:", err);
+      setError("Failed to fetch location from native GPS.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -253,7 +307,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                   <div>
                       <label className="block text-sm font-medium text-secondary mb-2">Image File</label>
                       <label 
-                          htmlFor="file-upload"
+                          htmlFor={Capacitor.isNativePlatform() ? undefined : "file-upload"}
+                          onClick={Capacitor.isNativePlatform() ? handleNativePhotoSelect : undefined}
                           onDragOver={handleDragOver}
                           onDragLeave={handleDragLeave}
                           onDrop={handleDrop}
@@ -301,16 +356,30 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                                 className="block w-full bg-background border border-border rounded-md shadow-sm py-2 pl-3 pr-10 text-primary focus:outline-none focus:ring-accent focus:border-accent" 
                                 placeholder="Tokyo, Japan" 
                             />
-                            <button 
-                                type="button"
-                                onClick={() => setShowMap(true)}
-                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-secondary hover:text-accent cursor-pointer"
-                                title="Pick on map"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                </svg>
-                            </button>
+                            {Capacitor.isNativePlatform() ? (
+                              <button 
+                                  type="button"
+                                  onClick={handleNativeLocation}
+                                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-secondary hover:text-accent cursor-pointer"
+                                  title="Get native GPS location"
+                              >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                              </button>
+                            ) : (
+                              <button 
+                                  type="button"
+                                  onClick={() => setShowMap(true)}
+                                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-secondary hover:text-accent cursor-pointer"
+                                  title="Pick on map"
+                              >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                  </svg>
+                              </button>
+                            )}
                         </div>
                      </div>
                   </div>

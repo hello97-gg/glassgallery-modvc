@@ -3,7 +3,7 @@
 
 Glass Gallery is a modern, aesthetically pleasing image sharing platform built with a focus on UI/UX, featuring a "glassmorphism" design language. Users can upload images, tag them, select licenses, and explore a community-driven gallery.
 
-## 🌟 Features
+## Features
 
 -   **Authentication:** Secure login via Google and Apple (powered by Firebase).
 -   **Image Upload:** Drag-and-drop uploads with automatic compression and optimization (Cloudflare R2).
@@ -13,7 +13,7 @@ Glass Gallery is a modern, aesthetically pleasing image sharing platform built w
 -   **Social:** Like system, view counters, and social sharing with OG meta tags.
 -   **Responsive:** Fully mobile-optimized with a dedicated bottom navigation bar.
 
-## 🛠 Tech Stack
+## Tech Stack
 
 -   **Frontend:** React 19, TypeScript, Vite
 -   **Styling:** Tailwind CSS
@@ -21,7 +21,7 @@ Glass Gallery is a modern, aesthetically pleasing image sharing platform built w
 -   **Image Hosting:** Cloudflare R2 (S3-compatible)
 -   **Maps:** Leaflet / OpenStreetMap
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -61,7 +61,17 @@ Glass Gallery is a modern, aesthetically pleasing image sharing platform built w
     npm run dev
     ```
 
-## 🌐 Public API
+### Local Network and Mobile Testing
+
+To test the application on mobile devices or other computers on the same local network, run the development server using:
+
+```bash
+npm run dev
+```
+
+This binds the server to all network interfaces on port 8788. You can then access the platform on your phone or tablet using your computer's local IP address, for example: `http://192.168.0.209:8788`.
+
+## Public API
 
 Glass Gallery provides a free, public API for developers to fetch random images from the platform.
 
@@ -104,7 +114,7 @@ curl "https://glassgallery.vercel.app/api/random?category=Nature&limit=5"
 }
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Firebase Setup
 1.  Create a project at [firebase.google.com](https://firebase.google.com).
@@ -126,7 +136,7 @@ service cloud.firestore {
 }
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
@@ -136,6 +146,6 @@ Contributions are what make the open source community such an amazing place to l
 4.  Push to the Branch (`git push origin feature/AmazingFeature`)
 5.  Open a Pull Request
 
-## 📄 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.

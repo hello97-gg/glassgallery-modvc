@@ -1,0 +1,18 @@
+{
+  "appId": "org.modvc.glassgallery",
+  "appName": "Glass Gallery",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["google.com", "apple.com"]
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

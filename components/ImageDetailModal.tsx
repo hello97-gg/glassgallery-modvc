@@ -662,6 +662,22 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
           {/* Details Pane */}
           <div className="p-6 flex flex-col space-y-5">
+            {/* Pinterest Mobile App Promo Banner */}
+            {(!((window as any).Capacitor?.isNativePlatform?.()) && (window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobi/i.test(navigator.userAgent))) && (
+              <div className="bg-gradient-to-r from-red-600 to-rose-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between gap-3 mb-2 animate-fade-in">
+                <div className="flex-1">
+                  <h4 className="font-bold text-sm">Glass Gallery App</h4>
+                  <p className="text-[11px] text-white/90 leading-tight">Get the full experience with high-speed uploads, native GPS coordinates, and offline browsing!</p>
+                </div>
+                <a 
+                  href="https://cdn.modvc.org/GlassGallery.apk" 
+                  className="px-4 py-2 bg-white text-red-600 hover:bg-white/90 text-xs font-bold rounded-full transition-all flex-shrink-0 shadow-md active:scale-95"
+                >
+                  Open App
+                </a>
+              </div>
+            )}
+
             {/* Uploader Profile Row */}
             <button 
               onClick={handleProfileClick} 
@@ -743,17 +759,26 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               ))}
             </div>
           ) : displayRelated.length > 0 ? (
-            <div className="columns-2 sm:columns-3 gap-4 animate-fade-in">
+            <div className="columns-2 gap-4 animate-fade-in">
               {displayRelated.map(img => (
                 <div 
                   key={img.id}
                   onClick={() => handleSelectRelated(img)}
-                  className="break-inside-avoid mb-4 group cursor-pointer relative overflow-hidden rounded-2xl bg-background border border-border/50 hover:border-accent/40 shadow-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-md"
+                  className="break-inside-avoid mb-5 group cursor-pointer flex flex-col bg-surface border border-border/50 hover:border-accent/40 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 hover:scale-[1.03] hover:shadow-md"
                 >
-                  <img src={img.imageUrl} alt={img.title || 'Related photo'} className="w-full object-cover rounded-2xl max-h-[300px]" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-3 flex flex-col justify-end">
-                    <p className="text-sm font-semibold text-white truncate">{img.title || 'Untitled'}</p>
-                    <p className="text-xs text-white/80 truncate">by {img.uploaderName}</p>
+                  <div className="relative overflow-hidden w-full bg-background/20">
+                    <img src={img.imageUrl} alt={img.title || 'Related photo'} className="w-full object-cover max-h-[240px] transition-transform duration-500 group-hover:scale-105" />
+                  </div>
+                  <div className="p-3 flex flex-col gap-1.5 bg-surface">
+                    <p className="text-xs font-bold text-primary truncate leading-tight group-hover:text-accent transition-colors">{img.title || 'Untitled'}</p>
+                    <div className="flex items-center gap-1.5">
+                      <img 
+                        src={img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName}`} 
+                        alt={img.uploaderName} 
+                        className="w-4 h-4 rounded-full object-cover" 
+                      />
+                      <p className="text-[10px] font-medium text-secondary truncate">by {img.uploaderName}</p>
+                    </div>
                   </div>
                 </div>
               ))}
