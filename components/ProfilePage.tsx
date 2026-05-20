@@ -430,6 +430,27 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
                  </div>
              </div>
          </div>
+
+         {/* Mobile-Only App Promo Panel inside Profile Menu Info */}
+         {(!((window as any).Capacitor?.isNativePlatform?.()) && (window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobi/i.test(navigator.userAgent))) && (
+             <div className="bg-gradient-to-r from-red-600/10 to-rose-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center justify-between gap-4 mt-6 animate-fade-in">
+                 <div className="flex items-center gap-3">
+                     <div className="w-10 h-10 bg-surface border border-border/50 rounded-xl flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0">
+                         <img src="/favicon.svg" className="w-6 h-6 object-contain" alt="Glass Gallery Logo" />
+                     </div>
+                     <div>
+                         <h4 className="font-bold text-sm text-primary">Glass Gallery App</h4>
+                         <p className="text-[11px] text-secondary leading-tight">Get the full experience with high-speed uploads, native GPS coordinates, and offline browsing!</p>
+                     </div>
+                 </div>
+                 <a 
+                     href="intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://cdn.modvc.org/GlassGallery.apk;end" 
+                     className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-all flex-shrink-0 shadow-md active:scale-95"
+                 >
+                     Open App
+                 </a>
+             </div>
+         )}
       </div>
 
       {/* Pinterest-style Slide Animated Tab Bar */}
