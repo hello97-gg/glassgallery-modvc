@@ -6,6 +6,13 @@ const MobileAppPromo: React.FC = () => {
     const [isBannerVisible, setIsBannerVisible] = useState(true);
 
     useEffect(() => {
+        // Never show the promo to search engine crawlers — it blocks content and kills SEO/rich results
+        const ua = navigator.userAgent || '';
+        if (/googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebot|ia_archiver|crawl|spider|bot/i.test(ua)) {
+            setIsMobile(false);
+            return;
+        }
+
         // Check if device is mobile
         const checkMobile = () => {
             const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;

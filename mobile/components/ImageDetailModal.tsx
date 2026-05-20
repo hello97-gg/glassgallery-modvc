@@ -6,6 +6,7 @@ import { LICENSES, FLAGS } from '../constants';
 import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage } from '../services/firestoreService';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
@@ -124,6 +125,79 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoomScale, setZoomScale] = useState(1.0);
+  const [translateX, setTranslateX] = useState(0);
+  const [translateY, setTranslateY] = useState(0);
+  
+  // Touch gestures tracking references
+  const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const initialDistanceRef = React.useRef<number | null>(null);
+  const initialScaleRef = React.useRef<number>(1.0);
+  const initialTranslateRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lastTapRef = React.useRef<number>(0);
+  const isPinchingRef = React.useRef<boolean>(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      isPinchingRef.current = false;
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) {
+        // Double tap toggle
+        if (zoomScale > 1.0) {
+          setZoomScale(1.0);
+          setTranslateX(0);
+          setTranslateY(0);
+        } else {
+          setZoomScale(2.5);
+        }
+        lastTapRef.current = 0;
+        return;
+      }
+      lastTapRef.current = now;
+      
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      initialTranslateRef.current = { x: translateX, y: translateY };
+    } else if (e.touches.length === 2) {
+      isPinchingRef.current = true;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      initialDistanceRef.current = Math.sqrt(dx * dx + dy * dy);
+      initialScaleRef.current = zoomScale;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 1 && !isPinchingRef.current && zoomScale > 1.0) {
+      if (touchStartRef.current) {
+        const dx = e.touches[0].clientX - touchStartRef.current.x;
+        const dy = e.touches[0].clientY - touchStartRef.current.y;
+        
+        // Dynamic bounds based on scale to prevent panning offscreen
+        const maxBoundX = (zoomScale - 1) * window.innerWidth * 0.45;
+        const maxBoundY = (zoomScale - 1) * window.innerHeight * 0.45;
+        
+        setTranslateX(Math.max(-maxBoundX, Math.min(maxBoundX, initialTranslateRef.current.x + dx)));
+        setTranslateY(Math.max(-maxBoundY, Math.min(maxBoundY, initialTranslateRef.current.y + dy)));
+      }
+    } else if (e.touches.length === 2 && initialDistanceRef.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const currentDistance = Math.sqrt(dx * dx + dy * dy);
+      const ratio = currentDistance / initialDistanceRef.current;
+      
+      const nextScale = Math.max(1.0, Math.min(initialScaleRef.current * ratio, 4.0));
+      setZoomScale(nextScale);
+      
+      if (nextScale <= 1.01) {
+        setTranslateX(0);
+        setTranslateY(0);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartRef.current = null;
+    initialDistanceRef.current = null;
+  };
   
   const [editedTitle, setEditedTitle] = useState(image.title || '');
   const [editedDescription, setEditedDescription] = useState(image.description || '');
@@ -260,8 +334,21 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     setEditedFlags(image.flags || []);
     setRevealed(false);
     setZoomScale(1.0);
+    setTranslateX(0);
+    setTranslateY(0);
     setIsFullscreen(false);
   }, [image]);
+
+  // Sync fullscreen state to a global window property so App.tsx's single
+  // backButton listener can check it and close fullscreen before closing the modal.
+  useEffect(() => {
+    (window as any).__glassGalleryFullscreen = isFullscreen;
+    (window as any).__glassGalleryCloseFullscreen = () => setIsFullscreen(false);
+    return () => {
+      (window as any).__glassGalleryFullscreen = false;
+      (window as any).__glassGalleryCloseFullscreen = null;
+    };
+  }, [isFullscreen]);
 
   const isOwner = user?.uid === currentImage.uploaderUid;
   const hasLiked = user && currentImage.likedBy?.includes(user.uid);
@@ -799,7 +886,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       {/* Fullscreen Lightbox Theater Overlay */}
       {isFullscreen && (
         <div 
-          className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in select-none"
+          className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center overflow-hidden animate-fade-in select-none"
           onClick={() => setIsFullscreen(false)}
         >
           {/* Ambient Glassmorphic Backdrop */}
@@ -808,8 +895,12 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             style={{ backgroundImage: `url(${currentImage.imageUrl})` }}
           />
 
-          {/* Top Bar Actions */}
-          <div className="absolute top-6 left-6 right-6 z-[90] flex items-center justify-between pointer-events-none">
+          {/* Top Bar Actions with auto-fade on zoom */}
+          <div 
+            className={`absolute top-6 left-6 right-6 z-[90] flex items-center justify-between pointer-events-none transition-opacity duration-200 ${
+              zoomScale > 1.05 ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
             {/* Close Button */}
             <button
               onClick={(e) => {
@@ -872,48 +963,23 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Centered Image Container */}
+          {/* Centered Image Container with smooth touch gesture support (Pinch-to-zoom & pan) */}
           <div 
-            className="relative z-10 flex items-center justify-center w-full h-full max-w-[90vw] max-h-[85vh] overflow-hidden"
+            className="relative z-10 flex items-center justify-center w-full h-full overflow-visible touch-none"
             onClick={(e) => e.stopPropagation()}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
           >
             <img 
               src={currentImage.imageUrl} 
               alt={currentImage.title} 
-              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl transition-all duration-300 select-none pointer-events-none"
-              style={{ transform: `scale(${zoomScale})` }}
+              className="max-w-full max-h-full object-contain select-none pointer-events-none transition-shadow duration-300"
+              style={{ 
+                transform: `translate(${translateX}px, ${translateY}px) scale(${zoomScale})`,
+                transition: touchStartRef.current || initialDistanceRef.current ? 'none' : 'transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+              }}
             />
-          </div>
-
-          {/* Zoom Controls bottom-right */}
-          <div className="absolute bottom-6 right-6 z-[90] flex flex-col gap-3 pointer-events-auto">
-            {/* Zoom In */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoomScale(prev => Math.min(prev + 0.25, 3.0));
-              }}
-              className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer hover:scale-105"
-              title="Zoom In"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-
-            {/* Zoom Out */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoomScale(prev => Math.max(prev - 0.25, 1.0));
-              }}
-              className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer hover:scale-105"
-              title="Zoom Out"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
-              </svg>
-            </button>
           </div>
         </div>
       )}

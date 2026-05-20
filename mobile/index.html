@@ -122,22 +122,13 @@
       html, body {
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        scroll-behavior: smooth;
+        scroll-behavior: auto !important; /* Bypasses software delay interpolation for instant 120Hz tracking */
       }
       
       /* Target all overflow-y scroll panels in the app for momentum scrolling */
       .overflow-y-auto {
         -webkit-overflow-scrolling: touch !important;
-        scroll-behavior: smooth !important;
-        overscroll-behavior-y: contain !important;
-      }
-      
-      /* Force hardware acceleration on images and grid elements to keep GPU active during scroll */
-      img, .break-inside-avoid {
-        transform: translateZ(0);
-        backface-visibility: hidden;
-        perspective: 1000px;
-        will-change: transform;
+        scroll-behavior: auto !important; /* Bypasses software delay interpolation */
       }
     </style>
 </head>

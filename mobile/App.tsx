@@ -6,6 +6,7 @@ import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { Share } from '@capacitor/share';
 import { SendIntent } from '@supernotes/capacitor-send-intent';
 import { Filesystem } from '@capacitor/filesystem';
@@ -156,8 +157,8 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
   };
 };
 
-const CURRENT_VERSION_CODE = 5;
-const CURRENT_VERSION_NAME = "1.0.4";
+const CURRENT_VERSION_CODE = 6;
+const CURRENT_VERSION_NAME = "1.0.5";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -615,10 +616,10 @@ const App: React.FC = () => {
         return;
       }
       
-      // Create high-importance default notification channel (Required for Android 8+ headers)
+      // Create high-importance push notification channel (Required for Android 8+ headers)
       try {
         await PushNotifications.createChannel({
-          id: 'default',
+          id: 'glassgallery_alerts',
           name: 'General Notifications',
           description: 'General updates and notifications',
           importance: 5, // Urgent (Forces heads-up banners on screen)
@@ -626,9 +627,24 @@ const App: React.FC = () => {
           sound: 'default',
           vibration: true
         });
-        console.log('FCM default notification channel registered.');
+        console.log('FCM high-priority notification channel registered.');
       } catch (channelErr) {
         console.error('Failed to register native channel:', channelErr);
+      }
+
+      // Also create a local notification channel for foreground re-display
+      try {
+        await LocalNotifications.createChannel({
+          id: 'glassgallery_local',
+          name: 'Glass Gallery Alerts',
+          description: 'Foreground notification alerts',
+          importance: 5,
+          visibility: 1,
+          sound: 'default',
+          vibration: true
+        });
+      } catch (localChErr) {
+        console.error('Failed to create local notification channel:', localChErr);
       }
       
       await PushNotifications.register();
@@ -641,8 +657,27 @@ const App: React.FC = () => {
         console.error('Push registration error:', err);
       });
       
-      PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        console.log('Push notification received:', notification);
+      // When a push notification arrives while the app is in the foreground,
+      // Android suppresses the system banner. Re-display it as a local notification
+      // so it shows in the notification drawer with sound.
+      PushNotifications.addListener('pushNotificationReceived', async (notification) => {
+        console.log('Push notification received in foreground:', notification);
+        try {
+          await LocalNotifications.schedule({
+            notifications: [{
+              title: notification.title || 'Glass Gallery',
+              body: notification.body || 'You have a new notification',
+              id: Date.now(),
+              channelId: 'glassgallery_local',
+              sound: 'default',
+              smallIcon: 'ic_notification',
+              largeIcon: 'ic_launcher',
+              extra: notification.data
+            }]
+          });
+        } catch (localErr) {
+          console.error('Failed to schedule local notification:', localErr);
+        }
       });
     };
 
@@ -1038,6 +1073,11 @@ const App: React.FC = () => {
       const listener = await CapApp.addListener('backButton', () => {
         if (!active) return;
         if (selectedImage) {
+          // If the child detail modal is currently in fullscreen zoom mode, close that first!
+          if ((window as any).__glassGalleryFullscreen && (window as any).__glassGalleryCloseFullscreen) {
+            (window as any).__glassGalleryCloseFullscreen();
+            return;
+          }
           setSelectedImage(null);
         } else if (longPressedImage) {
           setLongPressedImage(null);
