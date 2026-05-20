@@ -48,7 +48,7 @@ const MobileAppPromo: React.FC = () => {
         localStorage.setItem('mobile_banner_dismissed', 'true');
     };
 
-    const apkUrl = "https://cdn.modvc.org/GlassGallery.apk";
+    const launchUrl = "intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://cdn.modvc.org/GlassGallery.apk;end";
 
     if (!isMobile) return null;
 
@@ -58,11 +58,8 @@ const MobileAppPromo: React.FC = () => {
             {isBannerVisible && (
                 <div className="fixed top-0 left-0 w-full z-[80] bg-surface/90 backdrop-blur-md border-b border-border shadow-md py-2 px-4 flex items-center justify-between animate-fade-in">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-tr from-rose-500 to-amber-500 rounded-xl flex items-center justify-center">
-                            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                <path d="M19 10V19C19 20.1 18.1 21 17 21H7C5.9 21 5 20.1 5 19V10"/>
-                                <path d="M12 2L2 9L12 16L22 9L12 2Z" fill="currentColor"/>
-                            </svg>
+                        <div className="w-8 h-8 bg-surface border border-border/50 rounded-xl flex items-center justify-center overflow-hidden shadow-sm">
+                            <img src="/favicon.svg" className="w-5 h-5 object-contain" alt="Glass Gallery Logo" />
                         </div>
                         <div>
                             <p className="text-xs font-bold text-primary">Glass Gallery</p>
@@ -71,7 +68,7 @@ const MobileAppPromo: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                         <a 
-                            href={apkUrl}
+                            href={launchUrl}
                             className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-full transition-colors"
                         >
                             Open app
@@ -103,18 +100,15 @@ const MobileAppPromo: React.FC = () => {
                                 </svg>
                             </button>
                             
-                            <div className="w-20 h-20 bg-gradient-to-tr from-rose-500 to-amber-500 rounded-3xl mx-auto flex items-center justify-center shadow-lg shadow-rose-500/20 mb-6">
-                                <svg className="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                                    <path d="M19 10V19C19 20.1 18.1 21 17 21H7C5.9 21 5 20.1 5 19V10"/>
-                                    <path d="M12 2L2 9L12 16L22 9L12 2Z" fill="currentColor"/>
-                                </svg>
+                            <div className="w-20 h-20 bg-surface border border-border/50 rounded-3xl mx-auto flex items-center justify-center shadow-lg shadow-black/5 mb-6 overflow-hidden">
+                                <img src="/favicon.svg" className="w-12 h-12 object-contain" alt="Glass Gallery Logo" />
                             </div>
                             
                             <h2 className="text-2xl font-bold text-primary mb-2">Glass Gallery is better on the app</h2>
                             <p className="text-secondary text-sm mb-8">Continue in the app for the full experience, faster loads, and offline mode.</p>
                             
                             <a 
-                                href={apkUrl}
+                                href={launchUrl}
                                 onClick={handleDismiss}
                                 className="block w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-full text-base transition-colors"
                             >

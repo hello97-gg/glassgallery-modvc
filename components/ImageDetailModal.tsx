@@ -670,7 +670,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   <p className="text-[11px] text-white/90 leading-tight">Get the full experience with high-speed uploads, native GPS coordinates, and offline browsing!</p>
                 </div>
                 <a 
-                  href="https://cdn.modvc.org/GlassGallery.apk" 
+                  href="intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://cdn.modvc.org/GlassGallery.apk;end" 
                   className="px-4 py-2 bg-white text-red-600 hover:bg-white/90 text-xs font-bold rounded-full transition-all flex-shrink-0 shadow-md active:scale-95"
                 >
                   Open App
