@@ -93,30 +93,53 @@ async function upload() {
     console.log(`\nSaved updated configuration to public/version.json!`);
     console.log(JSON.stringify(versionData, null, 2));
 
-    const apkPath = path.join(__dirname, 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-    if (!fs.existsSync(apkPath)) {
-      throw new Error(`Could not find APK at path: ${apkPath}\nMake sure to build the APK first!`);
+    const apkPaths = [
+      path.join(__dirname, 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+      path.join(__dirname, 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      path.join(__dirname, 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk')
+    ];
+
+    let apkPath = null;
+    let latestTime = 0;
+
+    for (const p of apkPaths) {
+      if (fs.existsSync(p)) {
+        const stats = fs.statSync(p);
+        if (stats.mtimeMs > latestTime) {
+          latestTime = stats.mtimeMs;
+          apkPath = p;
+        }
+      }
     }
+
+    if (!apkPath) {
+      throw new Error(`Could not find any compiled APK inside mobile/android/app/build/outputs/apk/\nMake sure to compile your app inside Android Studio or Gradle first!`);
+    }
+
+    console.log(`\nDetected latest compiled APK at: ${apkPath}`);
+    console.log(`Last modified: ${new Date(latestTime).toLocaleString()}`);
 
     const fileStream = fs.createReadStream(apkPath);
     const fileName = 'GlassGallery.apk';
 
-    console.log(`\nUploading ${fileName} to R2...`);
+    console.log(`\nUploading ${fileName} to R2 with cache-bypass headers...`);
 
     await S3.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: fileName,
       Body: fileStream,
       ContentType: 'application/vnd.android.package-archive',
+      CacheControl: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
     }));
 
     // Also upload version.json to R2 so it is immediately served at the CDN edge!
-    console.log(`Uploading version.json to R2...`);
+    console.log(`Uploading version.json to R2 with cache-bypass headers...`);
     await S3.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: 'version.json',
       Body: JSON.stringify(versionData, null, 2),
       ContentType: 'application/json',
+      CacheControl: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
     }));
 
     console.log(`\nUpload complete!`);
