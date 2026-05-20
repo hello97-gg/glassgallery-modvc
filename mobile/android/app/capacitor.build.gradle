@@ -12,8 +12,11 @@ dependencies {
     implementation project(':capacitor-firebase-authentication')
     implementation project(':capacitor-app')
     implementation project(':capacitor-camera')
+    implementation project(':capacitor-filesystem')
     implementation project(':capacitor-geolocation')
     implementation project(':capacitor-push-notifications')
+    implementation project(':capacitor-share')
+    implementation project(':supernotes-capacitor-send-intent')
 
 }
 

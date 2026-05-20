@@ -6,6 +6,9 @@ import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { Share } from '@capacitor/share';
+import { SendIntent } from '@supernotes/capacitor-send-intent';
+import { Filesystem } from '@capacitor/filesystem';
 import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getUserProfile, updateUserProfile, markNotificationsAsRead } from './services/firestoreService';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 
@@ -19,6 +22,8 @@ import ExplorePage from './components/ExplorePage';
 import ProfilePage from './components/ProfilePage';
 import ApiDocsPage from './components/ApiDocsPage';
 import LegalModal from './components/LegalModal';
+import LegalPage from './components/LegalPage';
+import FollowersPage from './components/FollowersPage';
 import NotificationsPage from './components/NotificationsPage';
 import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
@@ -151,9 +156,41 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
   };
 };
 
+const CURRENT_VERSION_CODE = 1;
+const CURRENT_VERSION_NAME = "1.0.0";
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  // Update System States
+  const [updateInfo, setUpdateInfo] = useState<{
+    versionCode: number;
+    versionName: string;
+    apkUrl: string;
+    releaseNotes: string;
+    forceUpdate: boolean;
+  } | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+
+  const checkForUpdates = useCallback(async () => {
+    try {
+      const res = await fetch('https://cdn.modvc.org/version.json?t=' + Date.now(), {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.versionCode > CURRENT_VERSION_CODE) {
+          setUpdateInfo(data);
+          setIsUpdateModalOpen(true);
+          return true;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check for updates silently:", err);
+    }
+    return false;
+  }, []);
   
   // Offline LocalStorage Cache Initialization (like Instagram)
   const [allImages, setAllImages] = useState<ImageMeta[]>(() => {
@@ -238,13 +275,17 @@ const App: React.FC = () => {
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
 
-  // Legal Modal State
-  const [isLegalModalOpen, setLegalModalOpen] = useState(false);
+  // Legal Tab State
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'explore' | 'profile' | 'notifications' | 'api'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'explore' | 'profile' | 'notifications' | 'api' | 'followers_following' | 'legal'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'explore' | 'notifications' | 'profile' | 'api'>('home');
+  const [lastView, setLastView] = useState<'home' | 'explore' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal'>('home');
+  
+  // Standalone Follow/Unfollow view variables
+  const [followViewType, setFollowViewType] = useState<'followers' | 'following'>('followers');
+  const [followViewUid, setFollowViewUid] = useState<string>('');
+  const [followViewName, setFollowViewName] = useState<string>('');
   
   // New state for Explore search
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
@@ -259,6 +300,106 @@ const App: React.FC = () => {
 
   const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const checkShareIntent = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      const result = await SendIntent.checkSendIntentReceived();
+      console.log('SendIntent received:', result);
+      if (result && result.url) {
+        const decodedUrl = decodeURIComponent(result.url);
+        console.log('Decoded SendIntent URL:', decodedUrl);
+        
+        const isImage = result.type && result.type.startsWith('image/');
+        const hasImgExtension = decodedUrl.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i);
+        
+        if (isImage || hasImgExtension) {
+          if (!auth.currentUser) {
+            localStorage.setItem('pending_share_intent', JSON.stringify({
+              url: result.url,
+              type: result.type
+            }));
+            setLoginModalOpen(true);
+            return;
+          }
+          
+          window.scrollTo({ top: 0, behavior: 'instant' });
+          
+          const content = await Filesystem.readFile({
+            path: result.url
+          });
+          
+          const mime = result.type || 'image/jpeg';
+          const base64Url = `data:${mime};base64,${content.data}`;
+          const res = await fetch(base64Url);
+          const blob = await res.blob();
+          const filename = decodedUrl.split('/').pop() || `shared_${Date.now()}.jpg`;
+          const sharedFile = new File([blob], filename, { type: mime });
+          
+          setDroppedFile(sharedFile);
+          setUploadModalOpen(true);
+        }
+      }
+    } catch (err) {
+      console.error('Error handling send intent:', err);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      const pending = localStorage.getItem('pending_share_intent');
+      if (pending) {
+        localStorage.removeItem('pending_share_intent');
+        try {
+          const parsed = JSON.parse(pending);
+          if (parsed && parsed.url) {
+            Filesystem.readFile({ path: parsed.url }).then(async (content) => {
+              const mime = parsed.type || 'image/jpeg';
+              const base64Url = `data:${mime};base64,${content.data}`;
+              const res = await fetch(base64Url);
+              const blob = await res.blob();
+              const filename = parsed.url.split('/').pop() || `shared_${Date.now()}.jpg`;
+              const sharedFile = new File([blob], filename, { type: mime });
+              
+              setDroppedFile(sharedFile);
+              setUploadModalOpen(true);
+            }).catch(err => {
+              console.error("Failed to read pending share intent:", err);
+            });
+          }
+        } catch (e) {
+          console.error("Failed to parse pending share intent:", e);
+        }
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    
+    setTimeout(() => {
+      checkShareIntent();
+    }, 1000);
+
+    const stateListener = CapApp.addListener('appStateChange', (state) => {
+      if (state.isActive) {
+        setTimeout(() => {
+          checkShareIntent();
+        }, 500);
+      }
+    });
+
+    return () => {
+      stateListener.then(l => l.remove());
+    };
+  }, [checkShareIntent]);
+
+  // Trigger update check on startup
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      checkForUpdates();
+    }
+  }, [checkForUpdates]);
 
   // derivation of tags with at least 5 images along with up to 3 previews each
   const popularTags = useMemo(() => {
@@ -813,17 +954,43 @@ const App: React.FC = () => {
 
   const handleBack = () => {
     window.scrollTo({ top: 0, behavior: 'instant' });
+    if (activeView === 'followers_following') {
+      setActiveView('profile');
+      if (profileUser) {
+        updateURL({ user: profileUser.uploaderUid });
+      }
+      return;
+    }
+    if (activeView === 'legal') {
+      setActiveView(lastView);
+      if (lastView === 'profile' && profileUser) {
+        updateURL({ user: profileUser.uploaderUid });
+      } else {
+        updateURL(null);
+      }
+      return;
+    }
     if (activeView === 'notifications') {
       setActiveView('home');
       setLastView('home');
+      setProfileUser(null);
+      updateURL(null);
     } else {
       setActiveView(lastView);
       if (lastView === 'notifications') {
         setLastView('home');
       }
+      setProfileUser(null);
+      updateURL(null);
     }
-    setProfileUser(null);
-    updateURL(null);
+  };
+
+  const handleViewFollowList = (uid: string, type: 'followers' | 'following') => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    setLastView(activeView);
+    setFollowViewUid(uid);
+    setFollowViewType(type);
+    setActiveView('followers_following');
   };
   
   const handleSetView = (view: 'home' | 'explore' | 'notifications' | 'api') => {
@@ -858,7 +1025,8 @@ const App: React.FC = () => {
 
   const handleOpenLegal = (tab: 'terms' | 'privacy' | 'guidelines' = 'terms') => {
       setLegalModalTab(tab);
-      setLegalModalOpen(true);
+      setLoginModalOpen(false);
+      setActiveView('legal');
   };
 
   // Safe Native Android hardware back-button listener
@@ -990,6 +1158,27 @@ const App: React.FC = () => {
        return <SkeletonGrid />;
     }
     
+    if (activeView === 'followers_following') {
+        return (
+            <FollowersPage 
+                uid={followViewUid}
+                type={followViewType}
+                loggedInUser={user}
+                onBack={handleBack}
+                onUserClick={handleViewProfile}
+            />
+        );
+    }
+
+    if (activeView === 'legal') {
+        return (
+            <LegalPage 
+                initialTab={legalModalTab}
+                onBack={handleBack}
+            />
+        );
+    }
+
     if (activeView === 'profile' && profileUser) {
         return (
             <>
@@ -1012,6 +1201,7 @@ const App: React.FC = () => {
                     onLocationClick={handleLocationClick}
                     allImages={allImages}
                     onLongPress={setLongPressedImage}
+                    onViewFollowList={handleViewFollowList}
                 />
             </>
         );
@@ -1188,12 +1378,75 @@ const App: React.FC = () => {
             onOpenLegal={handleOpenLegal}
         />
       )}
-      
-      {isLegalModalOpen && (
-        <LegalModal
-            onClose={() => setLegalModalOpen(false)}
-            initialTab={legalModalTab}
-        />
+
+      {/* Premium Glassmorphic Update Modal */}
+      {isUpdateModalOpen && updateInfo && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all duration-300">
+          <div className="relative w-full max-w-md p-6 rounded-3xl bg-neutral-950/80 border border-white/10 backdrop-blur-xl shadow-2xl flex flex-col gap-6 overflow-hidden transition-all duration-200">
+            {/* Ambient glowing background circles */}
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex flex-col items-center text-center gap-3 relative z-10">
+              {/* Premium Update Icon */}
+              <div className="p-4 bg-red-500/10 text-red-500 rounded-2xl border border-red-500/20">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 animate-bounce">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-white tracking-wide">Update Available!</h2>
+              <p className="text-neutral-400 text-sm">
+                A new version of Glass Gallery is ready to download.
+              </p>
+            </div>
+
+            {/* Version comparative pill */}
+            <div className="flex items-center justify-around p-3 rounded-2xl bg-neutral-900/50 border border-white/5 text-sm font-semibold relative z-10">
+              <div className="flex flex-col items-center">
+                <span className="text-xs text-neutral-500 font-normal">Current</span>
+                <span className="text-neutral-300">v{CURRENT_VERSION_NAME}</span>
+              </div>
+              <div className="h-8 w-px bg-white/10" />
+              <div className="flex flex-col items-center">
+                <span className="text-xs text-neutral-500 font-normal">Latest</span>
+                <span className="text-red-400 font-bold">v{updateInfo.versionName}</span>
+              </div>
+            </div>
+
+            {/* Release Notes */}
+            <div className="flex flex-col gap-2 relative z-10 max-h-48 overflow-y-auto pr-1">
+              <span className="text-xs text-neutral-400 font-bold uppercase tracking-wider">What's New:</span>
+              <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 text-sm text-neutral-300 leading-relaxed font-medium">
+                {updateInfo.releaseNotes}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-3 relative z-10 w-full">
+              <button
+                onClick={() => {
+                  window.open(updateInfo.apkUrl, '_system');
+                  if (!updateInfo.forceUpdate) {
+                    setIsUpdateModalOpen(false);
+                  }
+                }}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-bold tracking-wide shadow-lg shadow-red-500/20 active:scale-95 transition-all duration-150 border border-red-400/20"
+              >
+                Download & Auto Update
+              </button>
+
+              {!updateInfo.forceUpdate && (
+                <button
+                  onClick={() => setIsUpdateModalOpen(false)}
+                  className="w-full py-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900 text-neutral-400 hover:text-white text-sm font-semibold active:scale-95 transition-all duration-150 border border-white/5"
+                >
+                  Later
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {selectedImage && (
@@ -1289,7 +1542,18 @@ const App: React.FC = () => {
               <button 
                 onClick={async () => {
                   const shareUrl = `https://gg.modvc.org/image/${longPressedImage.id}`;
-                  if (navigator.share) {
+                  if (Capacitor.isNativePlatform()) {
+                    try {
+                      await Share.share({
+                        title: longPressedImage.title || 'Glass Art',
+                        text: `Check out "${longPressedImage.title || 'Masterpiece'}" on Glass Gallery!`,
+                        url: shareUrl,
+                        dialogTitle: 'Share Artwork'
+                      });
+                    } catch (err) {
+                      console.log('Capacitor share failed or was cancelled', err);
+                    }
+                  } else if (navigator.share) {
                     try {
                       await navigator.share({
                         title: longPressedImage.title || 'Glass Art',

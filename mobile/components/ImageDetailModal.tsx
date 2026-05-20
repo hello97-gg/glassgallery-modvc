@@ -4,6 +4,8 @@ import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { LICENSES, FLAGS } from '../constants';
 import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage } from '../services/firestoreService';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
@@ -373,22 +375,33 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   };
 
   const handleShare = async () => {
-    const origin = window.location.origin;
-    const shareUrl = `${origin}/api/share?id=${currentImage.id}`;
-    const shareData = {
-        title: currentImage.title || 'Glass Gallery Image',
-        text: `Check out this image by ${currentImage.uploaderName} on Glass Gallery!`,
-        url: shareUrl
-    };
+    const origin = 'https://gg.modvc.org';
+    const shareUrl = `${origin}/image/${currentImage.id}`;
 
-    if (navigator.share) {
-        try { await navigator.share(shareData); } catch (err) { console.log("Share cancelled", err); }
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Share.share({
+          title: currentImage.title || 'Glass Gallery Artwork',
+          text: `Check out this beautiful glass art by ${currentImage.uploaderName} on Glass Gallery!`,
+          url: shareUrl,
+          dialogTitle: 'Share Artwork'
+        });
+      } catch (err) {
+        console.log("Capacitor share failed or was cancelled", err);
+      }
+    } else if (navigator.share) {
+      const shareData = {
+          title: currentImage.title || 'Glass Gallery Image',
+          text: `Check out this beautiful glass art by ${currentImage.uploaderName} on Glass Gallery!`,
+          url: shareUrl
+      };
+      try { await navigator.share(shareData); } catch (err) { console.log("Share cancelled", err); }
     } else {
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            setShareCopied(true);
-            setTimeout(() => setShareCopied(false), 2000);
-        } catch (err) { console.error("Failed to copy", err); }
+      try {
+          await navigator.clipboard.writeText(shareUrl);
+          setShareCopied(true);
+          setTimeout(() => setShareCopied(false), 2000);
+      } catch (err) { console.error("Failed to copy", err); }
     }
   };
 

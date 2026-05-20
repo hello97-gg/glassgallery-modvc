@@ -58,11 +58,8 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
   return (
     <aside className="h-screen w-20 hover:w-56 transition-all duration-300 group bg-background border-r border-border p-3 flex flex-col fixed top-0 left-0 z-30">
       <div className="flex items-center group-hover:space-x-3 p-3 mb-8">
-         <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 to-amber-500 flex-shrink-0 flex items-center justify-center shadow-md">
-            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M19 10V19C19 20.1 18.1 21 17 21H7C5.9 21 5 20.1 5 19V10"/>
-              <path d="M12 2L2 9L12 16L22 9L12 2Z" fill="currentColor"/>
-            </svg>
+         <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden">
+            <img src="/favicon.svg" className="w-6 h-6 object-contain" alt="Glass Gallery Logo" />
         </div>
         <span className="text-xl font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">{getLogoText()}</span>
       </div>

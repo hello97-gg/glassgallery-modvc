@@ -31,9 +31,27 @@ interface ProfilePageProps {
   onLocationClick?: (location: string) => void;
   allImages: ImageMeta[];
   onLongPress?: (image: ImageMeta) => void;
+  onViewFollowList?: (uid: string, type: 'followers' | 'following') => void;
+  onCheckUpdates?: () => void;
+  updateCheckLoading?: boolean;
+  updateStatusMessage?: string | null;
 }
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, onImageClick, onViewProfile, onLikeToggle, onLocationClick, allImages: cacheAllImages, onLongPress }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ 
+  user, 
+  loggedInUser, 
+  onBack, 
+  onImageClick, 
+  onViewProfile, 
+  onLikeToggle, 
+  onLocationClick, 
+  allImages: cacheAllImages, 
+  onLongPress, 
+  onViewFollowList,
+  onCheckUpdates,
+  updateCheckLoading = false,
+  updateStatusMessage = null
+}) => {
   const [profileData, setProfileData] = useState<ProfileUser>(user);
   
   // Tab Management
@@ -107,8 +125,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   };
 
   const handleOpenFollowersModal = (type: 'followers' | 'following') => {
-    setFollowersModalType(type);
-    setIsFollowersModalOpen(true);
+    if (onViewFollowList) {
+      onViewFollowList(user.uploaderUid, type);
+    } else {
+      setFollowersModalType(type);
+      setIsFollowersModalOpen(true);
+    }
   };
 
   // Single bulletproof profile loaders to reset states immediately when viewing another profile
@@ -444,6 +466,46 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
                  </div>
              </div>
          </div>
+
+         {/* Premium Glassmorphic Updates Center */}
+         {false && (
+             <div className="w-full mt-4 p-5 rounded-3xl bg-neutral-900/40 border border-white/5 backdrop-blur-md flex flex-col gap-3 relative overflow-hidden">
+                 <div className="absolute -top-10 -right-10 w-24 h-24 bg-red-500/5 rounded-full blur-2xl pointer-events-none" />
+                 <div className="flex items-center justify-between">
+                     <div className="flex items-center gap-3">
+                         <div className="p-2 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20">
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                             </svg>
+                         </div>
+                         <div>
+                             <h3 className="text-sm font-bold text-white leading-none">Glass Gallery Updates Center</h3>
+                             <span className="text-[11px] text-neutral-500 font-semibold block mt-1">Installed Version: v1.0.0</span>
+                         </div>
+                     </div>
+                     <button
+                         onClick={onCheckUpdates}
+                         disabled={updateCheckLoading}
+                         className="text-xs font-bold px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white transition-all active:scale-95 border border-white/5 disabled:opacity-50 flex items-center gap-1.5"
+                     >
+                         {updateCheckLoading ? (
+                             <>
+                                 <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                 </svg>
+                                 Checking...
+                             </>
+                         ) : 'Check for Updates'}
+                     </button>
+                 </div>
+                 {updateStatusMessage && (
+                     <div className="text-xs text-neutral-400 font-semibold px-2 py-1 rounded-lg bg-white/[0.02] border border-white/5 animate-fade-in">
+                         {updateStatusMessage}
+                     </div>
+                 )}
+             </div>
+         )}
       </div>
 
       {/* Pinterest-style Slide Animated Tab Bar */}

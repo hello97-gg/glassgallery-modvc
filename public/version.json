@@ -1,0 +1,7 @@
+{
+  "versionCode": 4,
+  "versionName": "1.0.3",
+  "apkUrl": "https://cdn.modvc.org/GlassGallery.apk",
+  "releaseNotes": "Official release with direct image share intents, silent updates engine, and new branding logo!",
+  "forceUpdate": false
+}

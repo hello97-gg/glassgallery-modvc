@@ -2,6 +2,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import readline from 'readline';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,14 +31,77 @@ const S3 = new S3Client({
   },
 });
 
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+const question = (query) => new Promise((resolve) => rl.question(query, resolve));
+
 async function upload() {
   try {
-    const apkPath = path.join(__dirname, 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-    const fileStream = fs.createReadStream(apkPath);
+    const versionJsonPath = path.join(__dirname, 'public', 'version.json');
+    let versionData = {
+      versionCode: 1,
+      versionName: "1.0.0",
+      apkUrl: `${publicDomain}/GlassGallery.apk`,
+      releaseNotes: "New dynamic version update",
+      forceUpdate: false
+    };
 
+    if (fs.existsSync(versionJsonPath)) {
+      try {
+        versionData = JSON.parse(fs.readFileSync(versionJsonPath, 'utf8'));
+      } catch (e) {
+        console.warn("Could not parse existing version.json, creating a fresh one.");
+      }
+    }
+
+    console.log("\n=== GLASS GALLERY AUTO-UPDATE BUILD SYSTEM ===");
+    console.log(`Current Version Code: ${versionData.versionCode}`);
+    console.log(`Current Version Name: ${versionData.versionName}`);
+
+    // Auto-compute defaults
+    const nextCode = versionData.versionCode + 1;
+    const parts = versionData.versionName.split('.');
+    if (parts.length === 3) {
+      parts[2] = parseInt(parts[2]) + 1;
+    } else {
+      parts.push('1');
+    }
+    const defaultNextName = parts.join('.');
+
+    // Interactive CLI questions with safe defaults
+    const newVersionNameInput = await question(`Enter new version name [${defaultNextName}]: `);
+    const newVersionName = newVersionNameInput.trim() || defaultNextName;
+
+    const newReleaseNotesInput = await question(`Enter release notes [${versionData.releaseNotes}]: `);
+    const newReleaseNotes = newReleaseNotesInput.trim() || versionData.releaseNotes;
+
+    const forceUpdateInput = await question(`Force update for this release? (y/N): `);
+    const forceUpdate = forceUpdateInput.trim().toLowerCase() === 'y';
+
+    // Update the version data block
+    versionData.versionCode = nextCode;
+    versionData.versionName = newVersionName;
+    versionData.releaseNotes = newReleaseNotes;
+    versionData.forceUpdate = forceUpdate;
+    versionData.apkUrl = `${publicDomain}/GlassGallery.apk`;
+
+    // Save version.json back to repository
+    fs.writeFileSync(versionJsonPath, JSON.stringify(versionData, null, 2), 'utf8');
+    console.log(`\nSaved updated configuration to public/version.json!`);
+    console.log(JSON.stringify(versionData, null, 2));
+
+    const apkPath = path.join(__dirname, 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
+    if (!fs.existsSync(apkPath)) {
+      throw new Error(`Could not find APK at path: ${apkPath}\nMake sure to build the APK first!`);
+    }
+
+    const fileStream = fs.createReadStream(apkPath);
     const fileName = 'GlassGallery.apk';
 
-    console.log(`Uploading ${fileName} to R2...`);
+    console.log(`\nUploading ${fileName} to R2...`);
 
     await S3.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
@@ -46,9 +110,24 @@ async function upload() {
       ContentType: 'application/vnd.android.package-archive',
     }));
 
-    console.log(`Upload complete! Download URL: ${publicDomain}/${fileName}`);
+    // Also upload version.json to R2 so it is immediately served at the CDN edge!
+    console.log(`Uploading version.json to R2...`);
+    await S3.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: 'version.json',
+      Body: JSON.stringify(versionData, null, 2),
+      ContentType: 'application/json',
+    }));
+
+    console.log(`\nUpload complete!`);
+    console.log(`Download URL: ${publicDomain}/${fileName}`);
+    console.log(`Metadata URL: ${publicDomain}/version.json`);
+    console.log(`===========================================\n`);
+
   } catch (error) {
-    console.error("Upload failed:", error);
+    console.error("\nSystem update failed:", error);
+  } finally {
+    rl.close();
   }
 }
 
