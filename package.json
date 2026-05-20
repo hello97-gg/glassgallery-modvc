@@ -20,7 +20,7 @@
     "@google/genai": "^1.29.1",
     "@libsql/client": "^0.17.3",
     "browser-image-compression": "^2.0.2",
-    "firebase": "^12.6.0",
+    "firebase": "^11.10.0",
     "jigsawstack": "^0.3.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
