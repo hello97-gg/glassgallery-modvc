@@ -2,6 +2,6 @@
   "versionCode": 5,
   "versionName": "1.0.4",
   "apkUrl": "https://cdn.modvc.org/GlassGallery.apk",
-  "releaseNotes": "Official release with live APK caching fixes and robust multi-path Android Studio builders!",
+  "releaseNotes": "Official release with fully-synchronized compiled version code 5 (v1.0.4) and auto-purging cache control!",
   "forceUpdate": false
 }
