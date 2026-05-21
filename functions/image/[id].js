@@ -159,6 +159,15 @@ export async function onRequest(context) {
       seoMetaTags
     );
 
+    // Clean up leftover default tags that conflict with our injected SEO tags
+    // 1. Remove the default canonical (we inject our own with the correct /image/xxx path)
+    indexHtml = indexHtml.replace(/\s*<!-- Canonical URL -->\s*\n\s*<link rel="canonical" href="https:\/\/gg\.modvc\.org\/" \/>\s*/g, '');
+    // 2. Remove ALL default JSON-LD scripts from the static index.html (we inject image-specific ones)
+    indexHtml = indexHtml.replace(/\s*<!-- Static JSON-LD Structured Data[^>]*-->\s*/g, '');
+    // Target only the multi-line pretty-printed defaults (the injected ones are single-line JSON.stringify)
+    indexHtml = indexHtml.replace(/<script type="application\/ld\+json">\s*\{\s*\n[\s\S]*?"@type":\s*"WebSite"[\s\S]*?<\/script>/g, '');
+    indexHtml = indexHtml.replace(/<script type="application\/ld\+json">\s*\{\s*\n[\s\S]*?"@type":\s*"Organization"[\s\S]*?<\/script>/g, '');
+
     // Inject server-rendered HTML for Googlebot (Dynamic Rendering)
     // This prevents the "Crawled - currently not indexed" issue caused by empty initial DOM
     const serverRenderedHtml = `
