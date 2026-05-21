@@ -141,8 +141,23 @@
       }
     </style>
 </head>
-  <body class="bg-background">
-    <div id="root"></div>
+  <body class="bg-background text-primary antialiased">
+    <!-- 
+      We add semantic HTML inside the root element so crawlers see meaningful 
+      content immediately before React hydrates, fixing "Crawled - currently not indexed".
+    -->
+    <div id="root">
+      <!-- SKELETON_START -->
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; font-family: system-ui, sans-serif;">
+        <h1 style="font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem;">Glass Gallery</h1>
+        <p style="font-size: 1.125rem; color: #a0a0a0; text-align: center; max-width: 600px; margin-bottom: 2rem;">
+          A modern image sharing platform. Discover, upload, and share beautiful images with a sleek glass-like interface.
+        </p>
+        <div style="width: 40px; height: 40px; border: 3px solid #383838; border-top-color: #f5c3b8; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+      </div>
+      <!-- SKELETON_END -->
+    </div>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

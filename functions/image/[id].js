@@ -155,12 +155,29 @@ export async function onRequest(context) {
     `;
 
     indexHtml = indexHtml.replace(
-      /<title>Glass Gallery<\/title>[\s\S]*?<meta name="description"[^>]*\/>/,
+      /<title>Glass Gallery<\/title>[\s\S]*?<meta name="twitter:image" content="[^"]*" \/>/,
       seoMetaTags
     );
-    indexHtml = indexHtml.replace(/<meta property="og:title" content="Glass Gallery"[^>]*\/?>/, '');
-    indexHtml = indexHtml.replace(/<meta property="og:description"[^>]*\/?>/, '');
-    indexHtml = indexHtml.replace(/<meta property="og:image" content="https:\/\/(glassgallery|gg)\.modvc\.org\/web-app-manifest[^"]*"[^>]*\/?>/, '');
+
+    // Inject server-rendered HTML for Googlebot (Dynamic Rendering)
+    // This prevents the "Crawled - currently not indexed" issue caused by empty initial DOM
+    const serverRenderedHtml = `
+      <div style="display: flex; flex-direction: column; align-items: center; padding: 2rem; background: #181818; color: #e5e5e5; min-height: 100vh; font-family: system-ui, sans-serif;">
+        <h1 style="font-size: 2rem; margin-bottom: 1rem;">${title}</h1>
+        <img src="${imageUrl}" alt="${title}" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);" />
+        <p style="margin-top: 1.5rem; max-width: 600px; text-align: center; line-height: 1.6;">${description}</p>
+        <div style="margin-top: 2rem; color: #a0a0a0;">
+          <p>By ${uploaderName}</p>
+          ${location ? `<p>Location: ${location}</p>` : ''}
+          ${tags.length > 0 ? `<p>Tags: ${tags.map(t => escapeHtml(t)).join(', ')}</p>` : ''}
+        </div>
+      </div>
+    `;
+    
+    indexHtml = indexHtml.replace(
+      /<!-- SKELETON_START -->[\s\S]*?<!-- SKELETON_END -->/, 
+      serverRenderedHtml
+    );
 
     return new Response(indexHtml, {
       status: 200,
