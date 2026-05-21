@@ -70,6 +70,53 @@ const ApiDocsPage: React.FC = () => {
             </p>
         </div>
 
+        {/* Render/Embed Endpoint Card */}
+        <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div className="flex flex-col gap-3 mb-4 relative z-10">
+                <span className="self-start px-3 py-1 rounded-md bg-blue-500/20 text-blue-400 font-bold text-sm">EMBED</span>
+                <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=render</code>
+            </div>
+            <p className="text-secondary mb-4 text-sm md:text-base relative z-10">
+                <strong>Embed images directly on any website!</strong> This endpoint returns a <code className="text-accent bg-accent/10 px-1 py-0.5 rounded">302 redirect</code> to the image CDN URL, 
+                so it works directly inside <code className="text-accent bg-accent/10 px-1 py-0.5 rounded">&lt;img src="..."&gt;</code> tags. No JavaScript required.
+            </p>
+            <div className="space-y-3 relative z-10">
+                <div>
+                    <h4 className="text-sm font-bold text-primary mb-2">Query Parameters</h4>
+                    <div className="overflow-x-auto border border-border rounded-lg w-full">
+                        <table className="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                                <tr className="border-b border-border bg-surface/50 text-xs text-secondary font-medium">
+                                    <th className="py-2 px-3">Param</th>
+                                    <th className="py-2 px-3">Type</th>
+                                    <th className="py-2 px-3">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-xs text-primary">
+                                <tr className="border-b border-border/30">
+                                    <td className="py-2 px-3 font-mono text-accent">imageId</td>
+                                    <td className="py-2 px-3 text-secondary">string</td>
+                                    <td className="py-2 px-3 text-secondary">Render a specific image by its ID.</td>
+                                </tr>
+                                <tr className="border-b border-border/30">
+                                    <td className="py-2 px-3 font-mono text-accent">category</td>
+                                    <td className="py-2 px-3 text-secondary">string</td>
+                                    <td className="py-2 px-3 text-secondary">Render a random image from this category/tag (e.g., "Nature", "Pixel Art").</td>
+                                </tr>
+                                <tr className="border-b border-border/30">
+                                    <td className="py-2 px-3 font-mono text-accent">format</td>
+                                    <td className="py-2 px-3 text-secondary">string</td>
+                                    <td className="py-2 px-3 text-secondary">Set to <code className="text-accent">"json"</code> to get image metadata instead of a redirect.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <p className="text-xs text-secondary italic">If no parameters are provided, a completely random image is returned.</p>
+            </div>
+        </div>
+
         {/* Dynamic Image Resizing Info Card */}
         <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -246,6 +293,52 @@ window.location.href = 'https://gg.modvc.org/api/images?action=download&imageId=
   src="https://cdn.modvc.org/cdn-cgi/image/width=400,height=300,fit=cover/image_name.jpg" 
   alt="Resized Image" 
 />`} 
+                />
+            </div>
+
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">HTML (Embed Image on Your Website)</h3>
+                <p className="text-secondary text-sm">Embed a Glass Gallery image directly on any webpage — no JavaScript needed.</p>
+                <CodeBlock 
+                    language="html" 
+                    code={`<!-- Embed a specific image by ID -->
+<img 
+  src="https://gg.modvc.org/api/images?action=render&imageId=img_abc123" 
+  alt="Glass Gallery Image" 
+/>
+
+<!-- Embed a random image from the "Nature" category -->
+<img 
+  src="https://gg.modvc.org/api/images?action=render&category=Nature" 
+  alt="Random Nature Photo" 
+/>
+
+<!-- Embed a completely random image -->
+<img 
+  src="https://gg.modvc.org/api/images?action=render" 
+  alt="Random Glass Gallery Image" 
+/>`} 
+                />
+            </div>
+
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">JavaScript (Fetch Image Metadata for Embed)</h3>
+                <p className="text-secondary text-sm">Get full metadata including the embed URL, page link, tags, and license info.</p>
+                <CodeBlock 
+                    language="javascript" 
+                    code={`// Get metadata for a random Nature image
+fetch('https://gg.modvc.org/api/images?action=render&category=Nature&format=json')
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      const img = data.image;
+      console.log('Title:', img.title);
+      console.log('Embed URL:', img.embedUrl);    // Direct <img> src
+      console.log('Page URL:', img.pageUrl);       // Link to Glass Gallery page
+      console.log('License:', img.license);
+      console.log('Tags:', img.tags.join(', '));
+    }
+  });`} 
                 />
             </div>
 

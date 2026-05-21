@@ -61,6 +61,80 @@ export async function onRequest(context) {
         return Response.redirect(imageUrl, 302);
       }
 
+      // --- Render/Embed: Let external websites embed images via <img src="..."> ---
+      // Usage:
+      //   By ID:       /api/images?action=render&imageId=img_xxx
+      //   By category: /api/images?action=render&category=Landscape
+      //   Random:      /api/images?action=render
+      //   JSON info:   /api/images?action=render&imageId=img_xxx&format=json
+      if (action === 'render') {
+        const category = url.searchParams.get('category') || url.searchParams.get('tag');
+        const format = url.searchParams.get('format'); // 'json' for metadata instead of redirect
+        const embedHeaders = {
+          ...corsHeaders,
+          'Cache-Control': 'public, max-age=300, s-maxage=600', // Cache 5-10 min
+        };
+
+        let targetImage = null;
+
+        if (imageId) {
+          // Render specific image by ID
+          const res = await db.execute({
+            sql: "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images WHERE id = ?",
+            args: [imageId]
+          });
+          if (res.rows.length > 0) targetImage = res.rows[0];
+        } else if (category) {
+          // Render random image from a category/tag
+          const res = await db.execute(
+            "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY uploadedAt DESC"
+          );
+          const matching = res.rows.filter(row => {
+            try {
+              const flags = row.flags ? JSON.parse(row.flags) : [];
+              return flags.some(f => f.toLowerCase() === category.toLowerCase());
+            } catch { return false; }
+          });
+          if (matching.length > 0) {
+            targetImage = matching[Math.floor(Math.random() * matching.length)];
+          }
+        } else {
+          // Render completely random image
+          const res = await db.execute(
+            "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY RANDOM() LIMIT 1"
+          );
+          if (res.rows.length > 0) targetImage = res.rows[0];
+        }
+
+        if (!targetImage) {
+          return Response.json({ success: false, error: "No image found." }, { status: 404, headers: embedHeaders });
+        }
+
+        // JSON format: return metadata + URL for programmatic use
+        if (format === 'json') {
+          let parsedFlags = [];
+          try { parsedFlags = targetImage.flags ? JSON.parse(targetImage.flags) : []; } catch {}
+          return Response.json({
+            success: true,
+            image: {
+              id: targetImage.id,
+              imageUrl: targetImage.imageUrl,
+              title: targetImage.title || '',
+              uploaderName: targetImage.uploaderName || '',
+              license: targetImage.license || 'CC0',
+              tags: parsedFlags,
+              likeCount: parseInt(targetImage.likeCount || 0),
+              downloadCount: parseInt(targetImage.downloadCount || 0),
+              embedUrl: `${url.origin}/api/images?action=render&imageId=${targetImage.id}`,
+              pageUrl: `${url.origin}/image/${targetImage.id}`,
+            }
+          }, { status: 200, headers: embedHeaders });
+        }
+
+        // Default: 302 redirect to CDN image (works directly in <img src="...">)
+        return Response.redirect(targetImage.imageUrl, 302);
+      }
+
       if (action === 'get_single') {
         const targetId = imageId;
         if (!targetId) {
