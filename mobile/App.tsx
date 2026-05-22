@@ -490,6 +490,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
+      if (currentUser) {
+        const isPasswordProvider = currentUser.providerData.some(p => p.providerId === 'password');
+        if (isPasswordProvider && !currentUser.emailVerified) {
+          auth.signOut();
+          setUser(null);
+          setAuthLoading(false);
+          return;
+        }
+      }
       setUser(currentUser);
       setAuthLoading(false);
       if (currentUser) {

@@ -18,7 +18,7 @@ import ImageDetailModal from './components/ImageDetailModal';
 import ExplorePage from './components/ExplorePage';
 import ProfilePage from './components/ProfilePage';
 import ApiDocsPage from './components/ApiDocsPage';
-import LegalModal from './components/LegalModal';
+import LegalPage from './components/LegalPage';
 import { MobileNotificationsModal } from './components/Notifications';
 import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
@@ -242,13 +242,11 @@ const App: React.FC = () => {
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
   const [isNotificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
   
-  // Legal Modal State
-  const [isLegalModalOpen, setLegalModalOpen] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'explore' | 'profile' | 'notifications' | 'api'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'explore' | 'api'>('home');
+  const [lastView, setLastView] = useState<'home' | 'explore' | 'api' | 'legal'>('home');
   
   // New state for Explore search
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
@@ -354,6 +352,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((currentUser) => {
+      if (currentUser) {
+        const isPasswordProvider = currentUser.providerData.some(p => p.providerId === 'password');
+        if (isPasswordProvider && !currentUser.emailVerified) {
+          auth.signOut();
+          setUser(null);
+          setAuthLoading(false);
+          return;
+        }
+      }
       setUser(currentUser);
       setAuthLoading(false);
       if (currentUser) {
@@ -411,6 +418,7 @@ const App: React.FC = () => {
       const userId = params.get('user');
       const searchTerm = params.get('search');
       const viewParam = params.get('view');
+      const isLegal = window.location.pathname.startsWith('/legal') || viewParam === 'legal';
 
       if (imageId) {
         if (deepLinkUnsubscribeRef.current) {
@@ -439,6 +447,11 @@ const App: React.FC = () => {
          };
          setProfileUser(profile);
          setActiveView('profile');
+      } else if (isLegal) {
+          const tab = params.get('tab') || 'terms';
+          setLegalModalTab(tab as 'terms' | 'privacy' | 'guidelines');
+          setActiveView('legal');
+          setProfileUser(null);
       } else if (viewParam === 'api') {
           setActiveView('api');
           setProfileUser(null);
@@ -513,19 +526,22 @@ const App: React.FC = () => {
     registerPush();
   }, []);
 
-  const updateURL = (params: { image?: string; user?: string; search?: string; view?: string } | null) => {
+  const updateURL = (params: { image?: string; user?: string; search?: string; view?: string; tab?: string } | null) => {
     const url = new URL(window.location.href);
     url.search = ''; 
     
     if (params?.image) {
       url.pathname = `/image/${params.image}`;
+    } else if (params?.view === 'legal') {
+      url.pathname = '/legal';
+      if (params?.tab) url.searchParams.set('tab', params.tab);
     } else {
       url.pathname = '/';
     }
     
     if (params?.user) url.searchParams.set('user', params.user);
     if (params?.search) url.searchParams.set('search', params.search);
-    if (params?.view) url.searchParams.set('view', params.view);
+    if (params?.view && params.view !== 'legal') url.searchParams.set('view', params.view);
     
     window.history.pushState({}, '', url.toString());
   };
@@ -897,8 +913,11 @@ const App: React.FC = () => {
   }
 
   const handleOpenLegal = (tab: 'terms' | 'privacy' | 'guidelines' = 'terms') => {
+      saveScrollPosition();
       setLegalModalTab(tab);
-      setLegalModalOpen(true);
+      setActiveView('legal');
+      setProfileUser(null);
+      updateURL({ view: 'legal', tab });
   };
 
   const handleImageUpdate = (updatedImage: ImageMeta) => {
@@ -971,6 +990,15 @@ const App: React.FC = () => {
                 />
                 <ApiDocsPage />
             </>
+        );
+    }
+
+    if (activeView === 'legal') {
+        return (
+            <LegalPage 
+                initialTab={legalModalTab} 
+                onBackToFeed={handleBack} 
+            />
         );
     }
 
@@ -1094,13 +1122,7 @@ const App: React.FC = () => {
             onOpenLegal={handleOpenLegal}
         />
       )}
-      
-      {isLegalModalOpen && (
-        <LegalModal
-            onClose={() => setLegalModalOpen(false)}
-            initialTab={legalModalTab}
-        />
-      )}
+
       
       {isNotificationsPanelOpen && user && (
         <MobileNotificationsModal

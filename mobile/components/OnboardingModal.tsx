@@ -32,28 +32,86 @@ export const generateSvgAvatar = (seed: string): string => {
   const c1 = `hsl(${h1}, 90%, 65%)`;
   const c2 = `hsl(${h2}, 95%, 45%)`;
   
-  // Pick a random abstract geometric style
-  const styleIdx = Math.abs(seedHash >> 4) % 3;
+  // Pick a random abstract geometric style out of 10 options
+  const styleIdx = Math.abs(seedHash >> 4) % 10;
   
   let shapes = '';
   if (styleIdx === 0) {
-    // Modern spheres/orbs
+    // Concentric glass spheres
     shapes = `
-      <circle cx="50" cy="50" r="30" fill="white" opacity="0.15" />
-      <circle cx="50" cy="50" r="20" fill="white" opacity="0.25" />
-      <circle cx="50" cy="50" r="10" fill="white" opacity="0.35" />
+      <circle cx="50" cy="50" r="32" fill="white" opacity="0.12" />
+      <circle cx="50" cy="50" r="22" fill="white" opacity="0.22" />
+      <circle cx="50" cy="50" r="12" fill="white" opacity="0.32" />
     `;
   } else if (styleIdx === 1) {
-    // Premium artistic diamond crosses
+    // Premium diamond crosses & sparkly vector star
     shapes = `
-      <path d="M50 15 L50 85 M15 50 L85 50" stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.3" />
-      <circle cx="50" cy="50" r="18" fill="white" opacity="0.2" />
+      <path d="M50 12 L50 88 M12 50 L88 50" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.25" />
+      <path d="M30 30 L70 70 M30 70 L70 30" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.15" />
+      <circle cx="50" cy="50" r="16" fill="white" opacity="0.25" />
+    `;
+  } else if (styleIdx === 2) {
+    // Overlapping cozy ribbon waves
+    shapes = `
+      <path d="M 10,50 Q 30,12 50,50 T 90,50" fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round" opacity="0.35" />
+      <path d="M 10,60 Q 30,22 50,60 T 90,60" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.2" />
+      <path d="M 10,40 Q 30,2 50,40 T 90,40" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.1" />
+    `;
+  } else if (styleIdx === 3) {
+    // Cyberpunk techno grid elements
+    shapes = `
+      <rect x="25" y="25" width="50" height="50" rx="8" fill="none" stroke="white" stroke-width="2.5" opacity="0.25" />
+      <line x1="50" y1="10" x2="50" y2="90" stroke="white" stroke-width="1" stroke-dasharray="4 4" opacity="0.3" />
+      <line x1="10" y1="50" x2="90" y2="50" stroke="white" stroke-width="1" stroke-dasharray="4 4" opacity="0.3" />
+      <circle cx="50" cy="50" r="8" fill="white" opacity="0.3" />
+    `;
+  } else if (styleIdx === 4) {
+    // Elegant Starburst Constellation
+    shapes = `
+      <circle cx="50" cy="50" r="38" fill="none" stroke="white" stroke-width="1" opacity="0.15" />
+      <circle cx="50" cy="50" r="28" fill="none" stroke="white" stroke-width="1" stroke-dasharray="3 3" opacity="0.2" />
+      <circle cx="50" cy="22" r="4" fill="white" opacity="0.4" />
+      <circle cx="50" cy="78" r="4" fill="white" opacity="0.4" />
+      <circle cx="22" cy="50" r="4" fill="white" opacity="0.4" />
+      <circle cx="78" cy="50" r="4" fill="white" opacity="0.4" />
+      <circle cx="50" cy="50" r="10" fill="white" opacity="0.3" />
+    `;
+  } else if (styleIdx === 5) {
+    // Glassmorphic Honeycomb Hexagons
+    shapes = `
+      <path d="M50 20 L76 35 L76 65 L50 80 L24 65 L24 35 Z" fill="none" stroke="white" stroke-width="2.5" stroke-linejoin="round" opacity="0.28" />
+      <path d="M50 30 L67 40 L67 60 L50 70 L33 60 L33 40 Z" fill="white" opacity="0.18" />
+      <circle cx="50" cy="50" r="6" fill="white" opacity="0.35" />
+    `;
+  } else if (styleIdx === 6) {
+    // Sacred Geometric Mandalas
+    shapes = `
+      <circle cx="50" cy="50" r="25" fill="none" stroke="white" stroke-width="2" opacity="0.2" />
+      <circle cx="35" cy="50" r="25" fill="none" stroke="white" stroke-width="1" opacity="0.15" />
+      <circle cx="65" cy="50" r="25" fill="none" stroke="white" stroke-width="1" opacity="0.15" />
+      <circle cx="50" cy="35" r="25" fill="none" stroke="white" stroke-width="1" opacity="0.15" />
+      <circle cx="50" cy="65" r="25" fill="none" stroke="white" stroke-width="1" opacity="0.15" />
+    `;
+  } else if (styleIdx === 7) {
+    // Modern perspective gridlines / Sunrise rays
+    shapes = `
+      <path d="M50 50 L10 90 M50 50 L30 90 M50 50 L50 90 M50 50 L70 90 M50 50 L90 90" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.25" />
+      <path d="M10 50 Q50 20 90 50" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.3" />
+      <circle cx="50" cy="45" r="12" fill="white" opacity="0.2" />
+    `;
+  } else if (styleIdx === 8) {
+    // Modern Crystalline Shards (overlapping triangles)
+    shapes = `
+      <polygon points="50,20 75,70 25,70" fill="none" stroke="white" stroke-width="2.5" stroke-linejoin="round" opacity="0.25" />
+      <polygon points="50,80 75,30 25,30" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round" opacity="0.15" />
+      <circle cx="50" cy="50" r="14" fill="white" opacity="0.2" />
     `;
   } else {
-    // Overlapping ribbon waves
+    // Floating Bauhaus Capsule forms
     shapes = `
-      <path d="M 15,50 Q 32,15 50,50 T 85,50" fill="none" stroke="white" stroke-width="6" stroke-linecap="round" opacity="0.4" />
-      <path d="M 15,62 Q 32,27 50,62 T 85,62" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.2" />
+      <rect x="42" y="20" width="16" height="60" rx="8" fill="white" opacity="0.15" />
+      <rect x="20" y="42" width="60" height="16" rx="8" fill="white" opacity="0.15" />
+      <circle cx="50" cy="50" r="15" fill="white" opacity="0.25" />
     `;
   }
 
@@ -216,7 +274,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   onClick={handleRegenerateAvatar}
                   className="text-xs font-semibold tracking-wide flex items-center gap-1.5 px-4 py-2 hover:scale-[1.03]"
                 >
-                  🎲 Regenerate Avatar
+                  Regenerate Avatar
                 </Button>
               </div>
 

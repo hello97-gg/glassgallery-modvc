@@ -25,7 +25,8 @@ export const auth = firebase.auth();
 export const db = firebase.firestore();
 
 const googleProvider = new firebase.auth.GoogleAuthProvider();
-const appleProvider = new firebase.auth.OAuthProvider('apple.com');
+const twitterProvider = new firebase.auth.TwitterAuthProvider();
+const githubProvider = new firebase.auth.GithubAuthProvider();
 
 export const signInWithGoogle = async () => {
   if (Capacitor.isNativePlatform()) {
@@ -42,21 +43,36 @@ export const signInWithGoogle = async () => {
   }
 };
 
-export const signInWithApple = async () => {
+export const signInWithTwitter = async () => {
   if (Capacitor.isNativePlatform()) {
      try {
-       const result = await FirebaseAuthentication.signInWithApple({});
-       const credential = firebase.auth.OAuthProvider('apple.com').credential({
-         idToken: result.credential?.idToken,
-         rawNonce: result.credential?.rawNonce
-       });
+       const result = await FirebaseAuthentication.signInWithTwitter({});
+       const credential = firebase.auth.TwitterAuthProvider.credential(
+         result.credential?.idToken,
+         result.credential?.accessToken
+       );
        return auth.signInWithCredential(credential);
      } catch (error) {
-       console.error("Native Apple Login failed:", error);
+       console.error("Native Twitter Login failed:", error);
        throw error;
      }
   } else {
-     return auth.signInWithPopup(appleProvider);
+     return auth.signInWithPopup(twitterProvider);
+  }
+};
+
+export const signInWithGithub = async () => {
+  if (Capacitor.isNativePlatform()) {
+     try {
+       const result = await FirebaseAuthentication.signInWithGithub({});
+       const credential = firebase.auth.GithubAuthProvider.credential(result.credential?.idToken);
+       return auth.signInWithCredential(credential);
+     } catch (error) {
+       console.error("Native Github Login failed:", error);
+       throw error;
+     }
+  } else {
+     return auth.signInWithPopup(githubProvider);
   }
 };
 
