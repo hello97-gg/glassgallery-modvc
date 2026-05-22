@@ -46,6 +46,7 @@ export async function onRequest(context) {
         email: row.email || '',
         bio: row.bio || '',
         onboarded: parseInt(row.onboarded || 0) === 1,
+        isVerified: parseInt(row.isVerified || 0) === 1,
         followedTags: row.followedTags ? JSON.parse(row.followedTags) : [],
         ...(includeApiKey === 'true' ? { apiKey: row.apiKey || null } : {})
       };
@@ -94,8 +95,8 @@ export async function onRequest(context) {
       if (checkRes.rows.length === 0) {
         // Insert new user
         await db.execute({
-          sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags, isVerified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             uid,
             data.uploaderName || 'Anonymous',
@@ -105,19 +106,20 @@ export async function onRequest(context) {
             data.email || '',
             data.bio || '',
             data.onboarded ? 1 : 0,
-            JSON.stringify(data.followedTags || [])
+            JSON.stringify(data.followedTags || []),
+            data.isVerified ? 1 : 0
           ]
         });
       } else {
         // Update user with dynamic fields
-        const fields = ['uploaderName', 'uploaderPhotoURL', 'backgroundImageURL', 'location', 'email', 'bio', 'onboarded', 'followedTags'];
+        const fields = ['uploaderName', 'uploaderPhotoURL', 'backgroundImageURL', 'location', 'email', 'bio', 'onboarded', 'followedTags', 'isVerified'];
         const keys = [];
         const args = [];
 
         fields.forEach(f => {
           if (data[f] !== undefined) {
             keys.push(`${f} = ?`);
-            if (f === 'onboarded') {
+            if (f === 'onboarded' || f === 'isVerified') {
               args.push(data[f] ? 1 : 0);
             } else if (f === 'followedTags') {
               args.push(JSON.stringify(data[f] || []));

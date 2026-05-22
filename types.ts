@@ -38,6 +38,7 @@ export interface ProfileUser {
   bio?: string;
   onboarded?: boolean;
   followedTags?: string[];
+  isVerified?: boolean;
 }
 
 export interface Notification {

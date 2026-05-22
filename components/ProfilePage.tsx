@@ -2,12 +2,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User } from 'firebase/auth';
 import type { ProfileUser, ImageMeta } from '../types';
-import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore } from '../services/firestoreService';
+import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore, updateUserProfile } from '../services/firestoreService';
 import ImageGrid from './ImageGrid';
 import Spinner from './Spinner';
 import Button from './Button';
 import EditProfileModal from './EditProfileModal';
 import FollowersModal from './FollowersModal';
+import CreatorDashboard from './CreatorDashboard';
 
 // Throttle utility
 const throttle = (func: (...args: any[]) => void, limit: number) => {
@@ -20,6 +21,18 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
     }
   };
 };
+
+const VerifiedBadge: React.FC<{ className?: string; onClick?: (e: React.MouseEvent) => void }> = ({ className = "h-4 w-4", onClick }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    className={`${className} text-blue-500 filter drop-shadow-[0_0_8px_rgba(59,130,246,0.6)] cursor-pointer hover:scale-110 active:scale-95 transition-all select-none animate-pulse`}
+    viewBox="0 0 24 24" 
+    fill="currentColor"
+    onClick={onClick}
+  >
+    <path fillRule="evenodd" d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.49 4.49 0 01-3.498-1.306 4.491 4.491 0 01-1.307-3.498A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497a4.49 4.49 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+  </svg>
+);
 
 interface ProfilePageProps {
   user: ProfileUser;
@@ -35,7 +48,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   const [profileData, setProfileData] = useState<ProfileUser>(user);
   
   // Tab Management
-  const [activeTab, setActiveTab] = useState<'created' | 'saved'>('created');
+  const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'dashboard'>('created');
 
   // Created/Uploads Gallery State
   const [allImages, setAllImages] = useState<ImageMeta[]>([]);
@@ -57,6 +70,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   const [followersModalType, setFollowersModalType] = useState<'followers' | 'following'>('followers');
   const [isFollowPending, setIsFollowPending] = useState(false);
   const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
+  const [showVerifiedModal, setShowVerifiedModal] = useState(false);
+
+  // Secure check: ensure we only show edit controls if logged in user matches the currently displayed profile data
+  const isOwner = loggedInUser?.uid === profileData.uploaderUid;
+
+  // Stats memoized selectors
+  const totalLikes = useMemo(() => allImages.reduce((sum, img) => sum + (img.likeCount || 0), 0), [allImages]);
+  const totalDownloads = useMemo(() => allImages.reduce((sum, img) => sum + (img.downloadCount || 0), 0), [allImages]);
 
   // Fetch Follow Stats (Uses stable user.uploaderUid to prevent any state evaluation loops!)
   const fetchFollowStats = useCallback(async () => {
@@ -131,6 +152,22 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     fetchProfile();
     return () => { mounted = false; };
   }, [user.uploaderUid]);
+
+  // Auto-equip and save Verified Creator status in DB when milestones are unlocked
+  useEffect(() => {
+    if (isOwner && !profileData.isVerified && allImages.length >= 50 && totalLikes >= 250) {
+      const autoVerify = async () => {
+        try {
+          await updateUserProfile(profileData.uploaderUid, { isVerified: true });
+          setProfileData(prev => ({ ...prev, isVerified: true }));
+          console.log("Verified Creator status successfully auto-equipped and saved in SQLite database!");
+        } catch (err) {
+          console.error("Failed to auto-equip and save Verified status:", err);
+        }
+      };
+      autoVerify();
+    }
+  }, [isOwner, profileData.isVerified, allImages.length, totalLikes, profileData.uploaderUid]);
 
   // Fetch Created/Uploaded Images
   const fetchUserImages = useCallback(async () => {
@@ -259,12 +296,6 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
       onLikeToggle(image);
   };
 
-  const totalLikes = useMemo(() => allImages.reduce((sum, img) => sum + (img.likeCount || 0), 0), [allImages]);
-  const totalDownloads = useMemo(() => allImages.reduce((sum, img) => sum + (img.downloadCount || 0), 0), [allImages]);
-  
-  // Secure check: ensure we only show edit controls if logged in user matches the currently displayed profile data
-  const isOwner = loggedInUser?.uid === profileData.uploaderUid;
-
   return (
     <div className="animate-fade-in pb-10">
       {/* Header / Banner */}
@@ -315,7 +346,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
             />
             <div className="mb-2 hidden md:block">
                 <div className="flex items-center gap-3">
-                    <h1 className="text-3xl font-bold text-primary">{profileData.uploaderName}</h1>
+                    <h1 className="text-3xl font-bold text-primary flex items-center gap-1.5">
+                      {profileData.uploaderName}
+                      {profileData.isVerified && (
+                        <VerifiedBadge className="h-6 w-6 mt-1" onClick={() => setShowVerifiedModal(true)} />
+                      )}
+                    </h1>
                     {!isOwner && loggedInUser && (
                         <button
                           onClick={handleFollowToggle}
@@ -356,7 +392,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
          <div className="md:hidden mb-2">
              <div className="flex items-center justify-between gap-3">
                  <div>
-                     <h1 className="text-2xl font-bold text-primary">{profileData.uploaderName}</h1>
+                     <h1 className="text-2xl font-bold text-primary flex items-center gap-1.5">
+                       {profileData.uploaderName}
+                       {profileData.isVerified && (
+                         <VerifiedBadge className="h-5 w-5" onClick={() => setShowVerifiedModal(true)} />
+                       )}
+                     </h1>
                      {/* Followers & Following Counts (mobile) */}
                      <div className="flex items-center gap-2 text-xs text-secondary mt-0.5">
                          <button 
@@ -477,6 +518,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
           )}
         </button>
+        {isOwner && (
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer ${
+              activeTab === 'dashboard' ? 'text-primary' : 'text-secondary hover:text-primary'
+            }`}
+          >
+            Dashboard
+            {activeTab === 'dashboard' && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
+            )}
+          </button>
+        )}
       </div>
       
       {/* Gallery Content switcher */}
@@ -502,7 +556,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
             <ImageGrid user={loggedInUser} images={displayedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} />
           </div>
         )
-      ) : (
+      ) : activeTab === 'saved' ? (
         isLoadingLikes ? (
           <div className="flex justify-center items-center py-20">
             <Spinner />
@@ -524,6 +578,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
             <ImageGrid user={loggedInUser} images={displayedLikedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} />
           </div>
         )
+      ) : (
+        <CreatorDashboard 
+          images={allImages} 
+          followersCount={followersCount} 
+          followingCount={followingCount} 
+          onImageClick={onImageClick}
+          profileUser={profileData}
+        />
       )}
 
       {isEditModalOpen && (
@@ -544,6 +606,48 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
           onUserClick={onViewProfile}
           onFollowToggleParent={fetchFollowStats}
         />
+      )}
+
+      {showVerifiedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
+          <div className="bg-surface border border-white/10 p-6 md:p-8 rounded-3xl max-w-md w-full shadow-2xl relative space-y-6 text-center select-none">
+            <button 
+              onClick={() => setShowVerifiedModal(false)}
+              className="absolute top-4 right-4 text-secondary hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <div className="flex justify-center py-4">
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                className="h-24 w-24 text-blue-500 filter drop-shadow-[0_0_20px_rgba(59,130,246,0.8)] animate-pulse"
+                viewBox="0 0 24 24" 
+                fill="currentColor"
+              >
+                <path fillRule="evenodd" d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.49 4.49 0 01-3.498-1.306 4.491 4.491 0 01-1.307-3.498A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497a4.49 4.49 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-black text-primary tracking-tight">Verified Creator</h2>
+              <span className="text-[10px] uppercase font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-full inline-block">
+                Elite Creator standing
+              </span>
+            </div>
+            <p className="text-xs text-secondary leading-relaxed max-w-sm mx-auto">
+              This badge is awarded automatically to creators who have reached our Gold & Artisan Milestone requirements of <strong className="text-white">50+ published images</strong> and over <strong className="text-white">250+ community likes</strong>. Thank you for contributing your premium creations to the Glass Gallery catalog!
+            </p>
+            <div className="pt-2">
+              <button 
+                onClick={() => setShowVerifiedModal(false)}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all cursor-pointer active:scale-95"
+              >
+                Acknowledge Milestone
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
