@@ -162,6 +162,15 @@ export async function onRequest(context) {
     indexHtml = indexHtml.replace(/<meta property="og:description"[^>]*\/?>/, '');
     indexHtml = indexHtml.replace(/<meta property="og:image" content="https:\/\/(glassgallery|gg)\.modvc\.org\/web-app-manifest[^"]*"[^>]*\/?>/, '');
 
+    // Clean up leftover default tags that conflict with our injected SEO tags
+    // 1. Remove the default canonical (we inject our own with the correct /image/xxx path)
+    indexHtml = indexHtml.replace(/\s*<!-- Canonical URL -->\s*\r?\n?\s*<link\s+rel=["']canonical["']\s+href=["']https:\/\/gg\.modvc\.org\/?["']\s*\/?>/i, '');
+    
+    // 2. Remove ALL default JSON-LD scripts from the static index.html
+    indexHtml = indexHtml.replace(/\s*<!-- Static JSON-LD Structured Data[^>]*-->\s*/gi, '');
+    indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']WebSite["'][\s\S]*?<\/script>/gi, '');
+    indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']Organization["'][\s\S]*?<\/script>/gi, '');
+
     return new Response(indexHtml, {
       status: 200,
       headers: {

@@ -329,12 +329,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
       // Call parent to handle Firestore and App-wide state
       onLikeToggle(image);
   };
-
-  const totalLikes = useMemo(() => allImages.reduce((sum, img) => sum + (img.likeCount || 0), 0), [allImages]);
   const totalDownloads = useMemo(() => allImages.reduce((sum, img) => sum + (img.downloadCount || 0), 0), [allImages]);
-  
-  // Secure check: ensure we only show edit controls if logged in user matches the currently displayed profile data
-  const isOwner = loggedInUser?.uid === profileData.uploaderUid;
 
   return (
     <div className="animate-fade-in pb-10">

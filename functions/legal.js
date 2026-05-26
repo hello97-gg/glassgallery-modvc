@@ -79,10 +79,10 @@ export async function onRequest(context) {
   );
 
   // Clean up duplicate default canonical & JSON-LD
-  indexHtml = indexHtml.replace(/\s*<!-- Canonical URL -->\s*\n\s*<link rel="canonical" href="https:\/\/gg\.modvc\.org\/" \/>\s*/g, '');
-  indexHtml = indexHtml.replace(/\s*<!-- Static JSON-LD Structured Data[^>]*-->\s*/g, '');
-  indexHtml = indexHtml.replace(/<script type="application\/ld\+json">\s*\{\s*\n[\s\S]*?"@type":\s*"WebSite"[\s\S]*?<\/script>/g, '');
-  indexHtml = indexHtml.replace(/<script type="application\/ld\+json">\s*\{\s*\n[\s\S]*?"@type":\s*"Organization"[\s\S]*?<\/script>/g, '');
+  indexHtml = indexHtml.replace(/\s*<!-- Canonical URL -->\s*\r?\n?\s*<link\s+rel=["']canonical["']\s+href=["']https:\/\/gg\.modvc\.org\/?["']\s*\/?>/i, '');
+  indexHtml = indexHtml.replace(/\s*<!-- Static JSON-LD Structured Data[^>]*-->\s*/gi, '');
+  indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']WebSite["'][\s\S]*?<\/script>/gi, '');
+  indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']Organization["'][\s\S]*?<\/script>/gi, '');
 
   // Render highly-premium, glassmorphic layout inside the skeleton
   const styledLegalHtml = `
