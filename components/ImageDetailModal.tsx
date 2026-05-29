@@ -1,9 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { User } from 'firebase/auth';
-import type { ImageMeta, ProfileUser } from '../types';
+import type { ImageMeta, ProfileUser, Comment } from '../types';
 import { LICENSES, FLAGS } from '../constants';
-import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage } from '../services/firestoreService';
+import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage, getCommentsForImage, addCommentToImage, toggleCommentLike } from '../services/firestoreService';
 import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
@@ -19,6 +19,7 @@ interface ImageDetailModalProps {
   onLikeToggle: (image: ImageMeta) => void;
   onLocationClick?: (location: string) => void;
   onSelectImage?: (image: ImageMeta) => void;
+  onLoginClick: () => void;
 }
 
 const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -226,10 +227,240 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   onImageDelete, 
   onLikeToggle, 
   onLocationClick,
-  onSelectImage
+  onSelectImage,
+  onLoginClick
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Comments states
+  const [flatComments, setFlatComments] = useState<Comment[]>([]);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+
+  // Load comments
+  const loadComments = async () => {
+    if (!currentImage?.id) return;
+    setIsLoadingComments(true);
+    try {
+      const data = await getCommentsForImage(currentImage.id);
+      setFlatComments(data);
+    } catch (err) {
+      console.error("Failed to load comments:", err);
+    } finally {
+      setIsLoadingComments(false);
+    }
+  };
+
+  const handleCommentLikeToggle = async (commentId: string) => {
+    if (!user) {
+      onLoginClick();
+      return;
+    }
+    
+    // Optimistic UI update
+    setFlatComments(prev => prev.map(c => {
+      if (c.id === commentId) {
+        const isLiked = c.likedBy?.includes(user.uid);
+        return {
+          ...c,
+          likeCount: isLiked ? Math.max(0, (c.likeCount || 0) - 1) : (c.likeCount || 0) + 1,
+          likedBy: isLiked ? (c.likedBy || []).filter(uid => uid !== user.uid) : [...(c.likedBy || []), user.uid]
+        };
+      }
+      return c;
+    }));
+
+    try {
+      await toggleCommentLike(commentId, user.uid);
+    } catch (err) {
+      console.error("Failed to toggle comment like:", err);
+      // Optional: rollback on error, but for comments a silent fail is usually fine.
+    }
+  };
+
+  useEffect(() => {
+    loadComments();
+    setReplyToId(null);
+    setReplyText('');
+    setNewCommentText('');
+  }, [currentImage.id]);
+
+  const treeComments = React.useMemo(() => {
+    const commentMap: Record<string, Comment & { replies: Comment[] }> = {};
+    const roots: Comment[] = [];
+
+    // Initialize map
+    flatComments.forEach(comment => {
+      commentMap[comment.id] = { ...comment, replies: [] };
+    });
+
+    // Build hierarchy
+    flatComments.forEach(comment => {
+      const mappedComment = commentMap[comment.id];
+      if (comment.parentId && commentMap[comment.parentId]) {
+        commentMap[comment.parentId].replies.push(mappedComment);
+      } else {
+        roots.push(mappedComment);
+      }
+    });
+
+    // Sort root comments: newest first (descending)
+    roots.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Recursively sort replies: oldest first (ascending)
+    const sortRepliesRecursive = (c: Comment) => {
+      if (c.replies && c.replies.length > 0) {
+        c.replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        c.replies.forEach(sortRepliesRecursive);
+      }
+    };
+    roots.forEach(sortRepliesRecursive);
+
+    return roots;
+  }, [flatComments]);
+
+  const handlePostComment = async () => {
+    if (!newCommentText.trim() || !user || !currentImage?.id) return;
+    setIsSubmittingComment(true);
+    try {
+      const newComment = await addCommentToImage(currentImage.id, user, newCommentText);
+      setFlatComments(prev => [...prev, newComment]);
+      setNewCommentText('');
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handlePostReply = async (parentId: string) => {
+    if (!replyText.trim() || !user || !currentImage?.id) return;
+    setIsSubmittingComment(true);
+    try {
+      const newReply = await addCommentToImage(currentImage.id, user, replyText, parentId);
+      setFlatComments(prev => [...prev, newReply]);
+      setReplyText('');
+      setReplyToId(null);
+    } catch (err) {
+      console.error("Failed to post reply:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const renderCommentNode = (comment: Comment, depth = 0) => {
+    const isReplying = replyToId === comment.id;
+    const hasReplies = comment.replies && comment.replies.length > 0;
+    const avatarUrl = comment.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${comment.userName}`;
+
+    return (
+      <div 
+        key={comment.id} 
+        className={`flex flex-col gap-1.5 ${
+          depth > 0 
+            ? `mt-2.5 pl-3 ${depth < 4 ? 'border-l border-border/40 ml-1.5' : 'ml-0'}` 
+            : 'border-b border-border/20 pb-3 last:border-0 last:pb-0'
+        }`}
+      >
+        <div className="flex gap-2.5 items-start">
+          <img
+            src={avatarUrl}
+            alt={comment.userName}
+            className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span className="font-bold text-xs text-primary">{comment.userName}</span>
+              <span className="text-[9px] text-secondary">
+                {new Date(comment.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+            <p className="text-xs text-primary/90 mt-0.5 leading-relaxed break-words">{comment.content}</p>
+            
+            <div className="flex items-center mt-1 gap-3">
+              <button
+                onClick={() => handleCommentLikeToggle(comment.id)}
+                className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${comment.likedBy?.includes(user?.uid || '') ? 'text-red-500 hover:text-red-600' : 'text-secondary hover:text-primary'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill={comment.likedBy?.includes(user?.uid || '') ? "currentColor" : "none"} stroke="currentColor">
+                  <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                </svg>
+                {comment.likeCount || 0}
+              </button>
+              {user && (
+                <button
+                  onClick={() => {
+                    if (isReplying) {
+                      setReplyToId(null);
+                      setReplyText('');
+                    } else {
+                      setReplyToId(comment.id);
+                      setReplyText('');
+                    }
+                  }}
+                  className="text-[10px] font-bold text-accent hover:underline flex items-center gap-1 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  Reply
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Reply Input Form */}
+        {isReplying && user && (
+          <div className="flex gap-2 items-start ml-9 mt-1 animate-fade-in">
+            <img
+              src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'User'}`}
+              alt="Current user"
+              className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+            />
+            <div className="flex-1 flex flex-col gap-1.5">
+              <textarea
+                placeholder={`Reply to ${comment.userName}...`}
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                rows={1}
+                className="w-full bg-background border border-border/80 focus:border-accent/60 rounded-xl py-1.5 px-3 text-xs text-primary placeholder-secondary focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none transition-all"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setReplyToId(null);
+                    setReplyText('');
+                  }}
+                  className="px-2.5 py-0.5 text-[9px] font-bold text-secondary hover:text-primary rounded-full hover:bg-border/30 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handlePostReply(comment.id)}
+                  disabled={!replyText.trim() || isSubmittingComment}
+                  className="bg-accent hover:opacity-90 disabled:opacity-50 text-surface font-semibold px-2.5 py-0.5 rounded-full text-[9px] transition-all shadow-sm active:scale-95 flex items-center gap-1"
+                >
+                  {isSubmittingComment ? <Spinner /> : 'Reply'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Nested child replies recursive rendering */}
+        {hasReplies && (
+          <div className="flex flex-col gap-0.5">
+            {comment.replies!.map(reply => renderCommentNode(reply, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoomScale, setZoomScale] = useState(1.0);
   
@@ -825,6 +1056,69 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             {/* Title & Description Stack */}
             <div className="space-y-4 pt-1">
               {renderDetails()}
+            </div>
+
+            {/* Comments Section */}
+            <div className="pt-6 border-t border-border/50 mt-6">
+              <h3 className="text-sm font-bold text-primary mb-4 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                {flatComments.length} Comments
+              </h3>
+              
+              {/* Comment Input */}
+              {user ? (
+                <div className="flex gap-2.5 items-start mb-5">
+                  <img 
+                    src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'User'}`} 
+                    alt="Current user" 
+                    className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                  />
+                  <div className="flex-1 flex flex-col gap-2">
+                    <textarea
+                      placeholder="Share your thoughts..."
+                      value={newCommentText}
+                      onChange={(e) => setNewCommentText(e.target.value)}
+                      rows={2}
+                      className="w-full bg-background border border-border/80 focus:border-accent/60 rounded-xl py-2 px-3 text-xs text-primary placeholder-secondary focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none transition-all"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handlePostComment}
+                        disabled={!newCommentText.trim() || isSubmittingComment}
+                        className="bg-accent hover:opacity-90 disabled:opacity-50 text-surface font-semibold px-3.5 py-1.5 rounded-full text-xs transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+                      >
+                        {isSubmittingComment ? <Spinner /> : 'Comment'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2.5 items-start mb-5 cursor-pointer group" onClick={onLoginClick}>
+                  <div className="w-8 h-8 rounded-full bg-border/50 flex-shrink-0 flex items-center justify-center text-secondary group-hover:text-primary transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                  </div>
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="w-full bg-background border border-border/80 group-hover:border-accent/60 rounded-xl py-2 px-3 text-xs text-secondary transition-all flex items-center">
+                      Add a comment...
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Comments Scrollable Feed */}
+              {isLoadingComments ? (
+                <div className="flex justify-center py-6">
+                  <Spinner />
+                </div>
+              ) : treeComments.length > 0 ? (
+                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/30">
+                  {treeComments.map(comment => renderCommentNode(comment))}
+                </div>
+              ) : (
+                <p className="text-xs text-secondary text-center py-6 italic">Be the first to share your thoughts!</p>
+              )}
             </div>
 
             {/* Owner Operations (Delete / Edit) */}

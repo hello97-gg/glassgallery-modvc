@@ -19,6 +19,8 @@ export interface ImageMeta {
   likeCount?: number;
   likedBy?: string[];
   downloadCount?: number;
+  commentCount?: number;
+  viewCount?: number;
   location?: string;
 }
 
@@ -53,3 +55,18 @@ export interface Notification {
   createdAt: firebase.firestore.Timestamp;
   read: boolean;
 }
+
+export interface Comment {
+  id: string;
+  imageId: string;
+  userUid: string;
+  userName: string;
+  userPhotoURL?: string;
+  content: string;
+  createdAt: string; // ISO date string
+  parentId?: string | null;
+  likeCount?: number;
+  likedBy?: string[];
+  replies?: Comment[]; // Derived tree replies for frontend rendering
+}
+

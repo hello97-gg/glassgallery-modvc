@@ -8,6 +8,8 @@ interface NotificationProps {
   onImageClick: (image: Partial<ImageMeta>) => void;
   onClose: () => void;
   onViewProfile?: (user: ProfileUser) => void;
+  onMarkAsRead?: (ids: string[]) => void;
+  isPage?: boolean;
 }
 
 const timeAgo = (date: Date): string => {
@@ -26,15 +28,17 @@ const timeAgo = (date: Date): string => {
 };
 
 // Reusable component for the list of notifications
-const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile }) => {
+export const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile, onMarkAsRead, isPage = false }) => {
     const handleMarkAllRead = () => {
         const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
         markNotificationsAsRead(unreadIds);
+        if (onMarkAsRead) onMarkAsRead(unreadIds);
     };
 
     const handleNotificationClick = (notification: Notification) => {
         if (!notification.read) {
             markNotificationsAsRead([notification.id]);
+            if (onMarkAsRead) onMarkAsRead([notification.id]);
         }
         if (notification.type === 'follow' && onViewProfile && notification.actorUid) {
             onViewProfile({
@@ -49,7 +53,7 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
     };
     
     return (
-      <div className="w-full max-w-sm bg-surface border border-border rounded-lg shadow-xl z-20 overflow-hidden flex flex-col max-h-[70vh]">
+      <div className={`w-full ${isPage ? 'max-w-2xl bg-transparent' : 'max-w-sm bg-surface border border-border rounded-lg shadow-xl max-h-[70vh]'} z-20 overflow-hidden flex flex-col`}>
         <div className="p-3 border-b border-border flex justify-between items-center flex-shrink-0 bg-surface">
           <h3 className="font-semibold text-primary">Notifications</h3>
           {notifications.some(n => !n.read) && (
@@ -78,6 +82,10 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
                     <p className="text-primary">Your image was <span className="text-red-500 font-semibold">flagged</span> for content safety review.</p>
                   ) : n.type === 'follow' ? (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> followed you.</p>
+                  ) : n.type === 'comment' ? (
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> commented on your image.</p>
+                  ) : n.type === 'reply' ? (
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> replied to your comment.</p>
                   ) : (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> liked your image.</p>
                   )}
@@ -97,20 +105,20 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
 }
 
 // For desktop sidebar popover
-const NotificationsPanel: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile }) => {
+const NotificationsPanel: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile, onMarkAsRead }) => {
     return (
         <div className="absolute left-full top-0 ml-4 w-96 animate-fade-in z-40">
-           <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} onViewProfile={onViewProfile} />
+           <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} onViewProfile={onViewProfile} onMarkAsRead={onMarkAsRead} />
         </div>
     );
 };
 
 // For mobile full-screen modal
-export const MobileNotificationsModal: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile }) => {
+export const MobileNotificationsModal: React.FC<NotificationProps> = ({ notifications, onClose, onImageClick, onViewProfile, onMarkAsRead }) => {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm md:hidden animate-fade-in" onClick={onClose}>
             <div className="w-full flex justify-center" onClick={(e) => e.stopPropagation()}>
-                <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} onViewProfile={onViewProfile} />
+                <NotificationsList notifications={notifications} onClose={onClose} onImageClick={onImageClick} onViewProfile={onViewProfile} onMarkAsRead={onMarkAsRead} />
             </div>
         </div>
     )
@@ -122,7 +130,9 @@ export const NotificationBell: React.FC<{
   onImageClick: (image: Partial<ImageMeta>) => void;
   isSidebar?: boolean;
   onViewProfile?: (user: ProfileUser) => void;
-}> = ({ notifications, onImageClick, isSidebar = false, onViewProfile }) => {
+  onMarkAsRead?: (ids: string[]) => void;
+  onClick?: () => void;
+}> = ({ notifications, onImageClick, isSidebar = false, onViewProfile, onMarkAsRead, onClick }) => {
     const [isOpen, setIsOpen] = useState(false);
     const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
     const ref = useRef<HTMLDivElement>(null);
@@ -145,7 +155,10 @@ export const NotificationBell: React.FC<{
         return (
             <div className="relative" ref={ref}>
                 <button
-                    onClick={() => setIsOpen(!isOpen)}
+                    onClick={() => {
+                        if (onClick) onClick();
+                        else setIsOpen(!isOpen);
+                    }}
                     className="relative flex items-center w-full p-3 my-3 rounded-lg transition-all duration-200 group-hover:space-x-4 text-secondary hover:text-primary hover:bg-surface/80"
                     aria-label="Notifications"
                 >
@@ -157,7 +170,7 @@ export const NotificationBell: React.FC<{
                      </div>
                      <span className="text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Notifications</span>
                 </button>
-                {isOpen && <NotificationsPanel notifications={notifications} onClose={() => setIsOpen(false)} onImageClick={onImageClick} onViewProfile={onViewProfile} />}
+                {isOpen && !onClick && <NotificationsPanel notifications={notifications} onClose={() => setIsOpen(false)} onImageClick={onImageClick} onViewProfile={onViewProfile} onMarkAsRead={onMarkAsRead} />}
             </div>
         );
     }

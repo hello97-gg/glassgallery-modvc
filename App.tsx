@@ -5,7 +5,7 @@ import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile } from './services/firestoreService';
+import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile, getFollowingList } from './services/firestoreService';
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 
@@ -18,8 +18,10 @@ import ImageDetailModal from './components/ImageDetailModal';
 import ExplorePage from './components/ExplorePage';
 import ProfilePage from './components/ProfilePage';
 import ApiDocsPage from './components/ApiDocsPage';
+import InfiniteFeed from './components/InfiniteFeed';
+import PostDetailView from './components/PostDetailView';
 import LegalPage from './components/LegalPage';
-import { MobileNotificationsModal } from './components/Notifications';
+import { NotificationsList } from './components/Notifications';
 import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
 import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
@@ -238,20 +240,86 @@ const App: React.FC = () => {
   }, []);
   
   const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
+  const [selectedFeedPost, setSelectedFeedPost] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
-  const [isNotificationsPanelOpen, setNotificationsPanelOpen] = useState(false);
   
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'explore' | 'api' | 'legal'>('home');
+  const [lastView, setLastView] = useState<'home' | 'discover' | 'explore' | 'api' | 'legal'>('home');
   
-  // New state for Explore search
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
 
+  const [savedImages, setSavedImages] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('savedImages');
+      if (saved) setSavedImages(new Set(JSON.parse(saved)));
+    } catch(e) {}
+  }, []);
+
+  const handleSaveToggle = async (image: ImageMeta) => {
+    if (!user) {
+      setLoginModalOpen(true);
+      return;
+    }
+    const baseId = image.id.split('_loop_')[0];
+    const isCurrentlySaved = savedImages.has(baseId);
+    const isCurrentlyLiked = (image.likedBy || []).includes(user.uid);
+
+    // Toggle save locally
+    setSavedImages(prev => {
+      const newSet = new Set(prev);
+      if (isCurrentlySaved) newSet.delete(baseId);
+      else newSet.add(baseId);
+      localStorage.setItem('savedImages', JSON.stringify(Array.from(newSet)));
+      return newSet;
+    });
+
+    // Sync with Like: if saving but not liked -> like it. if unsaving and liked -> unlike it.
+    if (!isCurrentlySaved && !isCurrentlyLiked) {
+       await handleLikeToggle(image);
+    } else if (isCurrentlySaved && isCurrentlyLiked) {
+       await handleLikeToggle(image);
+    }
+  };
+
+  const [feedTab, setFeedTab] = useState<'discover' | 'following'>('discover');
+  const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (user) {
+      getFollowingList(user.uid).then(users => {
+        setFollowingUids(new Set(users.map(u => u.uploaderUid)));
+      }).catch(err => console.error("Failed to load following list", err));
+    } else {
+      setFollowingUids(new Set());
+      if (feedTab === 'following') setFeedTab('discover');
+    }
+  }, [user]);
+
+  const activeAllImages = useMemo(() => {
+    if (feedTab === 'following') {
+       return allImages.filter(img => followingUids.has(img.uploaderUid));
+    }
+    return allImages;
+  }, [allImages, feedTab, followingUids]);
+
+  useEffect(() => {
+    if (activeView === 'home') {
+      setDisplayedImages(activeAllImages.slice(0, PAGE_SIZE));
+      setCurrentIndex(PAGE_SIZE);
+    }
+  }, [feedTab, followingUids, activeView]);
+
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  
+  const markLocalAsRead = (ids: string[]) => {
+      setNotifications(prev => prev.map(n => ids.includes(n.id) ? { ...n, read: true } : n));
+  };
   
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [droppedFile, setDroppedFile] = useState<File | null>(null);
@@ -427,12 +495,19 @@ const App: React.FC = () => {
         }
         const unsubscribe = subscribeToImage(imageId, (img) => {
           if (img) {
-            setSelectedImage(img);
+            const isHome = !userId && !searchTerm && viewParam !== 'api' && !isLegal;
+            if (isHome) {
+              setSelectedFeedPost(img);
+              setActiveView('post');
+            } else {
+              setSelectedImage(img);
+            }
           }
         });
         deepLinkUnsubscribeRef.current = unsubscribe;
       } else {
         setSelectedImage(null);
+        setSelectedFeedPost(null);
         if (deepLinkUnsubscribeRef.current) {
           deepLinkUnsubscribeRef.current();
           deepLinkUnsubscribeRef.current = null;
@@ -646,7 +721,7 @@ const App: React.FC = () => {
     };
   }, [activeView, currentUserProfile, isOnline]);
 
-  // Sync selectedImage
+  // Sync selectedImage and selectedFeedPost
   useEffect(() => {
     if (selectedImage && allImages.length > 0) {
         const baseId = selectedImage.id.split('_loop_')[0];
@@ -657,22 +732,31 @@ const App: React.FC = () => {
              setSelectedImage(null);
         }
     }
-  }, [allImages, selectedImage]);
+    if (selectedFeedPost && allImages.length > 0) {
+        const baseId = selectedFeedPost.id.split('_loop_')[0];
+        const updated = allImages.find(img => img.id.split('_loop_')[0] === baseId);
+        if (updated && updated !== selectedFeedPost) {
+            setSelectedFeedPost(updated);
+        } else if (!updated) {
+             setSelectedFeedPost(null);
+        }
+    }
+  }, [allImages, selectedImage, selectedFeedPost]);
 
   const loadMoreImages = useCallback(() => {
-    if (imagesLoading || allImages.length === 0 || isLoadingMore.current) return;
+    if (imagesLoading || activeAllImages.length === 0 || isLoadingMore.current) return;
 
     isLoadingMore.current = true;
 
     let newImages: ImageMeta[] = [];
 
-    if (currentIndex < allImages.length) {
+    if (currentIndex < activeAllImages.length) {
         const nextIndex = currentIndex + PAGE_SIZE;
-        newImages = allImages.slice(currentIndex, nextIndex);
+        newImages = activeAllImages.slice(currentIndex, nextIndex);
         setCurrentIndex(nextIndex);
     } else {
         // Infinite scroll loop back to start! Reshuffle using our dynamic smart addictive sort!
-        const reshuffled = smartSortImages(allImages, currentUserProfile);
+        const reshuffled = smartSortImages(activeAllImages, currentUserProfile);
         newImages = reshuffled.slice(0, PAGE_SIZE);
         setCurrentIndex(PAGE_SIZE);
     }
@@ -698,7 +782,7 @@ const App: React.FC = () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        if (activeView === 'home' && !isLoadingMore.current) {
+        if (['home', 'discover', 'explore', 'post'].includes(activeView) && !isLoadingMore.current) {
             // Aggressive preload: start loading 1500px BEFORE bottom so content
             // is already rendered by the time the user scrolls there
             const scrollThreshold = 1500;
@@ -782,23 +866,43 @@ const App: React.FC = () => {
   const handleImageClick = (image: ImageMeta) => {
     const baseId = image.id.split('_loop_')[0];
     const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
-    setSelectedImage(original);
-    updateURL({ image: original.id });
-    // Record view for server-side taste profile (fire-and-forget)
+    
+    const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
+    
+    setSelectedImage(viewIncremented);
+    setAllImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
+    setDisplayedImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
+    
+    updateURL({ image: viewIncremented.id });
     if (user) {
-      recordImageView(original.id, user.uid);
+      recordImageView(viewIncremented.id, user.uid);
     }
-    // Record click interest for client-side personalization (localStorage)
-    recordClickInterest(original);
+    recordClickInterest(viewIncremented);
+  };
+
+  const handleFeedImageClick = (image: ImageMeta) => {
+    const baseId = image.id.split('_loop_')[0];
+    const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
+    
+    const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
+    
+    setSelectedFeedPost(viewIncremented);
+    setAllImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
+    setDisplayedImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
+    
+    saveScrollPosition();
+    setActiveView('post');
+    updateURL({ image: viewIncremented.id });
+    if (user) {
+      recordImageView(viewIncremented.id, user.uid);
+    }
+    recordClickInterest(viewIncremented);
   };
   
   const handleImageClickFromNotification = (partialImage: Partial<ImageMeta>) => {
-    const fullImage = allImages.find(i => i.id === partialImage.id);
-    if (fullImage) {
-        setSelectedImage(fullImage);
-        updateURL({ image: fullImage.id });
-    } else if (partialImage.id) {
-        updateURL({ image: partialImage.id });
+    const fullImage = allImages.find(i => i.id === partialImage.id) || partialImage as ImageMeta;
+    if (fullImage.id) {
+       handleFeedImageClick(fullImage);
     }
   };
   
@@ -957,6 +1061,15 @@ const App: React.FC = () => {
         ? oldLikedBy.filter(id => id !== user.uid)
         : [...oldLikedBy, user.uid];
 
+    // Sync save state automatically when liking/unliking
+    setSavedImages(prev => {
+      const newSet = new Set(prev);
+      if (!hasLiked) newSet.add(baseId); // If we are liking, add to saves
+      else newSet.delete(baseId); // If we are unliking, remove from saves
+      localStorage.setItem('savedImages', JSON.stringify(Array.from(newSet)));
+      return newSet;
+    });
+
     const updatedImage = { ...originalImage, likedBy: newLikedBy, likeCount: newLikedBy.length };
     handleImageUpdate(updatedImage); 
 
@@ -1008,6 +1121,29 @@ const App: React.FC = () => {
        return <SkeletonGrid />;
     }
     
+    if (activeView === 'notifications') {
+        return (
+            <>
+                <SEOHead 
+                    title="Notifications"
+                    description="View your latest notifications on Glass Gallery."
+                    url={window.location.href}
+                />
+                <div className="pt-4 md:pt-8 max-w-2xl mx-auto w-full px-4">
+                    <h2 className="text-2xl font-bold mb-6 text-primary">Notifications</h2>
+                    <NotificationsList 
+                        notifications={notifications} 
+                        onClose={() => {}} 
+                        onImageClick={handleImageClickFromNotification} 
+                        onViewProfile={handleViewProfile} 
+                        onMarkAsRead={markLocalAsRead} 
+                        isPage={true} 
+                    />
+                </div>
+            </>
+        );
+    }
+    
     if (activeView === 'profile' && profileUser) {
         return (
             <>
@@ -1055,16 +1191,75 @@ const App: React.FC = () => {
         );
     }
 
-    // HOME
+    // DISCOVER (Old Home Grid)
+    if (activeView === 'discover') {
+        return (
+            <>
+                <SEOHead 
+                    title="Discover"
+                    description="A modern image sharing platform. Discover and share beautiful images."
+                    url={window.location.href}
+                    favicon={DEFAULT_FAVICON}
+                />
+                <ImageGrid images={displayedImages} user={user} onImageClick={handleImageClick} onViewProfile={handleViewProfile} onLikeToggle={handleLikeToggle} />
+            </>
+        );
+    }
+
+    if (activeView === 'post' && selectedFeedPost) {
+        return (
+            <>
+                <SEOHead 
+                    title={`${selectedFeedPost.title || 'Post'} by ${selectedFeedPost.uploaderName}`}
+                    description={selectedFeedPost.description || 'View this post on Glass Gallery'}
+                    url={window.location.href}
+                    imageUrl={selectedFeedPost.imageUrl}
+                    favicon={selectedFeedPost.uploaderPhotoURL || DEFAULT_FAVICON}
+                />
+                <PostDetailView
+                  image={selectedFeedPost}
+                  user={user}
+                  suggestedImages={displayedImages}
+                  onClose={() => {
+                      setSelectedFeedPost(null);
+                      if (deepLinkUnsubscribeRef.current) {
+                          deepLinkUnsubscribeRef.current();
+                          deepLinkUnsubscribeRef.current = null;
+                      }
+                      updateURL(null);
+                      handleBack();
+                  }}
+                  onViewProfile={handleViewProfile}
+                  onLikeToggle={handleLikeToggle}
+                  onLoginClick={() => setLoginModalOpen(true)}
+                  onImageClick={handleFeedImageClick}
+                />
+            </>
+        );
+    }
+
+    // HOME (New Infinite Feed)
     return (
         <>
             <SEOHead 
-                title="Home"
-                description="A modern image sharing platform. Discover and share beautiful images."
+                title="Home - Infinite Feed"
+                description="Experience the latest images in a high-fidelity scrollable feed."
                 url={window.location.href}
                 favicon={DEFAULT_FAVICON}
             />
-            <ImageGrid images={displayedImages} user={user} onImageClick={handleImageClick} onViewProfile={handleViewProfile} onLikeToggle={handleLikeToggle} />
+            <InfiniteFeed 
+                images={displayedImages} 
+                user={user} 
+                onImageClick={handleFeedImageClick} 
+                onViewProfile={handleViewProfile} 
+                onLikeToggle={handleLikeToggle}
+                onLoginClick={() => setLoginModalOpen(true)}
+                feedTab={feedTab}
+                setFeedTab={setFeedTab}
+                onCreateClick={handleCreateClick}
+                savedImages={savedImages}
+                onSaveToggle={handleSaveToggle}
+            />
         </>
     );
   }
@@ -1086,7 +1281,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Added min-w-0 to fix flex child overflow issues on mobile */}
-      <main className="flex-1 min-w-0 p-4 md:p-8 pb-20 md:pb-8">
+      <main className={`flex-1 min-w-0 ${activeView === 'home' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
         {renderContent()}
       </main>
 
@@ -1098,7 +1293,7 @@ const App: React.FC = () => {
         setView={handleSetView}
         onViewProfile={handleViewProfile}
         notifications={notifications}
-        onNotificationsClick={() => setNotificationsPanelOpen(true)}
+        onNotificationsClick={() => handleSetView('notifications')}
       />
       
       {isDraggingOver && <FullScreenDropzone />}
@@ -1123,24 +1318,12 @@ const App: React.FC = () => {
         />
       )}
 
-      
-      {isNotificationsPanelOpen && user && (
-        <MobileNotificationsModal
-            notifications={notifications}
-            onClose={() => setNotificationsPanelOpen(false)}
-            onImageClick={(image) => {
-                setNotificationsPanelOpen(false);
-                handleImageClickFromNotification(image);
-            }}
-            onViewProfile={handleViewProfile}
-        />
-      )}
-
       {selectedImage && (
         <ImageDetailModal
           image={selectedImage}
           user={user}
           allImages={allImages}
+          onLoginClick={() => setLoginModalOpen(true)}
           onClose={() => {
             setSelectedImage(null);
             if (deepLinkUnsubscribeRef.current) {
@@ -1165,6 +1348,8 @@ const App: React.FC = () => {
           onSelectImage={handleImageClick}
         />
       )}
+
+
 
       {showOnboarding && user && (
         <OnboardingModal

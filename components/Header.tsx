@@ -9,8 +9,8 @@ interface SidebarProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'explore' | 'profile' | 'notifications' | 'api';
-  setView: (view: 'home' | 'explore' | 'notifications' | 'api') => void;
+  activeView: 'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api';
+  setView: (view: 'home' | 'discover' | 'explore' | 'notifications' | 'api') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications: Notification[];
   onImageClick: (image: ImageMeta) => void;
@@ -71,6 +71,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
         </NavItem>
+        <NavItem label="Discover" active={activeView === 'discover'} onClick={() => setView('discover')}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+          </svg>
+        </NavItem>
          <NavItem label="Explore" active={activeView === 'explore'} onClick={() => setView('explore')}>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
@@ -88,6 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
                 onImageClick={onImageClick} 
                 isSidebar={true}
                 onViewProfile={onViewProfile}
+                onClick={() => setView('notifications')}
             />
         )}
         <NavItem label="Create" onClick={onCreateClick} isProminent>

@@ -142,7 +142,7 @@ export async function onRequest(context) {
         }
 
         const targetRes = await db.execute({
-          sql: "SELECT * FROM images WHERE id = ?",
+          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id = ?",
           args: [targetId]
         });
 
@@ -178,6 +178,8 @@ export async function onRequest(context) {
           location: row.location || '',
           likeCount: parseInt(row.likeCount || 0),
           downloadCount: parseInt(row.downloadCount || 0),
+          commentCount: parseInt(row.commentCount || 0),
+          viewCount: parseInt(row.viewCount || 0),
           flags: parsedFlags,
           tags: parsedFlags,
           aiConcepts: parsedConcepts,
@@ -193,7 +195,7 @@ export async function onRequest(context) {
         }
 
         const targetRes = await db.execute({
-          sql: "SELECT * FROM images WHERE id = ?",
+          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id = ?",
           args: [imageId]
         });
 
@@ -233,7 +235,7 @@ export async function onRequest(context) {
         }
 
         const allImagesRes = await db.execute({
-          sql: "SELECT * FROM images WHERE id != ? ORDER BY uploadedAt DESC",
+          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id != ? ORDER BY uploadedAt DESC",
           args: [imageId]
         });
         const likesRes = await db.execute("SELECT * FROM likes");
@@ -395,7 +397,7 @@ export async function onRequest(context) {
           const uploaderFollowers = followerCountMap[candidateUploader] || 0;
           const globalFollowerBoost = Math.min(uploaderFollowers * 0.2, 3.0);
 
-          const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05;
+          const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.2;
 
           const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost;
 
@@ -415,6 +417,8 @@ export async function onRequest(context) {
               location: row.location || '',
               likeCount: parseInt(row.likeCount || 0),
               downloadCount: parseInt(row.downloadCount || 0),
+              commentCount: parseInt(row.commentCount || 0),
+              viewCount: parseInt(row.viewCount || 0),
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[id] || [],
@@ -435,7 +439,7 @@ export async function onRequest(context) {
 
         // Optimized: Combined taste profile query (uploads + likes + views in one UNION ALL) — reduces 7→5 DB calls
         const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes] = await Promise.all([
-          db.execute("SELECT * FROM images ORDER BY uploadedAt DESC"),
+          db.execute("SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images ORDER BY uploadedAt DESC"),
           db.execute("SELECT * FROM likes"),
           db.execute({ sql: "SELECT followedTags FROM users WHERE uploaderUid = ?", args: [userUid] }),
           // Single combined query for uploads + likes + views taste signals
@@ -563,7 +567,7 @@ export async function onRequest(context) {
           else recencyScore = 0.3;
 
           // 6. Popularity
-          const popularity = Math.min(((row.likeCount || 0) * 0.15 + (row.downloadCount || 0) * 0.05), 2.0);
+          const popularity = Math.min(((row.likeCount || 0) * 0.15 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.25), 2.0);
 
           // 7. Discovery randomness
           const randomFactor = Math.random() * 1.5;
@@ -586,6 +590,8 @@ export async function onRequest(context) {
               location: row.location || '',
               likeCount: parseInt(row.likeCount || 0),
               downloadCount: parseInt(row.downloadCount || 0),
+              commentCount: parseInt(row.commentCount || 0),
+              viewCount: parseInt(row.viewCount || 0),
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[row.id] || [],
@@ -600,11 +606,11 @@ export async function onRequest(context) {
         return Response.json({ success: true, images, personalized: true }, { status: 200, headers: cacheHeaders });
       }
 
-      let imagesQuery = "SELECT * FROM images ORDER BY uploadedAt DESC";
+      let imagesQuery = "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images ORDER BY uploadedAt DESC";
       let imagesArgs = [];
 
       if (uploaderUid) {
-        imagesQuery = "SELECT * FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC";
+        imagesQuery = "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC";
         imagesArgs = [uploaderUid];
       }
 
@@ -641,6 +647,8 @@ export async function onRequest(context) {
           location: row.location || '',
           likeCount: parseInt(row.likeCount || 0),
           downloadCount: parseInt(row.downloadCount || 0),
+          commentCount: parseInt(row.commentCount || 0),
+          viewCount: parseInt(row.viewCount || 0),
           flags: parsedFlags,
           aiConcepts: parsedConcepts,
           likedBy: likesMap[id] || [],
