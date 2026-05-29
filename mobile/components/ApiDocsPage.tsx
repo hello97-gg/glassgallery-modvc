@@ -136,7 +136,7 @@ const ApiDocsPage: React.FC = () => {
                 <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=api_upload</code>
             </div>
             <p className="text-secondary mb-5 text-sm md:text-base">
-                Uploads an image directly to the gallery using your personal developer API Key. Supports Base64 image payload or public image URLs, custom tags, and licensing metadata.
+                Uploads an image or video directly to the gallery using your personal developer API Key. Supports Base64 media payload or public URLs, custom tags, and licensing metadata. Videos must be under 10MB.
             </p>
             <div className="space-y-4">
                 <div>
@@ -163,7 +163,7 @@ Content-Type: application/json`}
                                     <td className="py-2 px-3 font-mono text-accent">image</td>
                                     <td className="py-2 px-3 text-secondary">string</td>
                                     <td className="py-2 px-3 text-emerald-400 font-bold">Yes</td>
-                                    <td className="py-2 px-3 text-secondary">Base64-encoded image string OR a public image URL to import.</td>
+                                    <td className="py-2 px-3 text-secondary">Base64-encoded image/video string OR a public image/video URL to import. Videos must be under 10MB.</td>
                                 </tr>
                                 <tr className="border-b border-border/30">
                                     <td className="py-2 px-3 font-mono text-accent">title</td>
@@ -391,6 +391,38 @@ async function fetchAndDownloadRandom() {
 }
 
 fetchAndDownloadRandom();`} 
+                />
+            </div>
+
+            <div className="mb-8 w-full">
+                <h3 className="text-lg font-semibold text-primary mb-2">JavaScript (Fetch Video Upload)</h3>
+                <p className="text-secondary text-sm">Upload a new short video clip with CC0 license and tags.</p>
+                <CodeBlock 
+                    language="javascript" 
+                    code={`const payload = {
+  image: "https://example.com/sample-clip.mp4",
+  title: "Cinematic Nature Drone Shot",
+  description: "A sweeping drone video of the mountain valleys.",
+  location: "Chamonix, France",
+  license: "CC0",
+  tags: ["Natural", "Landscape", "Video"]
+};
+
+fetch('/api/images?action=api_upload', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer gg_your_api_key_here',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify(payload)
+})
+  .then(response => response.json())
+  .then(data => {
+    if(data.success) {
+      console.log('Video uploaded successfully!', data.imageUrl);
+    }
+  })
+  .catch(console.error);`} 
                 />
             </div>
 

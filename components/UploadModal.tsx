@@ -23,6 +23,7 @@ interface UploadModalProps {
 const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSuccess, initialFile = null, allImages = [] }) => {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [videoKeyframes, setVideoKeyframes] = useState<string[] | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -37,6 +38,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   const [showMap, setShowMap] = useState(false);
   const [isAutoTagging, setIsAutoTagging] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
+  const [showAllTags, setShowAllTags] = useState(false);
 
   const DEFAULT_FLAGS = [
     'AI Generated',
@@ -50,19 +52,92 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     'Games'
   ];
 
-  const dynamicTags = React.useMemo(() => {
-    const tagsSet = new Set<string>();
-    DEFAULT_FLAGS.forEach(flag => tagsSet.add(flag));
-    
+  // Extracts 3 chronological keyframes from a video file to run cheap AI progression auto-tagging
+  const extractVideoKeyframes = (videoFile: File): Promise<string[]> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+      
+      const fileUrl = URL.createObjectURL(videoFile);
+      video.src = fileUrl;
+      
+      video.onloadedmetadata = () => {
+        const duration = video.duration || 10;
+        const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
+        const frames: string[] = [];
+        let currentIdx = 0;
+        
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        const captureFrame = () => {
+          if (currentIdx >= timestamps.length) {
+            URL.revokeObjectURL(fileUrl);
+            resolve(frames);
+            return;
+          }
+          video.currentTime = timestamps[currentIdx];
+        };
+        
+        video.onseeked = () => {
+          if (ctx) {
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 360;
+            
+            // Downscale to max 800px to conserve bandwidth and API tokens
+            const maxDim = 800;
+            if (canvas.width > maxDim || canvas.height > maxDim) {
+              const scale = maxDim / Math.max(canvas.width, canvas.height);
+              canvas.width = Math.round(canvas.width * scale);
+              canvas.height = Math.round(canvas.height * scale);
+            }
+            
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            try {
+              const base64 = canvas.toDataURL('image/jpeg', 0.7);
+              frames.push(base64);
+            } catch (e) {
+              console.error("Frame capture error:", e);
+            }
+          }
+          currentIdx++;
+          captureFrame();
+        };
+        
+        captureFrame();
+      };
+      
+      video.onerror = () => {
+        URL.revokeObjectURL(fileUrl);
+        resolve([]);
+      };
+    });
+  };
+
+  const dynamicTagsInfo = React.useMemo(() => {
+    const tagsCount: { [key: string]: number } = {};
     allImages.forEach(image => {
       if (Array.isArray(image.flags)) {
         image.flags.forEach(flag => {
           if (flag && flag !== 'Flagged') {
-            tagsSet.add(flag);
+            tagsCount[flag] = (tagsCount[flag] || 0) + 1;
           }
         });
       }
     });
+
+    const tagsSet = new Set<string>();
+    DEFAULT_FLAGS.forEach(flag => tagsSet.add(flag));
+
+    // Get top 5 most popular community tags
+    const communityTags = Object.entries(tagsCount)
+      .filter(([tag]) => !DEFAULT_FLAGS.includes(tag) && tag !== 'Flagged')
+      .sort((a, b) => b[1] - a[1]);
+
+    const topCommunityTags = communityTags.slice(0, 5).map(([tag]) => tag);
+    topCommunityTags.forEach(tag => tagsSet.add(tag));
 
     selectedFlags.forEach(flag => {
       if (flag && flag !== 'Flagged') {
@@ -71,21 +146,38 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     });
 
     const allTags = Array.from(tagsSet);
-    // Keep defaults first in their original order, then sort the rest alphabetically
     const defaults = allTags.filter(t => DEFAULT_FLAGS.includes(t));
-    const extras = allTags.filter(t => !DEFAULT_FLAGS.includes(t)).sort((a, b) => a.localeCompare(b));
-    return [...defaults, ...extras];
+    const community = allTags.filter(t => topCommunityTags.includes(t));
+    const others = Array.from(new Set([
+      ...Object.keys(tagsCount),
+      ...selectedFlags
+    ])).filter(t => !DEFAULT_FLAGS.includes(t) && !topCommunityTags.includes(t) && t !== 'Flagged')
+      .sort((a, b) => a.localeCompare(b));
+
+    // Limit initial suggested tags so the modal doesn't feel overwhelmed
+    const limitedSuggested = [...defaults.slice(0, 4), ...community].slice(0, 8);
+    const hiddenDefaults = defaults.filter(t => !limitedSuggested.includes(t));
+
+    return {
+      suggested: limitedSuggested,
+      others: [...hiddenDefaults, ...others],
+      all: [...defaults, ...community, ...others]
+    };
   }, [allImages, selectedFlags]);
 
   const handleAutoTag = async () => {
-    if (!preview) return;
+    if (!preview && (!videoKeyframes || videoKeyframes.length === 0)) return;
     setIsAutoTagging(true);
     setError(null);
     try {
+        const payload = videoKeyframes && videoKeyframes.length > 0 
+          ? { images: videoKeyframes } 
+          : { image: preview };
+
         const response = await fetch('/api/images?action=auto_tags', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: preview })
+            body: JSON.stringify(payload)
         });
         const data = await response.json();
         if (data.success) {
@@ -96,11 +188,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                 setSelectedFlags(data.tags);
             }
         } else {
-            setError(data.error || "Failed to auto-tag image.");
+            setError(data.error || "Failed to auto-tag file.");
         }
     } catch (err: any) {
         console.error("Auto tagging failed:", err);
-        setError("Failed to auto-tag image. Please try again.");
+        setError("Failed to auto-tag file. Please try again.");
     } finally {
         setIsAutoTagging(false);
     }
@@ -158,43 +250,58 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   };
 
   const handleFileSelect = async (selectedFile: File) => {
-    if (selectedFile && selectedFile.type.startsWith('image/')) {
+    if (selectedFile && (selectedFile.type.startsWith('image/') || selectedFile.type.startsWith('video/'))) {
         setIsLoading(true);
-        setLoadingMessage('Compressing image...');
+        setLoadingMessage('Processing file...');
         setError(null);
         setPreview(null);
         setFile(null);
 
         try {
-            const options = {
-                maxSizeMB: 2,
-                maxWidthOrHeight: 1920,
-                useWebWorker: true,
-            };
-            
-            const compressedFile = await imageCompression(selectedFile, options);
-            
-            setFile(compressedFile);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const previewUrl = reader.result as string;
+            if (selectedFile.type.startsWith('image/')) {
+                const options = {
+                    maxSizeMB: 2,
+                    maxWidthOrHeight: 1920,
+                    useWebWorker: true,
+                };
+                
+                const compressedFile = await imageCompression(selectedFile, options);
+                
+                setFile(compressedFile);
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const previewUrl = reader.result as string;
+                    setPreview(previewUrl);
+                    setIsLoading(false);
+                };
+                reader.readAsDataURL(compressedFile);
+            } else if (selectedFile.type.startsWith('video/')) {
+                setFile(selectedFile);
+                const previewUrl = URL.createObjectURL(selectedFile);
                 setPreview(previewUrl);
+                
+                // Asynchronously extract keyframes for AI description/tag suggestions
+                setLoadingMessage('Extracting video frames for AI analysis...');
+                try {
+                  const keyframes = await extractVideoKeyframes(selectedFile);
+                  setVideoKeyframes(keyframes);
+                } catch (e) {
+                  console.error("Failed to extract video keyframes:", e);
+                }
                 setIsLoading(false);
-            };
-            reader.readAsDataURL(compressedFile);
-
+            }
         } catch (err) {
-            console.error("Image compression error:", err);
-            setError("Could not process the image. Please try a different one.");
+            console.error("File processing error:", err);
+            setError("Could not process the file. Please try a different one.");
             setFile(null);
             setPreview(null);
             setIsLoading(false);
         }
     } else {
-        setError("Please select a valid image file.");
+        setError("Please select a valid image or video file.");
     }
   };
-  
+
   useEffect(() => {
     if (initialFile) {
         handleFileSelect(initialFile);
@@ -247,18 +354,18 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     e.preventDefault();
     
     if (!file) {
-      setError("Please select an image to upload.");
+      setError("Please select a file to upload.");
       return;
     }
     if (selectedFlags.length === 0) {
-      setError("Please select at least one tag for the image.");
+      setError("Please select at least one tag.");
       return;
     }
     if (!user) return;
 
-
+    const isVideoUpload = file.type.startsWith('video/');
     setIsLoading(true);
-    setLoadingMessage('Uploading image...');
+    setLoadingMessage(isVideoUpload ? 'Uploading video...' : 'Uploading image...');
     setError(null);
     try {
       const { url: imageUrl } = await uploadImage(file);
@@ -282,6 +389,9 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
           );
       }
        if (preview) {
+           if (file?.type.startsWith('video/')) {
+               return <video src={preview} controls className="max-h-full rounded-md object-contain w-full h-full bg-black" />;
+           }
            return <img src={preview} alt="Preview" className="max-h-full rounded-md object-contain" />;
        }
 
@@ -299,13 +409,13 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         <div className="bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
           <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-primary">Upload an Image</h2>
+                  <h2 className="text-xl font-bold text-primary">{file?.type.startsWith('video/') ? 'Upload a Video' : 'Upload an Image'}</h2>
                   <button onClick={onClose} className="text-secondary hover:text-primary transition-colors text-3xl leading-none">&times;</button>
               </div>
               
               <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                      <label className="block text-sm font-medium text-secondary mb-2">Image File</label>
+                      <label className="block text-sm font-medium text-secondary mb-2">Media File</label>
                       <label 
                           htmlFor={Capacitor.isNativePlatform() ? undefined : "file-upload"}
                           onClick={Capacitor.isNativePlatform() ? handleNativePhotoSelect : undefined}
@@ -315,7 +425,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                           className={`mt-1 flex justify-center items-center h-48 px-6 pt-5 pb-6 border-2 border-border border-dashed rounded-md transition-colors ${isLoading ? '' : 'cursor-pointer'} ${isDragging ? 'border-accent bg-accent/10' : 'hover:border-secondary/50'}`}
                       >
                           {renderUploadState()}
-                          <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="image/*" disabled={isLoading} />
+                          <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="image/*,video/*" disabled={isLoading} />
                       </label>
                       {preview && (
                           <div className="mt-3 flex justify-end">
@@ -430,17 +540,26 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                         </div>
                       )}
                       <div className="flex flex-wrap gap-2">
-                          {dynamicTags
+                          {(tagSearch ? dynamicTagsInfo.all : (showAllTags ? dynamicTagsInfo.all : dynamicTagsInfo.suggested))
                             .filter(flag => !selectedFlags.includes(flag) && flag.toLowerCase().includes(tagSearch.toLowerCase()))
                             .map(flag => (
                               <button key={flag} type="button" onClick={() => handleFlagToggle(flag)} className="px-3 py-1 text-sm rounded-full transition-colors bg-border text-secondary hover:bg-border/80">
                                   {flag}
                               </button>
                           ))}
-                          {dynamicTags.filter(flag => !selectedFlags.includes(flag) && flag.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && (
+                          {(tagSearch ? dynamicTagsInfo.all : (showAllTags ? dynamicTagsInfo.all : dynamicTagsInfo.suggested)).filter(flag => !selectedFlags.includes(flag) && flag.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && (
                             <p className="text-xs text-secondary/50 py-1">No tags match "{tagSearch}"</p>
                           )}
                       </div>
+                      {!tagSearch && dynamicTagsInfo.others.length > 0 && (
+                          <button 
+                              type="button" 
+                              onClick={() => setShowAllTags(!showAllTags)} 
+                              className="text-xs font-semibold text-accent hover:underline mt-2 cursor-pointer block"
+                          >
+                              {showAllTags ? 'Show less tags' : `Show all tags (+${dynamicTagsInfo.others.length})`}
+                          </button>
+                      )}
                   </div>
 
                   <div>

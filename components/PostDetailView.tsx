@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, Comment, ProfileUser } from '../types';
 import { getCommentsForImage, addCommentToImage, toggleCommentLike } from '../services/firestoreService';
+import { recordWatchInterest } from '../services/interestTracker';
+import { isVideoUrl } from '../utils/mediaUtils';
 import Spinner from './Spinner';
 import { FeedItem } from './InfiniteFeed';
 
@@ -37,6 +39,18 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const watchLoggedRef = useRef(false);
+
+  const handleVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.duration && !watchLoggedRef.current) {
+      const ratio = video.currentTime / video.duration;
+      if (ratio >= 0.5) {
+        watchLoggedRef.current = true;
+        recordWatchInterest(currentImage, ratio);
+      }
+    }
+  };
 
   const hasLiked = user && currentImage.likedBy?.includes(user.uid);
 
@@ -378,13 +392,25 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
               {currentImage.description && <p className="text-primary/95">{currentImage.description}</p>}
             </div>
 
-            {/* Image */}
-            <div className="rounded-2xl border border-border overflow-hidden max-h-[500px] mx-4 mt-4">
-              <img
-                src={currentImage.imageUrl}
-                alt={currentImage.title || 'Image Detail'}
-                className="w-full h-full object-contain max-h-[500px] bg-black/40"
-              />
+            {/* Image/Video */}
+            <div className="rounded-2xl border border-border overflow-hidden max-h-[500px] mx-4 mt-4 bg-black/5">
+              {isVideoUrl(currentImage.imageUrl) ? (
+                  <video 
+                    src={currentImage.imageUrl} 
+                    autoPlay 
+                    muted 
+                    loop 
+                    playsInline onTimeUpdate={handleVideoTimeUpdate} 
+                    controls
+                    className="w-full h-full object-contain max-h-[500px] bg-black/40"
+                  />
+              ) : (
+                  <img
+                    src={currentImage.imageUrl}
+                    alt={currentImage.title || 'Image Detail'}
+                    className="w-full h-full object-contain max-h-[500px] bg-black/40"
+                  />
+              )}
             </div>
 
             {/* Meta Details Row (Time, Date, Views) */}

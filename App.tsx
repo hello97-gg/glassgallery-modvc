@@ -240,6 +240,7 @@ const App: React.FC = () => {
   }, []);
   
   const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
+  const [forceEditMode, setForceEditMode] = useState(false);
   const [selectedFeedPost, setSelectedFeedPost] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
@@ -728,8 +729,6 @@ const App: React.FC = () => {
         const updated = allImages.find(img => img.id.split('_loop_')[0] === baseId);
         if (updated && updated !== selectedImage) {
             setSelectedImage(updated);
-        } else if (!updated) {
-             setSelectedImage(null);
         }
     }
     if (selectedFeedPost && allImages.length > 0) {
@@ -737,8 +736,6 @@ const App: React.FC = () => {
         const updated = allImages.find(img => img.id.split('_loop_')[0] === baseId);
         if (updated && updated !== selectedFeedPost) {
             setSelectedFeedPost(updated);
-        } else if (!updated) {
-             setSelectedFeedPost(null);
         }
     }
   }, [allImages, selectedImage, selectedFeedPost]);
@@ -1261,6 +1258,11 @@ const App: React.FC = () => {
                 onCreateClick={handleCreateClick}
                 savedImages={savedImages}
                 onSaveToggle={handleSaveToggle}
+                onImageDelete={handleImageDelete}
+                onImageEdit={(img) => {
+                    setSelectedImage(img);
+                    setForceEditMode(true);
+                }}
             />
         </>
     );
@@ -1326,8 +1328,10 @@ const App: React.FC = () => {
           user={user}
           allImages={allImages}
           onLoginClick={() => setLoginModalOpen(true)}
+          initialEditMode={forceEditMode}
           onClose={() => {
             setSelectedImage(null);
+            setForceEditMode(false);
             if (deepLinkUnsubscribeRef.current) {
                 deepLinkUnsubscribeRef.current();
                 deepLinkUnsubscribeRef.current = null;

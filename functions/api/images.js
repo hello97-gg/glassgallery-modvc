@@ -675,9 +675,9 @@ export async function onRequest(context) {
 
       // Action: AI auto-tags
       if (action === 'auto_tags') {
-        const { image } = body;
-        if (!image) {
-          return Response.json({ success: false, error: "Missing required 'image' field (base64 data URL)." }, { status: 400, headers: corsHeaders });
+        const { image, images } = body;
+        if (!image && (!images || !Array.isArray(images) || images.length === 0)) {
+          return Response.json({ success: false, error: "Missing required 'image' or 'images' (array of base64 data URLs) field." }, { status: 400, headers: corsHeaders });
         }
 
         const mistralKey = env.MISTRAL_API_KEY;
@@ -685,17 +685,24 @@ export async function onRequest(context) {
           return Response.json({ success: false, error: "MISTRAL_API_KEY is not defined on the server." }, { status: 500, headers: corsHeaders });
         }
 
-        const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
-        const payload = {
-          model: "pixtral-12b-2409",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `Task: Analyze the provided image to suggest tags, title, description, and location.
-                  
+        const isVideo = Array.isArray(images) && images.length > 0;
+        const promptText = isVideo
+          ? `Task: Analyze the provided video keyframes (ordered chronologically) to suggest tags, title, description, and location.
+          
+Available tags in our app: "Natural", "Monochrome", "Street", "Landscape", "Architecture", "Abstract", "Urban", "Creative", "Night", "Macro", "Minimalist", "Portrait", "Travel".
+
+Select 1 to 5 tags from the available tags list that perfectly describe the video.
+Suggest a beautiful, highly premium title, a professional short description (1-2 sentences max) describing the visual progression across the keyframes, and a plausible city/country location if identifiable from the scenes.
+
+Return the response strictly as a JSON object with this exact format:
+{
+  "tags": ["Tag1", "Tag2"],
+  "title": "Beautiful suggested title",
+  "description": "Short description of the video progression.",
+  "location": "City, Country"
+}`
+          : `Task: Analyze the provided image to suggest tags, title, description, and location.
+          
 Available tags in our app: "Natural", "Monochrome", "Street", "Landscape", "Architecture", "Abstract", "Urban", "Creative", "Night", "Macro", "Minimalist", "Portrait", "Travel".
 
 Select 1 to 5 tags from the available tags list that perfectly describe the image.
@@ -707,10 +714,24 @@ Return the response strictly as a JSON object with this exact format:
   "title": "Beautiful suggested title",
   "description": "Short description of the photo.",
   "location": "City, Country"
-}`
-                },
-                { type: "image_url", image_url: { url: image } }
-              ]
+}`;
+
+        const content = [{ type: "text", text: promptText }];
+        if (isVideo) {
+          images.forEach(img => {
+            content.push({ type: "image_url", image_url: { url: img } });
+          });
+        } else {
+          content.push({ type: "image_url", image_url: { url: image } });
+        }
+
+        const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
+        const payload = {
+          model: "pixtral-12b-2409",
+          messages: [
+            {
+              role: "user",
+              content: content
             }
           ],
           response_format: { type: "json_object" },
@@ -733,8 +754,8 @@ Return the response strictly as a JSON object with this exact format:
         }
 
         const resData = await apiRes.json();
-        const content = resData.choices[0].message.content;
-        const parsed = JSON.parse(content);
+        const responseContent = resData.choices[0].message.content;
+        const parsed = JSON.parse(responseContent);
 
         return Response.json({
           success: true,
@@ -773,24 +794,46 @@ Return the response strictly as a JSON object with this exact format:
         } = body;
 
         if (!image) {
-          return Response.json({ success: false, error: "Missing required 'image' field in JSON body (base64 string or public image URL)." }, { status: 400, headers: corsHeaders });
+          return Response.json({ success: false, error: "Missing required 'image' field in JSON body (base64 string or public image/video URL)." }, { status: 400, headers: corsHeaders });
         }
 
         let buffer;
         let extension = 'jpg';
         let contentType = 'image/jpeg';
+        let isVideo = false;
         
         if (image.startsWith('http://') || image.startsWith('https://')) {
           try {
             const fetchRes = await fetch(image);
             const arrayBuffer = await fetchRes.arrayBuffer();
             buffer = new Uint8Array(arrayBuffer);
+            const fetchedContentType = fetchRes.headers.get('content-type');
+            if (fetchedContentType && fetchedContentType.startsWith('video/')) {
+              isVideo = true;
+              contentType = fetchedContentType;
+              extension = fetchedContentType.split('/')[1] || 'mp4';
+            } else if (image.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i)) {
+              isVideo = true;
+              extension = image.split('.').pop().split('?')[0].toLowerCase();
+              contentType = `video/${extension}`;
+            }
           } catch (err) {
-            return Response.json({ success: false, error: `Failed to download image from URL: ${err.message}` }, { status: 400, headers: corsHeaders });
+            return Response.json({ success: false, error: `Failed to download media from URL: ${err.message}` }, { status: 400, headers: corsHeaders });
           }
         } else {
           try {
-            const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+            const match = image.match(/^data:(image|video)\/(\w+);base64,/);
+            if (match) {
+              if (match[1] === 'video') {
+                isVideo = true;
+                contentType = match[0].split(';')[0].split(':')[1];
+                extension = match[2];
+              } else {
+                contentType = match[0].split(';')[0].split(':')[1];
+                extension = match[2];
+              }
+            }
+            const base64Data = image.replace(/^data:(image|video)\/\w+;base64,/, "");
             const binaryString = atob(base64Data);
             const len = binaryString.length;
             buffer = new Uint8Array(len);
@@ -798,31 +841,38 @@ Return the response strictly as a JSON object with this exact format:
                 buffer[i] = binaryString.charCodeAt(i);
             }
           } catch (err) {
-            return Response.json({ success: false, error: "Failed to parse Base64 image data." }, { status: 400, headers: corsHeaders });
+            return Response.json({ success: false, error: "Failed to parse Base64 media data." }, { status: 400, headers: corsHeaders });
           }
         }
 
-        // --- Image Compression Logic using Photon ---
-        try {
-          let photonImg = PhotonImage.new_from_byteslice(buffer);
-          const width = photonImg.get_width();
-          const height = photonImg.get_height();
+        const TEN_MB = 10 * 1024 * 1024;
+        if (buffer.byteLength > TEN_MB) {
+            return Response.json({ success: false, error: "File exceeds maximum size of 10MB." }, { status: 400, headers: corsHeaders });
+        }
 
-          const MAX_WIDTH = 1920;
-          const ONE_MB = 1024 * 1024;
+        // --- Image Compression Logic using Photon (Skip for Videos) ---
+        if (!isVideo) {
+          try {
+            let photonImg = PhotonImage.new_from_byteslice(buffer);
+            const width = photonImg.get_width();
+            const height = photonImg.get_height();
 
-          if (width > MAX_WIDTH || buffer.byteLength > ONE_MB) {
-              if (width > MAX_WIDTH) {
-                const newHeight = Math.round(height * (MAX_WIDTH / width));
-                const resized = resize(photonImg, MAX_WIDTH, newHeight, SamplingFilter.Lanczos3);
-                photonImg.free();
-                photonImg = resized;
-              }
-              buffer = photonImg.get_bytes_jpeg(80);
+            const MAX_WIDTH = 1920;
+            const ONE_MB = 1024 * 1024;
+
+            if (width > MAX_WIDTH || buffer.byteLength > ONE_MB) {
+                if (width > MAX_WIDTH) {
+                  const newHeight = Math.round(height * (MAX_WIDTH / width));
+                  const resized = resize(photonImg, MAX_WIDTH, newHeight, SamplingFilter.Lanczos3);
+                  photonImg.free();
+                  photonImg = resized;
+                }
+                buffer = photonImg.get_bytes_jpeg(80);
+            }
+            photonImg.free();
+          } catch (photonErr) {
+            console.error("Photon compression error:", photonErr);
           }
-          photonImg.free();
-        } catch (photonErr) {
-          console.error("Photon compression error:", photonErr);
         }
 
         const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
@@ -1138,16 +1188,11 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
       urlAttempt++;
     }
 
-    const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
-    const payload = {
-      model: "pixtral-12b-2409",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Task: Analyze the uploaded image and its metadata details to:
+    const isVideo = imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i);
+    let messagesContent = [
+      {
+        type: "text",
+        text: `Task: Analyze the metadata details for the uploaded ${isVideo ? 'video' : 'image'} to:
 1. Evaluate safety: Check if there is unsafe content based on the Safety Policy Categories (S1-S6). Intimate anatomy or medical/disease raw graphics of intimate areas MUST be rated as 'unsafe'. Provide a rating of either 'safe' or 'unsafe'.
 2. Generate concepts: If safe, generate 5 descriptive, high-quality aesthetic keyword/concept tags.
 
@@ -1161,9 +1206,20 @@ Return the response strictly as a JSON object with this exact format:
   "safety": "safe" or "unsafe",
   "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 }`
-            },
-            { type: "image_url", image_url: { url: imageUrl } }
-          ]
+      }
+    ];
+
+    if (!isVideo) {
+      messagesContent.push({ type: "image_url", image_url: { url: imageUrl } });
+    }
+
+    const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
+    const payload = {
+      model: "pixtral-12b-2409",
+      messages: [
+        {
+          role: "user",
+          content: messagesContent
         }
       ],
       response_format: { type: "json_object" },

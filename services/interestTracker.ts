@@ -54,6 +54,26 @@ export const recordLikeInterest = (image: ImageMeta): void => {
   saveInterests(interests);
 };
 
+export const recordWatchInterest = (image: ImageMeta, ratio: number): void => {
+  if (ratio < 0.3) return; // Only count watch if they stayed for at least 30%
+  const interests = getInterests();
+  const tags = image.flags || [];
+  const concepts = (image as any).aiConcepts || [];
+  
+  // Strong signal if watched > 50% (+2 weight), medium signal otherwise (+1 weight)
+  const weightMultiplier = ratio >= 0.5 ? 2.0 : 1.0;
+
+  tags.forEach((tag: string) => {
+    const key = tag.toLowerCase();
+    interests[key] = (interests[key] || 0) + weightMultiplier;
+  });
+  concepts.forEach((concept: string) => {
+    const key = concept.toLowerCase();
+    interests[key] = (interests[key] || 0) + (weightMultiplier * 0.5);
+  });
+  saveInterests(interests);
+};
+
 // --- Interest Querying ---
 
 export const getInterests = (): InterestMap => {

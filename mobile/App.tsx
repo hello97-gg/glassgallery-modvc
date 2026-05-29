@@ -816,8 +816,6 @@ const App: React.FC = () => {
         const updated = allImages.find(img => img.id.split('_loop_')[0] === baseId);
         if (updated && updated !== selectedImage) {
             setSelectedImage(updated);
-        } else if (!updated) {
-             setSelectedImage(null);
         }
     }
   }, [allImages, selectedImage]);

@@ -94,18 +94,19 @@ Use the following commands during development:
 
 ## Public API
 
-Glass Gallery provides a free, public API for developers to fetch random images from the platform.
+Glass Gallery provides a free, public API for developers to interact with the platform.
 
+### Fetch Random Images
 **Endpoint:** `GET /api/random`
 
-### Parameters
+#### Parameters
 | Parameter | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `category` | string | Filter by tag (e.g., 'Nature', 'Anime') | - |
 | `title` | string | Search within image titles | - |
 | `limit` | number | Number of images to return (max 20) | 1 |
 
-### Example Usage
+#### Example Usage
 
 **Fetch 1 random image:**
 ```bash
@@ -117,22 +118,34 @@ curl https://glassgallery.vercel.app/api/random
 curl "https://glassgallery.vercel.app/api/random?category=Nature&limit=5"
 ```
 
-**Response Format:**
-```json
-{
-  "success": true,
-  "count": 1,
-  "filter": { "category": "Nature", "title": "any" },
-  "data": [
-    {
-      "id": "abc-123",
-      "imageUrl": "https://pub-xxxx.r2.dev/17099999-image.jpg",
-      "title": "Beautiful Sunset",
-      "tags": ["Nature", "Photography"],
-      "uploaderName": "Jane Doe"
-    }
-  ]
-}
+### Upload Media
+**Endpoint:** `POST /api/images?action=api_upload`
+
+Upload images or videos directly to Glass Gallery using your API key. Videos must be under 10MB. 
+
+#### Headers
+| Header | Description |
+| :--- | :--- |
+| `x-api-key` | Your private Glass Gallery API key |
+
+#### Body Parameters (JSON)
+| Parameter | Type | Description | Required |
+| :--- | :--- | :--- | :--- |
+| `image` | string | Base64 encoded media string OR public URL | Yes |
+| `title` | string | Title of the media | No |
+| `description` | string | Description of the media | No |
+| `tags` | array | Array of string tags (e.g., `["Cyberpunk", "Urban"]`) | No |
+
+#### Example Usage (Uploading from URL)
+```bash
+curl -X POST "http://127.0.0.1:8788/api/images?action=api_upload" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "https://example.com/sample-video.mp4",
+    "title": "My API Video",
+    "tags": ["Video", "Test"]
+  }'
 ```
 
 ## Configuration
