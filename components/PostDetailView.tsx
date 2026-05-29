@@ -14,6 +14,8 @@ interface PostDetailViewProps {
   onLikeToggle: (image: ImageMeta) => void;
   onLoginClick: () => void;
   onImageClick: (image: ImageMeta) => void;
+  savedImages: Set<string>;
+  onSaveToggle: (image: ImageMeta) => void;
 }
 
 const PostDetailView: React.FC<PostDetailViewProps> = ({
@@ -24,7 +26,9 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   onViewProfile,
   onLikeToggle,
   onLoginClick,
-  onImageClick
+  onImageClick,
+  savedImages,
+  onSaveToggle
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [flatComments, setFlatComments] = useState<Comment[]>([]);
@@ -494,6 +498,8 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                           onViewProfile={onViewProfile}
                           onLikeToggle={onLikeToggle}
                           onLoginClick={onLoginClick}
+                          savedImages={savedImages}
+                          onSaveToggle={onSaveToggle}
                       />
                   ))}
                </div>

@@ -1233,6 +1233,8 @@ const App: React.FC = () => {
                   onLikeToggle={handleLikeToggle}
                   onLoginClick={() => setLoginModalOpen(true)}
                   onImageClick={handleFeedImageClick}
+                  savedImages={savedImages}
+                  onSaveToggle={handleSaveToggle}
                 />
             </>
         );
