@@ -212,7 +212,7 @@ export async function onRequest(context) {
     // Strip React for known search engine bots so they only index the server-rendered HTML
     // and don't wipe the DOM when JS executes.
     const userAgent = context.request.headers.get('user-agent') || '';
-    const isBot = /bot|googlebot|crawler|spider|robot|crawling|facebookexternalhit|twitterbot/i.test(userAgent);
+    const isBot = /bot|googlebot|crawler|spider|robot|crawling|facebookexternalhit|twitterbot|inspectiontool/i.test(userAgent);
     
     if (isBot) {
       indexHtml = indexHtml.replace(/<script type="module"[^>]*><\/script>/gi, '');
