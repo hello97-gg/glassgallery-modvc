@@ -11,6 +11,7 @@ import imageCompression from 'browser-image-compression';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
+import { isVideoFile } from '../utils/mediaUtils';
 
 interface UploadModalProps {
   user: User;
@@ -250,7 +251,10 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   };
 
   const handleFileSelect = async (selectedFile: File) => {
-    if (selectedFile && (selectedFile.type.startsWith('image/') || selectedFile.type.startsWith('video/'))) {
+    const isImage = selectedFile && (selectedFile.type.startsWith('image/') || selectedFile.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i));
+    const isVideo = selectedFile && (selectedFile.type.startsWith('video/') || isVideoFile(selectedFile.name));
+
+    if (selectedFile && (isImage || isVideo)) {
         setIsLoading(true);
         setLoadingMessage('Processing file...');
         setError(null);
@@ -258,7 +262,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         setFile(null);
 
         try {
-            if (selectedFile.type.startsWith('image/')) {
+            if (isImage) {
                 const options = {
                     maxSizeMB: 2,
                     maxWidthOrHeight: 1920,
@@ -275,7 +279,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                     setIsLoading(false);
                 };
                 reader.readAsDataURL(compressedFile);
-            } else if (selectedFile.type.startsWith('video/')) {
+            } else if (isVideo) {
                 setFile(selectedFile);
                 const previewUrl = URL.createObjectURL(selectedFile);
                 setPreview(previewUrl);
@@ -363,7 +367,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     }
     if (!user) return;
 
-    const isVideoUpload = file.type.startsWith('video/');
+    const isVideoUpload = file.type.startsWith('video/') || isVideoFile(file.name);
     setIsLoading(true);
     setLoadingMessage(isVideoUpload ? 'Uploading video...' : 'Uploading image...');
     setError(null);
@@ -389,7 +393,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
           );
       }
        if (preview) {
-           if (file?.type.startsWith('video/')) {
+           const previewIsVideo = file?.type.startsWith('video/') || (file && isVideoFile(file.name));
+           if (previewIsVideo) {
                return <video src={preview} controls className="max-h-full rounded-md object-contain w-full h-full bg-black" />;
            }
            return <img src={preview} alt="Preview" className="max-h-full rounded-md object-contain" />;
@@ -409,7 +414,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         <div className="bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
           <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-primary">{file?.type.startsWith('video/') ? 'Upload a Video' : 'Upload an Image'}</h2>
+                  <h2 className="text-xl font-bold text-primary">{file && (file.type.startsWith('video/') || isVideoFile(file.name)) ? 'Upload a Video' : 'Upload an Image'}</h2>
                   <button onClick={onClose} className="text-secondary hover:text-primary transition-colors text-3xl leading-none">&times;</button>
               </div>
               

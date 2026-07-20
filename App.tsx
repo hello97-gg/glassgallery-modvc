@@ -831,7 +831,9 @@ const App: React.FC = () => {
     e.stopPropagation();
     dragCounter.current++;
     if (user && !isUploadModalOpen && !isLoginModalOpen && !selectedImage && e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
-        const containsFile = Array.from(e.dataTransfer.items).some(item => item.kind === 'file' && (item.type.startsWith('image/') || item.type.startsWith('video/')));
+        // During dragenter, browsers may mask the actual file type or it might be empty for some video formats.
+        // It's safer to just check if there's any file being dragged, and validate the type on drop.
+        const containsFile = Array.from(e.dataTransfer.items).some(item => item.kind === 'file');
         if (containsFile) {
             setIsDraggingOver(true);
         }
@@ -866,7 +868,12 @@ const App: React.FC = () => {
     if (user && !isUploadModalOpen && !isLoginModalOpen && !selectedImage) {
         if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
             const file = e.dataTransfer.files[0];
-            if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
+            
+            // Fallback to extension if MIME type is empty (common for some video formats like MKV)
+            const isImage = file?.type.startsWith('image/') || file?.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i);
+            const isVideo = file?.type.startsWith('video/') || file?.name.match(/\.(mp4|webm|ogg|mkv|mov|avi)$/i);
+
+            if (file && (isImage || isVideo)) {
                 setDroppedFile(file);
                 setUploadModalOpen(true);
             }
