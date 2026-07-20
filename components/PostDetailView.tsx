@@ -18,6 +18,7 @@ interface PostDetailViewProps {
   onImageClick: (image: ImageMeta) => void;
   savedImages: Set<string>;
   onSaveToggle: (image: ImageMeta) => void;
+  onImageUpdate?: (image: ImageMeta) => void;
 }
 
 const PostDetailView: React.FC<PostDetailViewProps> = ({
@@ -30,7 +31,8 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   onLoginClick,
   onImageClick,
   savedImages,
-  onSaveToggle
+  onSaveToggle,
+  onImageUpdate
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [flatComments, setFlatComments] = useState<Comment[]>([]);
@@ -140,10 +142,12 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
       const newComment = await addCommentToImage(currentImage.id, user, newCommentText);
       setFlatComments(prev => [...prev, newComment]);
       setNewCommentText('');
-      setCurrentImage(prev => ({
-        ...prev,
-        commentCount: (prev.commentCount || 0) + 1
-      }));
+      const updatedImage = {
+        ...currentImage,
+        commentCount: (currentImage.commentCount || 0) + 1
+      };
+      setCurrentImage(updatedImage);
+      if (onImageUpdate) onImageUpdate(updatedImage);
     } catch (err) {
       console.error("Failed to post comment:", err);
     } finally {
@@ -163,10 +167,12 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
       setFlatComments(prev => [...prev, newReply]);
       setReplyText('');
       setReplyToId(null);
-      setCurrentImage(prev => ({
-        ...prev,
-        commentCount: (prev.commentCount || 0) + 1
-      }));
+      const updatedImage = {
+        ...currentImage,
+        commentCount: (currentImage.commentCount || 0) + 1
+      };
+      setCurrentImage(updatedImage);
+      if (onImageUpdate) onImageUpdate(updatedImage);
     } catch (err) {
       console.error("Failed to post reply:", err);
     } finally {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { ImageMeta } from '../types';
+import { isVideoUrl } from '../utils/mediaUtils';
 
 interface EmbedModalProps {
   image: ImageMeta;
@@ -17,7 +18,9 @@ const EmbedModal: React.FC<EmbedModalProps> = ({ image, onClose }) => {
     {
       label: 'HTML Embed',
       icon: '</>',
-      code: `<a href="${pageUrl}" target="_blank" rel="noopener">\n  <img src="${embedUrl}" alt="${title}" style="max-width:100%;border-radius:12px" />\n</a>`,
+      code: isVideoUrl(image.imageUrl)
+        ? `<video controls src="${embedUrl}" style="max-width:100%;border-radius:12px"></video>`
+        : `<a href="${pageUrl}" target="_blank" rel="noopener">\n  <img src="${embedUrl}" alt="${title}" style="max-width:100%;border-radius:12px" />\n</a>`,
     },
     {
       label: 'Markdown',
@@ -72,7 +75,11 @@ const EmbedModal: React.FC<EmbedModalProps> = ({ image, onClose }) => {
         {/* Image Preview */}
         <div className="px-6 pb-3 w-full">
           <div className="flex items-center gap-3 p-3 bg-background rounded-xl border border-border">
-            <img src={image.imageUrl} alt={title} className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
+            {isVideoUrl(image.imageUrl) ? (
+               <video src={image.imageUrl} className="w-14 h-14 object-cover rounded-lg flex-shrink-0 bg-black" />
+            ) : (
+               <img src={image.imageUrl} alt={title} className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-primary truncate">{title}</p>
               <p className="text-xs text-secondary">by {image.uploaderName}</p>

@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile, getFollowingList } from './services/firestoreService';
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
+import { isVideoUrl } from './utils/mediaUtils';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 
 import Sidebar from './components/Header';
@@ -65,27 +66,48 @@ const API_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
 // --- Skeleton Components for Initial Load ---
 const SKELETON_HEIGHTS = ['min-h-[200px]', 'min-h-[280px]', 'min-h-[360px]', 'min-h-[240px]'];
 
-const SkeletonCard: React.FC = () => {
+const SkeletonFeedPost: React.FC = () => {
+  const SKELETON_HEIGHTS = ['h-[300px]', 'h-[400px]', 'h-[250px]', 'h-[450px]'];
   const heightClass = SKELETON_HEIGHTS[Math.floor(Math.random() * SKELETON_HEIGHTS.length)];
   
   return (
-    <div 
-      className={`
-        bg-surface rounded-xl overflow-hidden mb-4 md:mb-6 break-inside-avoid
-        ${heightClass}
-        relative
-      `}
-    >
-      <div className="absolute inset-0 bg-gradient-to-r from-surface via-border to-surface bg-[length:200%_100%] animate-shimmer" />
+    <div className="flex gap-3 p-4 border-b border-border w-full animate-pulse">
+      {/* Avatar Skeleton */}
+      <div className="shrink-0">
+        <div className="w-10 h-10 rounded-full bg-surface" />
+      </div>
+
+      {/* Content Skeleton */}
+      <div className="flex-1 min-w-0 flex flex-col gap-2">
+        {/* Header Skeleton */}
+        <div className="flex items-center gap-2">
+          <div className="h-4 w-32 bg-surface rounded" />
+          <div className="h-4 w-20 bg-surface rounded" />
+        </div>
+        
+        {/* Text Skeleton */}
+        <div className="h-4 w-3/4 bg-surface rounded" />
+        <div className="h-4 w-1/2 bg-surface rounded" />
+
+        {/* Media Block Skeleton */}
+        <div className={`w-full rounded-2xl bg-surface mt-2 ${heightClass}`} />
+
+        {/* Actions Skeleton */}
+        <div className="flex gap-6 mt-3">
+          <div className="h-5 w-5 bg-surface rounded-full" />
+          <div className="h-5 w-5 bg-surface rounded-full" />
+          <div className="h-5 w-5 bg-surface rounded-full" />
+        </div>
+      </div>
     </div>
   );
 };
 
 const SkeletonGrid: React.FC = () => {
   return (
-    <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2 md:gap-4 animate-fade-in">
-      {Array.from({ length: 15 }).map((_, index) => (
-        <SkeletonCard key={index} />
+    <div className="flex flex-col w-full max-w-2xl mx-auto border-x border-border min-h-screen bg-background">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <SkeletonFeedPost key={index} />
       ))}
     </div>
   );
@@ -133,10 +155,14 @@ const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): Ima
       // 4. Client-side interest boost (search history + click history from localStorage)
       const interestBoost = getInterestBoost(image);
 
-      // 5. Variable Reward (Randomness)
+      // 5. Video format boost (Push newly uploaded videos up in the feed)
+      const isVideo = isVideoUrl(image.imageUrl);
+      const videoBoost = isVideo && ageInHours < 168 ? 2000 : (isVideo ? 500 : 0);
+
+      // 6. Variable Reward (Randomness)
       const randomFactor = Math.random() * 250;
 
-      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + randomFactor;
+      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + videoBoost + randomFactor;
 
       return { ...image, sortScore: finalScore };
     })
@@ -805,7 +831,7 @@ const App: React.FC = () => {
     e.stopPropagation();
     dragCounter.current++;
     if (user && !isUploadModalOpen && !isLoginModalOpen && !selectedImage && e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
-        const containsFile = Array.from(e.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'));
+        const containsFile = Array.from(e.dataTransfer.items).some(item => item.kind === 'file' && (item.type.startsWith('image/') || item.type.startsWith('video/')));
         if (containsFile) {
             setIsDraggingOver(true);
         }
@@ -840,7 +866,7 @@ const App: React.FC = () => {
     if (user && !isUploadModalOpen && !isLoginModalOpen && !selectedImage) {
         if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
             const file = e.dataTransfer.files[0];
-            if (file && file.type.startsWith('image/')) {
+            if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
                 setDroppedFile(file);
                 setUploadModalOpen(true);
             }
@@ -1042,6 +1068,12 @@ const App: React.FC = () => {
          setSelectedImage({ ...updatedImage, id: selectedImage.id });
       }
     }
+    if (selectedFeedPost) {
+      const selectedBaseId = selectedFeedPost.id.split('_loop_')[0];
+      if (selectedBaseId === baseId) {
+         setSelectedFeedPost({ ...updatedImage, id: selectedFeedPost.id });
+      }
+    }
   };
 
   const handleLikeToggle = async (image: ImageMeta) => {
@@ -1234,6 +1266,7 @@ const App: React.FC = () => {
                   onImageClick={handleFeedImageClick}
                   savedImages={savedImages}
                   onSaveToggle={handleSaveToggle}
+                  onImageUpdate={handleImageUpdate}
                 />
             </>
         );
