@@ -11,6 +11,7 @@ export interface ImageMeta {
   uploaderPhotoURL: string;
   title?: string;
   description?: string;
+  tags?: string[];
   license: string;
   licenseUrl?: string;
   flags: string[];

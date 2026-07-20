@@ -252,7 +252,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
 
   const handleFileSelect = async (selectedFile: File) => {
     const isImage = selectedFile && (selectedFile.type.startsWith('image/') || selectedFile.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i));
-    const isVideo = selectedFile && (selectedFile.type.startsWith('video/') || isVideoFile(selectedFile.name));
+    const isVideo = selectedFile && (selectedFile.type.startsWith('video/') || selectedFile.name.match(/\.(mp4|webm|ogg|mkv|mov|avi)$/i));
 
     if (selectedFile && (isImage || isVideo)) {
         setIsLoading(true);
@@ -424,9 +424,24 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                       <label 
                           htmlFor={Capacitor.isNativePlatform() ? undefined : "file-upload"}
                           onClick={Capacitor.isNativePlatform() ? handleNativePhotoSelect : undefined}
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
+                          onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDragging(true);
+                          }}
+                          onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDragging(false);
+                          }}
+                          onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setIsDragging(false);
+                              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                  handleFileSelect(e.dataTransfer.files[0]);
+                              }
+                          }}
                           className={`mt-1 flex justify-center items-center h-48 px-6 pt-5 pb-6 border-2 border-border border-dashed rounded-md transition-colors ${isLoading ? '' : 'cursor-pointer'} ${isDragging ? 'border-accent bg-accent/10' : 'hover:border-secondary/50'}`}
                       >
                           {renderUploadState()}

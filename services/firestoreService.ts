@@ -165,11 +165,12 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
 // Real-time subscription for a single image (simulated via client polling)
 export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) => void) => {
     let active = true;
+    const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
 
     const poll = async () => {
         if (document.visibilityState !== 'visible') return;
         try {
-            const response = await fetch(`/api/images?action=get_single&imageId=${imageId}`);
+            const response = await fetch(`/api/images?action=get_single&imageId=${baseId}`);
             if (!response.ok) {
                 throw new Error(`Server returned status ${response.status}`);
             }
@@ -463,7 +464,8 @@ export const toggleFollowUser = async (followerUid: string, followingUid: string
 
 export const getCommentsForImage = async (imageId: string): Promise<Comment[]> => {
     try {
-        const response = await fetch(`/api/comments?imageId=${imageId}`);
+        const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
+        const response = await fetch(`/api/comments?imageId=${baseId}`);
         const data = await response.json();
         if (!data.success) {
             throw new Error(data.error || "Failed to fetch comments.");
@@ -482,11 +484,12 @@ export const addCommentToImage = async (
     parentId?: string | null
 ): Promise<Comment> => {
     try {
+        const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
         const response = await fetch('/api/comments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                imageId,
+                imageId: baseId,
                 userUid: user.uid,
                 userName: user.displayName || 'Anonymous',
                 userPhotoURL: user.photoURL || '',

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { ImageMeta, ProfileUser } from '../types';
+import { isVideoUrl } from '../utils/mediaUtils';
 
 interface CreatorDashboardProps {
   images: ImageMeta[];
@@ -352,11 +353,19 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
             className="flex flex-col md:flex-row items-center gap-5 p-4 bg-white/[0.02] border border-white/5 rounded-2xl cursor-pointer hover:bg-white/[0.05] hover:border-teal-500/20 active:scale-[0.99] transition-all group relative"
           >
             <div className="relative overflow-hidden rounded-xl border border-border">
-              <img 
-                src={selectedImage.imageUrl} 
-                alt={selectedImage.title || 'Selected Creation'} 
-                className="w-full md:w-32 aspect-video object-cover group-hover:scale-105 transition-transform duration-300"
-              />
+              {isVideoUrl(selectedImage.imageUrl) ? (
+                <video 
+                  src={selectedImage.imageUrl} 
+                  className="w-full md:w-32 aspect-video object-cover group-hover:scale-105 transition-transform duration-300"
+                  muted loop playsInline
+                />
+              ) : (
+                <img 
+                  src={selectedImage.imageUrl} 
+                  alt={selectedImage.title || 'Selected Creation'} 
+                  className="w-full md:w-32 aspect-video object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              )}
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                 <span className="text-[9px] font-bold text-white uppercase tracking-wider">Open View</span>
               </div>
@@ -660,11 +669,19 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
                       onClick={() => setSelectedImageId(latestImage.id)}
                       className="group cursor-pointer relative aspect-video rounded-xl overflow-hidden border border-border shadow-sm"
                     >
-                      <img 
-                        src={latestImage.imageUrl} 
-                        alt={latestImage.title || 'Latest'} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
+                      {isVideoUrl(latestImage.imageUrl) ? (
+                        <video 
+                          src={latestImage.imageUrl} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          muted loop playsInline
+                        />
+                      ) : (
+                        <img 
+                          src={latestImage.imageUrl} 
+                          alt={latestImage.title || 'Latest'} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      )}
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                         <span className="text-xs font-bold text-white bg-red-600 px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-1">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
@@ -813,7 +830,11 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
                             onImageClick?.(img);
                           }}
                         >
-                          <img src={img.imageUrl} alt={img.title} className="w-12 aspect-video object-cover rounded-md border border-white/10 group-hover/thumb:scale-105 transition-transform" />
+                          {isVideoUrl(img.imageUrl) ? (
+                            <video src={img.imageUrl} className="w-12 aspect-video object-cover rounded-md border border-white/10 group-hover/thumb:scale-105 transition-transform" muted loop playsInline />
+                          ) : (
+                            <img src={img.imageUrl} alt={img.title} className="w-12 aspect-video object-cover rounded-md border border-white/10 group-hover/thumb:scale-105 transition-transform" />
+                          )}
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center rounded-md transition-opacity">
                             <span className="text-[8px] font-bold text-white uppercase">Zoom</span>
                           </div>
@@ -928,11 +949,19 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
                     onClick={() => setSelectedImageId(spotlightImage.id)}
                     className="group relative aspect-video rounded-xl overflow-hidden border border-border shadow-sm cursor-pointer"
                   >
-                    <img 
-                      src={spotlightImage.imageUrl} 
-                      alt={spotlightImage.title || 'Masterpiece'} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+                    {isVideoUrl(spotlightImage.imageUrl) ? (
+                      <video 
+                        src={spotlightImage.imageUrl} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        muted loop playsInline
+                      />
+                    ) : (
+                      <img 
+                        src={spotlightImage.imageUrl} 
+                        alt={spotlightImage.title || 'Masterpiece'} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90 group-hover:opacity-100 transition-opacity" />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                       <span className="text-xs font-bold text-white bg-red-600 px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-1">

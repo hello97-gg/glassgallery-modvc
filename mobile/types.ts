@@ -19,6 +19,9 @@ export interface ImageMeta {
   likeCount?: number;
   likedBy?: string[];
   downloadCount?: number;
+  commentCount?: number;
+  viewCount?: number;
+  tags?: string[];
   location?: string;
 }
 
@@ -38,6 +41,7 @@ export interface ProfileUser {
   bio?: string;
   onboarded?: boolean;
   followedTags?: string[];
+  isVerified?: boolean;
 }
 
 export interface Notification {

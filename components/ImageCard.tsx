@@ -73,7 +73,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   };
   
   const isFlagged = image.flags?.includes('Flagged');
-  const combinedClassName = `block group relative bg-surface rounded-xl overflow-hidden cursor-pointer transition-transform duration-300 hover:scale-[1.03] mb-4 md:mb-6 break-inside-avoid ${className}`;
+  const combinedClassName = `block group relative bg-surface rounded-xl overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.03] active:scale-95 mb-4 md:mb-6 break-inside-avoid ${className}`;
   const hasLiked = user && image.likedBy?.includes(user.uid);
 
   const handleProfileClick = (e: React.MouseEvent) => {

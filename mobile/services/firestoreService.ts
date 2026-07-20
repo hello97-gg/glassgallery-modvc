@@ -165,11 +165,12 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
 // Real-time subscription for a single image (simulated via client polling)
 export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) => void) => {
     let active = true;
+    const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
 
     const poll = async () => {
         if (document.visibilityState !== 'visible') return;
         try {
-            const response = await fetch(`/api/images?action=get_single&imageId=${imageId}`);
+            const response = await fetch(`/api/images?action=get_single&imageId=${baseId}`);
             if (!response.ok) {
                 throw new Error(`Server returned status ${response.status}`);
             }

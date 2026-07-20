@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import type { ImageMeta, Comment, ProfileUser } from '../types';
 import { getCommentsForImage, addCommentToImage, toggleCommentLike } from '../services/firestoreService';
 import { recordWatchInterest } from '../services/interestTracker';
-import { isVideoUrl } from '../utils/mediaUtils';
+import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
 import Spinner from './Spinner';
 import { FeedItem } from './InfiniteFeed';
 
@@ -34,6 +34,7 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   onSaveToggle,
   onImageUpdate
 }) => {
+  const [history, setHistory] = useState<ImageMeta[]>([]);
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [flatComments, setFlatComments] = useState<Comment[]>([]);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
@@ -42,6 +43,10 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [replyText, setReplyText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const watchLoggedRef = useRef(false);
+
+  const relatedImages = useMemo(() => {
+    return getRelatedImages(currentImage, suggestedImages, 12);
+  }, [currentImage, suggestedImages]);
 
   const handleVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
@@ -79,10 +84,10 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
     });
   };
 
-  const loadComments = async () => {
+  const loadComments = async (idToLoad: string) => {
     setIsLoadingComments(true);
     try {
-      const data = await getCommentsForImage(currentImage.id);
+      const data = await getCommentsForImage(idToLoad);
       setFlatComments(data);
     } catch (err) {
       console.error("Failed to load comments:", err);
@@ -94,10 +99,13 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   useEffect(() => {
     // Scroll to top on load for full page view!
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    loadComments();
+    loadComments(currentImage.id);
     setReplyToId(null);
     setReplyText('');
     setNewCommentText('');
+  }, [currentImage.id]);
+
+  useEffect(() => {
     setCurrentImage(image);
   }, [image.id]);
 
@@ -340,18 +348,37 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   };
 
   return (
-    <div className="w-full flex justify-center bg-background min-h-screen">
+    <div className="w-full flex justify-center bg-background min-h-screen animate-fade-in transition-all duration-300">
        <div className="w-full max-w-2xl border-l border-r border-border min-h-screen pb-20 md:pb-0 bg-background flex flex-col">
           {/* Sticky Header */}
-          <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border flex items-center gap-6 px-4 py-3 cursor-pointer" onClick={onClose}>
-            <button onClick={onClose} className="text-secondary hover:text-primary transition-colors">
+          <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border flex items-center gap-6 px-4 py-3">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (history.length > 0) {
+                  setCurrentImage(history[history.length - 1]);
+                  setHistory(prev => prev.slice(0, -1));
+                } else {
+                  onClose();
+                }
+              }} 
+              className="text-secondary hover:text-primary transition-colors p-1.5 rounded-full hover:bg-surface/50"
+              aria-label="Back"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true" className="w-5 h-5 fill-current">
                 <g>
                   <path d="M7.414 13l5.086 5.086-1.414 1.414L2.586 11 11.086 2.586 12.5 4l-5.086 5H22v2H7.414z" />
                 </g>
               </svg>
             </button>
-            <h1 className="text-xl font-bold text-primary">Post</h1>
+            <h1 className="text-xl font-bold text-primary cursor-pointer" onClick={() => {
+                if (history.length > 0) {
+                  setCurrentImage(history[history.length - 1]);
+                  setHistory(prev => prev.slice(0, -1));
+                } else {
+                  onClose();
+                }
+            }}>Post</h1>
           </div>
 
           {/* Main Content Area */}
@@ -521,12 +548,16 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                   <h2 className="text-xl font-bold text-primary">Discover more</h2>
                </div>
                <div className="flex flex-col">
-                  {suggestedImages.filter(img => img.id !== currentImage.id).map(suggestedImg => (
+                  {relatedImages.map(suggestedImg => (
                       <FeedItem 
                           key={suggestedImg.id}
                           image={suggestedImg}
                           user={user}
-                          onImageClick={onImageClick}
+                          onImageClick={(img) => {
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                              setHistory(prev => [...prev, currentImage]);
+                              setCurrentImage(img);
+                          }}
                           onViewProfile={onViewProfile}
                           onLikeToggle={onLikeToggle}
                           onLoginClick={onLoginClick}

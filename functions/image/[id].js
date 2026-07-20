@@ -127,6 +127,8 @@ export async function onRequest(context) {
       "sameAs": []
     });
 
+    const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(imageUrl);
+
     const jsonLdScripts = schemas.map(s => 
       `<script type="application/ld+json">${JSON.stringify(s)}</script>`
     ).join('\n    ');
@@ -138,18 +140,33 @@ export async function onRequest(context) {
     <link rel="canonical" href="${pageUrl}" />
     
     <meta property="og:site_name" content="Glass Gallery" />
-    <meta property="og:type" content="article" />
+    <meta property="og:type" content="${isVideo ? 'video.other' : 'article'}" />
     <meta property="og:title" content="${title}" />
     <meta property="og:description" content="${description}" />
-    <meta property="og:image" content="${imageUrl}" />
     <meta property="og:url" content="${pageUrl}" />
     <meta property="article:author" content="${uploaderName}" />
     ${image.uploadedAt ? `<meta property="article:published_time" content="${escapeHtml(image.uploadedAt)}" />` : ''}
     
+    ${isVideo ? `
+    <meta property="og:video" content="${imageUrl}" />
+    <meta property="og:video:secure_url" content="${imageUrl}" />
+    <meta property="og:video:type" content="video/mp4" />
+    <meta property="og:video:width" content="1280" />
+    <meta property="og:video:height" content="720" />
+    <meta name="twitter:card" content="player" />
+    <meta name="twitter:player" content="${pageUrl}" />
+    <meta name="twitter:player:stream" content="${imageUrl}" />
+    <meta name="twitter:player:stream:content_type" content="video/mp4" />
+    <meta name="twitter:player:width" content="1280" />
+    <meta name="twitter:player:height" content="720" />
+    <meta name="twitter:image" content="${baseUrl}/web-app-manifest-512x512.png" />
+    ` : `
+    <meta property="og:image" content="${imageUrl}" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="${imageUrl}" />
+    `}
     <meta name="twitter:title" content="${title}" />
     <meta name="twitter:description" content="${description}" />
-    <meta name="twitter:image" content="${imageUrl}" />
     
     ${jsonLdScripts}
     `;
@@ -170,10 +187,14 @@ export async function onRequest(context) {
 
     // Inject server-rendered HTML for Googlebot (Dynamic Rendering)
     // This prevents the "Crawled - currently not indexed" issue caused by empty initial DOM
+    const mediaHtml = isVideo 
+      ? `<video controls autoplay loop muted style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);"><source src="${imageUrl}" type="video/mp4">Your browser does not support the video tag.</video>`
+      : `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);" />`;
+
     const serverRenderedHtml = `
       <div style="display: flex; flex-direction: column; align-items: center; padding: 2rem; background: #181818; color: #e5e5e5; min-height: 100vh; font-family: system-ui, sans-serif;">
         <h1 style="font-size: 2rem; margin-bottom: 1rem;">${title}</h1>
-        <img src="${imageUrl}" alt="${title}" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);" />
+        ${mediaHtml}
         <p style="margin-top: 1.5rem; max-width: 600px; text-align: center; line-height: 1.6;">${description}</p>
         <div style="margin-top: 2rem; color: #a0a0a0;">
           <p>By ${uploaderName}</p>
@@ -187,6 +208,15 @@ export async function onRequest(context) {
       /<!-- SKELETON_START -->[\s\S]*?<!-- SKELETON_END -->/, 
       serverRenderedHtml
     );
+
+    // Strip React for known search engine bots so they only index the server-rendered HTML
+    // and don't wipe the DOM when JS executes.
+    const userAgent = context.request.headers.get('user-agent') || '';
+    const isBot = /bot|googlebot|crawler|spider|robot|crawling|facebookexternalhit|twitterbot/i.test(userAgent);
+    
+    if (isBot) {
+      indexHtml = indexHtml.replace(/<script type="module" src="\/index\.tsx"><\/script>/i, '');
+    }
 
     return new Response(indexHtml, {
       status: 200,

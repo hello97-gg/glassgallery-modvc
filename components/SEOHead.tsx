@@ -49,19 +49,38 @@ const SEOHead: React.FC<SEOHeadProps> = ({
     // 3. Standard Meta
     setMeta('description', description);
 
+    const isVideo = imageUrl && (imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)$/i) || imageUrl.includes('video'));
+
     // 4. Open Graph (Facebook, Discord, iMessage)
     setMeta('og:title', title, true);
     setMeta('og:description', description, true);
     setMeta('og:type', type, true);
     if (url) setMeta('og:url', url, true);
-    if (imageUrl) setMeta('og:image', imageUrl, true);
+    if (imageUrl) {
+        if (isVideo) {
+            setMeta('og:video', imageUrl, true);
+            setMeta('og:video:secure_url', imageUrl, true);
+            setMeta('og:video:type', 'video/mp4', true);
+            setMeta('og:image', favicon || DEFAULT_FAVICON, true); // Fallback image for video
+        } else {
+            setMeta('og:image', imageUrl, true);
+        }
+    }
     setMeta('og:site_name', 'Glass Gallery', true);
 
     // 5. Twitter Cards
-    setMeta('twitter:card', imageUrl ? 'summary_large_image' : 'summary');
+    if (isVideo && imageUrl) {
+        setMeta('twitter:card', 'player');
+        setMeta('twitter:player', imageUrl);
+        setMeta('twitter:player:width', '640');
+        setMeta('twitter:player:height', '360');
+        setMeta('twitter:image', favicon || DEFAULT_FAVICON);
+    } else {
+        setMeta('twitter:card', imageUrl ? 'summary_large_image' : 'summary');
+        if (imageUrl) setMeta('twitter:image', imageUrl);
+    }
     setMeta('twitter:title', title);
     setMeta('twitter:description', description);
-    if (imageUrl) setMeta('twitter:image', imageUrl);
 
     // 6. Dynamic Favicon
     const activeFavicon = favicon || DEFAULT_FAVICON;
@@ -90,16 +109,18 @@ const SEOHead: React.FC<SEOHeadProps> = ({
     const baseUrl = 'https://gg.modvc.org';
     const schemas: any[] = [];
 
-    if ((type === 'article' || tags || license) && imageUrl) {
-        // ImageObject schema for image details
-        const imageSchema: any = {
+    // Always generate schema if imageUrl is present for a post/article
+    if (imageUrl && (type === 'article' || title !== 'Home - Infinite Feed')) {
+        // ImageObject / VideoObject schema for media details
+        const mediaSchema: any = {
             "@context": "https://schema.org",
-            "@type": "ImageObject",
+            "@type": isVideo ? "VideoObject" : "ImageObject",
             "contentUrl": imageUrl,
             "url": url || baseUrl,
             "name": title,
             "description": description,
-            "thumbnail": imageUrl,
+            "thumbnailUrl": isVideo ? (favicon || DEFAULT_FAVICON) : imageUrl,
+            "uploadDate": new Date().toISOString(),
             "license": license || "https://creativecommons.org/licenses/by/4.0/",
             "acquireLicensePage": url || baseUrl,
             "creditText": authorName || author || "Glass Gallery User",
@@ -113,17 +134,17 @@ const SEOHead: React.FC<SEOHeadProps> = ({
             }
         };
         if (tags && tags.length > 0) {
-            imageSchema.keywords = tags.join(', ');
+            mediaSchema.keywords = tags.join(', ');
         }
         if (location) {
-            imageSchema.locationCreated = {
+            mediaSchema.locationCreated = {
                 "@type": "Place",
                 "name": location
             };
         }
-        schemas.push(imageSchema);
+        schemas.push(mediaSchema);
 
-        // BreadcrumbList for image detail pages
+        // BreadcrumbList for media detail pages
         schemas.push({
             "@context": "https://schema.org",
             "@type": "BreadcrumbList",

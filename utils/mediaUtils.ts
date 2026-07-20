@@ -70,3 +70,94 @@ export const isVideoFile = (name: string): boolean => {
   const ext = getFileExtension(name);
   return ['mp4', 'webm', 'mov', 'ogg', 'avi', 'mkv', 'm4v'].includes(ext);
 };
+
+import type { ImageMeta } from '../types';
+
+/**
+ * Computes related media items for a given item based on:
+ * 1. Tag overlap matching (+10 per tag)
+ * 2. Same author (+5)
+ * 3. Title & description word similarity (+2..3 per keyword match)
+ * 4. Same media type (video vs image) (+2)
+ * 5. Popularity engagement (+0.2 per like)
+ * 6. Post-specific deterministic hash variation to guarantee distinct recommendations across different posts
+ */
+export const getRelatedImages = (currentImage: ImageMeta, pool: ImageMeta[], limit: number = 10): ImageMeta[] => {
+  if (!currentImage || !pool || pool.length === 0) return [];
+
+  const currentBaseId = currentImage.id.split('_loop_')[0];
+
+  // Filter out candidates that match current image base ID
+  const candidates = pool.filter(img => img.id.split('_loop_')[0] !== currentBaseId);
+
+  // Deduplicate by base ID to avoid duplicate cards in recommendation
+  const uniqueMap = new Map<string, ImageMeta>();
+  candidates.forEach(img => {
+      const baseId = img.id.split('_loop_')[0];
+      if (!uniqueMap.has(baseId)) {
+          uniqueMap.set(baseId, img);
+      }
+  });
+  const uniqueCandidates = Array.from(uniqueMap.values());
+
+  const currentTags = (currentImage.tags || []).map(t => t.toLowerCase());
+  const currentTitleWords = (currentImage.title || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const currentDescWords = (currentImage.description || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
+
+  // Simple deterministic string hash for seeding variation
+  const getHash = (str: string) => {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+          hash = (hash << 5) - hash + str.charCodeAt(i);
+          hash |= 0;
+      }
+      return Math.abs(hash);
+  };
+
+  const imageHash = getHash(currentBaseId);
+
+  const scored = uniqueCandidates.map((img) => {
+      let score = 0;
+      const candidateBaseId = img.id.split('_loop_')[0];
+
+      // 1. Tag matching (+10)
+      const imgTags = (img.tags || []).map(t => t.toLowerCase());
+      const tagMatches = imgTags.filter(t => currentTags.includes(t)).length;
+      score += tagMatches * 10;
+
+      // 2. Author matching (+5)
+      if (img.uploaderUid && img.uploaderUid === currentImage.uploaderUid) {
+          score += 5;
+      }
+
+      // 3. Title/description word matching
+      const imgText = `${img.title || ''} ${img.description || ''}`.toLowerCase();
+      currentTitleWords.forEach(word => {
+          if (imgText.includes(word)) score += 3;
+      });
+      currentDescWords.forEach(word => {
+          if (imgText.includes(word)) score += 2;
+      });
+
+      // 4. Media type matching (+2)
+      const isCurrentVideo = isVideoUrl(currentImage.imageUrl);
+      const isImgVideo = isVideoUrl(img.imageUrl);
+      if (isCurrentVideo === isImgVideo) score += 2;
+
+      // 5. Popularity bonus (capped)
+      const popularity = (img.likeCount || 0) * 0.2 + (img.viewCount || 0) * 0.05;
+      score += Math.min(popularity, 10);
+
+      // 6. Post-specific deterministic hash variation (0-40 pts) to ensure distinct lists
+      const candidateHash = getHash(candidateBaseId);
+      const hashVariation = ((imageHash ^ candidateHash) % 1000) / 25;
+      score += hashVariation;
+
+      return { img, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, limit).map(s => s.img);
+};
+

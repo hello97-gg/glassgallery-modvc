@@ -1,11 +1,12 @@
 {
-  "name": "glass-gallery",
+  "name": "glassgallery",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
-    "dev": "wrangler pages dev dist --ip 0.0.0.0 --port 8788",
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:wrangler\"",
     "dev:vite": "vite",
+    "dev:wrangler": "wrangler pages dev --proxy 5173 --ip 0.0.0.0 --port 8788",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^10.0.3",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "wrangler": "^3.0.0"

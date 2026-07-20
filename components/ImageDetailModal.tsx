@@ -4,7 +4,7 @@ import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser, Comment } from '../types';
 import { LICENSES, FLAGS } from '../constants';
 import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage, getCommentsForImage, addCommentToImage, toggleCommentLike } from '../services/firestoreService';
-import { isVideoUrl } from '../utils/mediaUtils';
+import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
 import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
@@ -136,11 +136,11 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   // Load comments
-  const loadComments = async () => {
-    if (!currentImage?.id) return;
+  const loadComments = async (idToLoad: string) => {
+    if (!idToLoad) return;
     setIsLoadingComments(true);
     try {
-      const data = await getCommentsForImage(currentImage.id);
+      const data = await getCommentsForImage(idToLoad);
       setFlatComments(data);
     } catch (err) {
       console.error("Failed to load comments:", err);
@@ -177,7 +177,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   };
 
   useEffect(() => {
-    loadComments();
+    loadComments(currentImage.id);
     setReplyToId(null);
     setReplyText('');
     setNewCommentText('');
@@ -224,6 +224,12 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       const newComment = await addCommentToImage(currentImage.id, user, newCommentText);
       setFlatComments(prev => [...prev, newComment]);
       setNewCommentText('');
+      const updatedImage = {
+        ...currentImage,
+        commentCount: (currentImage.commentCount || 0) + 1
+      };
+      setCurrentImage(updatedImage);
+      if (onImageUpdate) onImageUpdate(updatedImage);
     } catch (err) {
       console.error("Failed to post comment:", err);
     } finally {
@@ -239,6 +245,12 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       setFlatComments(prev => [...prev, newReply]);
       setReplyText('');
       setReplyToId(null);
+      const updatedImage = {
+        ...currentImage,
+        commentCount: (currentImage.commentCount || 0) + 1
+      };
+      setCurrentImage(updatedImage);
+      if (onImageUpdate) onImageUpdate(updatedImage);
     } catch (err) {
       console.error("Failed to post reply:", err);
     } finally {
@@ -437,28 +449,21 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       fetch(url)
         .then(res => res.json())
         .then(data => {
-          if (data.success && data.images) {
+          if (data.success && data.images && data.images.length > 0) {
             setSuggestions(data.images);
           } else {
-            // Fallback to tags client-side matching if API fails
-            const clientFallback = allImages
-              .filter(img => img.id !== currentImage.id)
-              .slice(0, 12);
-            setSuggestions(clientFallback);
+            setSuggestions(getRelatedImages(currentImage, allImages, 12));
           }
         })
         .catch(err => {
           console.error("Failed to fetch suggestions:", err);
-          const clientFallback = allImages
-            .filter(img => img.id !== currentImage.id)
-            .slice(0, 12);
-          setSuggestions(clientFallback);
+          setSuggestions(getRelatedImages(currentImage, allImages, 12));
         })
         .finally(() => {
           setIsLoadingSuggestions(false);
         });
     }
-  }, [currentImage.id, user?.uid]);
+  }, [currentImage.id, user?.uid, allImages]);
 
   const displayRelated = suggestions;
 
@@ -921,22 +926,6 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
           {/* Details Pane */}
           <div className="p-6 flex flex-col space-y-5">
-            {/* Pinterest Mobile App Promo Banner */}
-            {(!((window as any).Capacitor?.isNativePlatform?.()) && (window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobi/i.test(navigator.userAgent))) && (
-              <div className="bg-gradient-to-r from-red-600 to-rose-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between gap-3 mb-2 animate-fade-in">
-                <div className="flex-1">
-                  <h4 className="font-bold text-sm">Glass Gallery App</h4>
-                  <p className="text-[11px] text-white/90 leading-tight">Get the full experience with high-speed uploads, native GPS coordinates, and offline browsing!</p>
-                </div>
-                <a 
-                  href="intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://cdn.modvc.org/GlassGallery.apk;end" 
-                  className="px-4 py-2 bg-white text-red-600 hover:bg-white/90 text-xs font-bold rounded-full transition-all flex-shrink-0 shadow-md active:scale-95"
-                >
-                  Open App
-                </a>
-              </div>
-            )}
-
             {/* Uploader Profile Row */}
             <button 
               onClick={handleProfileClick} 

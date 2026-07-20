@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
@@ -9,6 +10,7 @@ import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, t
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import { isVideoUrl } from './utils/mediaUtils';
 import type { ImageMeta, ProfileUser, Notification } from './types';
+import { getCachedData, setCachedData } from './utils/idbCache';
 
 import Sidebar from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -78,37 +80,71 @@ const SkeletonFeedPost: React.FC = () => {
       </div>
 
       {/* Content Skeleton */}
-      <div className="flex-1 min-w-0 flex flex-col gap-2">
+      <div className="flex-1 min-w-0 flex flex-col">
         {/* Header Skeleton */}
-        <div className="flex items-center gap-2">
-          <div className="h-4 w-32 bg-surface rounded" />
-          <div className="h-4 w-20 bg-surface rounded" />
+        <div className="flex items-baseline justify-between mb-1">
+          <div className="flex items-baseline gap-1.5">
+            <div className="h-4 w-24 bg-surface rounded" />
+            <div className="h-4 w-16 bg-surface rounded" />
+            <div className="h-4 w-12 bg-surface rounded" />
+          </div>
+          <div className="h-5 w-5 bg-surface rounded-full" />
         </div>
         
         {/* Text Skeleton */}
-        <div className="h-4 w-3/4 bg-surface rounded" />
-        <div className="h-4 w-1/2 bg-surface rounded" />
+        <div className="h-4 w-3/4 bg-surface rounded mb-1 mt-1" />
+        <div className="h-4 w-1/2 bg-surface rounded mb-3" />
 
         {/* Media Block Skeleton */}
-        <div className={`w-full rounded-2xl bg-surface mt-2 ${heightClass}`} />
+        <div className={`w-full rounded-2xl bg-surface border border-border mt-1 ${heightClass}`} />
 
         {/* Actions Skeleton */}
-        <div className="flex gap-6 mt-3">
-          <div className="h-5 w-5 bg-surface rounded-full" />
-          <div className="h-5 w-5 bg-surface rounded-full" />
-          <div className="h-5 w-5 bg-surface rounded-full" />
+        <div className="flex justify-between items-center mt-3 max-w-md">
+          <div className="h-5 w-12 bg-surface rounded" />
+          <div className="h-5 w-12 bg-surface rounded" />
+          <div className="h-5 w-12 bg-surface rounded" />
+          <div className="h-5 w-12 bg-surface rounded" />
         </div>
       </div>
     </div>
   );
 };
 
-const SkeletonGrid: React.FC = () => {
+const SkeletonGrid: React.FC<{ feedTab: 'discover' | 'following', user: User | null }> = ({ feedTab, user }) => {
   return (
-    <div className="flex flex-col w-full max-w-2xl mx-auto border-x border-border min-h-screen bg-background">
-      {Array.from({ length: 5 }).map((_, index) => (
-        <SkeletonFeedPost key={index} />
-      ))}
+    <div className="w-full flex justify-center bg-background min-h-screen">
+      <div className="w-full max-w-2xl border-l border-r border-border min-h-screen pb-20 md:pb-0">
+        {/* Top Header Tabs Skeleton */}
+        <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border">
+           <div className="flex">
+              <div className={`flex-1 pt-4 pb-3 font-bold text-center text-[15px] relative ${feedTab === 'discover' ? 'text-primary' : 'text-secondary font-medium'}`}>
+                Discover
+                {feedTab === 'discover' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
+              </div>
+              <div className={`flex-1 pt-4 pb-3 font-bold text-center text-[15px] relative ${feedTab === 'following' ? 'text-primary' : 'text-secondary font-medium'}`}>
+                Following
+                {feedTab === 'following' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
+              </div>
+           </div>
+        </div>
+
+
+
+        <div className="flex flex-col">
+          {/* Mock Create Post Section */}
+          <div className="flex gap-4 p-4 border-b border-border">
+             <div className="w-10 h-10 rounded-full bg-surface animate-pulse shrink-0" />
+             <div className="flex-1 flex flex-col justify-center">
+                 <div className="h-6 w-48 bg-surface rounded animate-pulse" />
+             </div>
+             <div className="shrink-0 w-9 h-9 rounded-full bg-surface animate-pulse mt-0.5" />
+          </div>
+
+          {Array.from({ length: 5 }).map((_, index) => (
+            <SkeletonFeedPost key={index} />
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
@@ -187,63 +223,49 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Offline LocalStorage Cache Initialization (like Instagram)
-  const [allImages, setAllImages] = useState<ImageMeta[]>(() => {
+  const [allImages, setAllImages] = useState<ImageMeta[]>([]);
+  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
     try {
-      const cached = localStorage.getItem('cached_all_images');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>(() => {
-    try {
-      const cached = localStorage.getItem('cached_displayed_images');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [imagesLoading, setImagesLoading] = useState(() => {
-    try {
-      const cached = localStorage.getItem('cached_displayed_images');
-      return cached ? false : true;
-    } catch {
-      return true;
-    }
-  });
-  const [currentIndex, setCurrentIndex] = useState(() => {
-    try {
-      const cached = localStorage.getItem('cached_displayed_images');
-      return cached ? JSON.parse(cached).length : 0;
-    } catch {
-      return 0;
-    }
-  });
+      localStorage.removeItem('cached_all_images');
+      localStorage.removeItem('cached_displayed_images');
+    } catch (e) {}
+
+    const loadCache = async () => {
+      const cachedAll = await getCachedData<ImageMeta[]>('cached_all_images');
+      if (cachedAll) setAllImages(cachedAll);
+      
+      const cachedDisplayed = await getCachedData<ImageMeta[]>('cached_displayed_images');
+      if (cachedDisplayed && cachedDisplayed.length > 0) {
+        setDisplayedImages(cachedDisplayed);
+        setCurrentIndex(cachedDisplayed.length);
+        setImagesLoading(false);
+      }
+    };
+    loadCache();
+  }, []);
 
   // Track network status online/offline for instant background auto-refreshes
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Caching Synchronizers to update LocalStorage dynamically when states modify
+  // Caching Synchronizers to update IndexedDB dynamically when states modify
   useEffect(() => {
     if (allImages.length > 0) {
-      try {
-        // Limit offline cache to 50 images to prevent 5MB localStorage QuotaExceededError
-        localStorage.setItem('cached_all_images', JSON.stringify(allImages.slice(0, 50)));
-      } catch (err) {
-        console.warn("Failed to write to offline all-images cache:", err.message);
-      }
+        // Store up to 250 images in IndexedDB to avoid quota issues while supporting massive offline feeds
+        setCachedData('cached_all_images', allImages.slice(0, 250)).catch(err => {
+            console.warn("Failed to write to offline all-images idb cache:", err.message);
+        });
     }
   }, [allImages]);
 
   useEffect(() => {
     if (displayedImages.length > 0) {
-      try {
-        // Limit offline cache to 50 images to prevent 5MB localStorage QuotaExceededError
-        localStorage.setItem('cached_displayed_images', JSON.stringify(displayedImages.slice(0, 50)));
-      } catch (err) {
-        console.warn("Failed to write to offline displayed-images cache:", err.message);
-      }
+        setCachedData('cached_displayed_images', displayedImages.slice(0, 250)).catch(err => {
+            console.warn("Failed to write to offline displayed-images idb cache:", err.message);
+        });
     }
   }, [displayedImages]);
 
@@ -506,6 +528,12 @@ const App: React.FC = () => {
     }
   }, [user]);
 
+  // Keep allImagesRef synced for instant navigation retrieval
+  const allImagesRef = useRef<ImageMeta[]>(allImages);
+  useEffect(() => {
+    allImagesRef.current = allImages;
+  }, [allImages]);
+
   // --- DEEP LINKING & ROUTING HANDLER ---
   useEffect(() => {
     const handleRouting = () => {
@@ -522,7 +550,21 @@ const App: React.FC = () => {
           deepLinkUnsubscribeRef.current();
           deepLinkUnsubscribeRef.current = null;
         }
-        const unsubscribe = subscribeToImage(imageId, (img) => {
+        
+        // Instant update from ref if available before network subscribe finishes
+        const baseId = imageId.split('_loop_')[0];
+        const existing = allImagesRef.current.find(i => i.id.split('_loop_')[0] === baseId);
+        if (existing) {
+          const isHome = !userId && !searchTerm && viewParam !== 'api' && !isLegal;
+          if (isHome) {
+            setSelectedFeedPost(existing);
+            setActiveView('post');
+          } else {
+            setSelectedImage(existing);
+          }
+        }
+
+        const unsubscribe = subscribeToImage(baseId, (img) => {
           if (img) {
             const isHome = !userId && !searchTerm && viewParam !== 'api' && !isLegal;
             if (isHome) {
@@ -825,16 +867,16 @@ const App: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [loadMoreImages, activeView]);
 
-  // --- Full-screen drag-and-drop ---
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     dragCounter.current++;
-    if (user && !isUploadModalOpen && !isLoginModalOpen && !selectedImage && e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
-        // During dragenter, browsers may mask the actual file type or it might be empty for some video formats.
-        // It's safer to just check if there's any file being dragged, and validate the type on drop.
-        const containsFile = Array.from(e.dataTransfer.items).some(item => item.kind === 'file');
-        if (containsFile) {
+    if (user && !isUploadModalOpen && !isLoginModalOpen && !selectedImage) {
+        // Checking for Files in types is more reliable across browsers than checking items array
+        const hasFiles = e.dataTransfer?.types?.includes('Files') || 
+            (e.dataTransfer?.items && Array.from(e.dataTransfer.items).some(item => item.kind === 'file'));
+        
+        if (hasFiles) {
             setIsDraggingOver(true);
         }
     }
@@ -896,39 +938,63 @@ const App: React.FC = () => {
   }, [handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
   const handleImageClick = (image: ImageMeta) => {
-    const baseId = image.id.split('_loop_')[0];
-    const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
-    
-    const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
-    
-    setSelectedImage(viewIncremented);
-    setAllImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
-    setDisplayedImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
-    
-    updateURL({ image: viewIncremented.id });
-    if (user) {
-      recordImageView(viewIncremented.id, user.uid);
+    const doClick = () => {
+      const baseId = image.id.split('_loop_')[0];
+      const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
+      
+      const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
+      
+      setSelectedImage(viewIncremented);
+      setAllImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
+      setDisplayedImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
+      
+      updateURL({ image: baseId });
+      if (user) {
+        recordImageView(baseId, user.uid);
+      }
+      recordClickInterest(viewIncremented);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(() => {
+        flushSync(() => {
+          doClick();
+        });
+      });
+    } else {
+      doClick();
     }
-    recordClickInterest(viewIncremented);
   };
 
   const handleFeedImageClick = (image: ImageMeta) => {
-    const baseId = image.id.split('_loop_')[0];
-    const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
-    
-    const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
-    
-    setSelectedFeedPost(viewIncremented);
-    setAllImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
-    setDisplayedImages(prev => prev.map(img => img.id === viewIncremented.id ? viewIncremented : img));
-    
-    saveScrollPosition();
-    setActiveView('post');
-    updateURL({ image: viewIncremented.id });
-    if (user) {
-      recordImageView(viewIncremented.id, user.uid);
+    const doClick = () => {
+      const baseId = image.id.split('_loop_')[0];
+      const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
+      
+      const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
+      
+      setSelectedFeedPost(viewIncremented);
+      setAllImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
+      setDisplayedImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
+      
+      saveScrollPosition();
+      setActiveView('post');
+      updateURL({ image: baseId });
+      if (user) {
+        recordImageView(baseId, user.uid);
+      }
+      recordClickInterest(viewIncremented);
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(() => {
+        flushSync(() => {
+          doClick();
+        });
+      });
+    } else {
+      doClick();
     }
-    recordClickInterest(viewIncremented);
   };
   
   const handleImageClickFromNotification = (partialImage: Partial<ImageMeta>) => {
@@ -1156,7 +1222,7 @@ const App: React.FC = () => {
     // Fix for SEO: Do NOT block on authLoading. Only block if images are strictly loading and empty.
     // If auth is loading, we just render as if 'guest'.
     if (imagesLoading && displayedImages.length === 0 && activeView !== 'profile') {
-       return <SkeletonGrid />;
+       return <SkeletonGrid feedTab={feedTab} user={user} />;
     }
     
     if (activeView === 'notifications') {
@@ -1253,19 +1319,40 @@ const App: React.FC = () => {
                     url={window.location.href}
                     imageUrl={selectedFeedPost.imageUrl}
                     favicon={selectedFeedPost.uploaderPhotoURL || DEFAULT_FAVICON}
+                    type="article"
+                    tags={selectedFeedPost.tags}
+                    location={selectedFeedPost.location}
+                    license={selectedFeedPost.license}
+                    authorName={selectedFeedPost.uploaderName}
+                    author={selectedFeedPost.uploaderUid}
                 />
                 <PostDetailView
                   image={selectedFeedPost}
                   user={user}
-                  suggestedImages={displayedImages}
+                  suggestedImages={allImages.length > 0 ? allImages : displayedImages}
                   onClose={() => {
-                      setSelectedFeedPost(null);
-                      if (deepLinkUnsubscribeRef.current) {
-                          deepLinkUnsubscribeRef.current();
-                          deepLinkUnsubscribeRef.current = null;
+                      const doClose = () => {
+                          if (window.history.length > 1 && window.location.pathname.startsWith('/image/')) {
+                              window.history.back();
+                          } else {
+                              setSelectedFeedPost(null);
+                              if (deepLinkUnsubscribeRef.current) {
+                                  deepLinkUnsubscribeRef.current();
+                                  deepLinkUnsubscribeRef.current = null;
+                              }
+                              updateURL(null);
+                              handleBack();
+                          }
+                      };
+                      if (document.startViewTransition) {
+                          document.startViewTransition(() => {
+                              flushSync(() => {
+                                  doClose();
+                              });
+                          });
+                      } else {
+                          doClose();
                       }
-                      updateURL(null);
-                      handleBack();
                   }}
                   onViewProfile={handleViewProfile}
                   onLikeToggle={handleLikeToggle}
@@ -1365,36 +1452,62 @@ const App: React.FC = () => {
       )}
 
       {selectedImage && (
-        <ImageDetailModal
-          image={selectedImage}
-          user={user}
-          allImages={allImages}
-          onLoginClick={() => setLoginModalOpen(true)}
-          initialEditMode={forceEditMode}
-          onClose={() => {
-            setSelectedImage(null);
-            setForceEditMode(false);
-            if (deepLinkUnsubscribeRef.current) {
-                deepLinkUnsubscribeRef.current();
-                deepLinkUnsubscribeRef.current = null;
-            }
-            if (activeView === 'profile' && profileUser) {
-                updateURL({ user: profileUser.uploaderUid });
-            } else if (activeView === 'explore' && exploreSearchTerm) {
-                updateURL({ search: exploreSearchTerm });
-            } else if (activeView === 'api') {
-                updateURL({ view: 'api' });
-            } else {
-                updateURL(null);
-            }
-          }}
-          onViewProfile={handleViewProfile}
-          onImageUpdate={handleImageUpdate}
-          onImageDelete={handleImageDelete}
-          onLikeToggle={handleLikeToggle}
-          onLocationClick={handleLocationClick}
-          onSelectImage={handleImageClick}
-        />
+        <>
+          <SEOHead 
+              title={`${selectedImage.title || 'Post'} by ${selectedImage.uploaderName}`}
+              description={selectedImage.description || 'View this post on Glass Gallery'}
+              url={window.location.href}
+              imageUrl={selectedImage.imageUrl}
+              favicon={selectedImage.uploaderPhotoURL || DEFAULT_FAVICON}
+              type="article"
+              tags={selectedImage.flags}
+              location={selectedImage.location}
+              license={selectedImage.license}
+              authorName={selectedImage.uploaderName}
+              author={selectedImage.uploaderUid}
+          />
+          <ImageDetailModal
+            image={selectedImage}
+            user={user}
+            allImages={allImages}
+            onLoginClick={() => setLoginModalOpen(true)}
+            initialEditMode={forceEditMode}
+            onClose={() => {
+              const doClose = () => {
+                setSelectedImage(null);
+                setForceEditMode(false);
+                if (deepLinkUnsubscribeRef.current) {
+                    deepLinkUnsubscribeRef.current();
+                    deepLinkUnsubscribeRef.current = null;
+                }
+                if (activeView === 'profile' && profileUser) {
+                    updateURL({ user: profileUser.uploaderUid });
+                } else if (activeView === 'explore' && exploreSearchTerm) {
+                    updateURL({ search: exploreSearchTerm });
+                } else if (activeView === 'api') {
+                    updateURL({ view: 'api' });
+                } else {
+                    updateURL(null);
+                }
+              };
+              if (document.startViewTransition) {
+                  document.startViewTransition(() => {
+                      flushSync(() => {
+                          doClose();
+                      });
+                  });
+              } else {
+                  doClose();
+              }
+            }}
+            onViewProfile={handleViewProfile}
+            onImageUpdate={handleImageUpdate}
+            onImageDelete={handleImageDelete}
+            onLikeToggle={handleLikeToggle}
+            onLocationClick={handleLocationClick}
+            onSelectImage={handleImageClick}
+          />
+        </>
       )}
 
 
@@ -1411,7 +1524,7 @@ const App: React.FC = () => {
         />
       )}
 
-      <MobileAppPromo />
+      {/* <MobileAppPromo /> */}
     </div>
   );
 };

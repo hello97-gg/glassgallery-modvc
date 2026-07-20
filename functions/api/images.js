@@ -195,7 +195,7 @@ export async function onRequest(context) {
         }
 
         const targetRes = await db.execute({
-          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id = ?",
+          sql: "SELECT * FROM images WHERE id = ?",
           args: [imageId]
         });
 
@@ -235,7 +235,7 @@ export async function onRequest(context) {
         }
 
         const allImagesRes = await db.execute({
-          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id != ? ORDER BY uploadedAt DESC",
+          sql: "SELECT * FROM images WHERE id != ? ORDER BY uploadedAt DESC",
           args: [imageId]
         });
         const likesRes = await db.execute("SELECT * FROM likes");
@@ -399,7 +399,14 @@ export async function onRequest(context) {
 
           const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.2;
 
-          const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost;
+          const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl);
+          let videoBoost = 0;
+          if (isVideo) {
+            const ageInHours = (Date.now() - (row.uploadedAt ? new Date(row.uploadedAt).getTime() : Date.now())) / (1000 * 60 * 60);
+            videoBoost = ageInHours < 168 ? 5.0 : 1.5;
+          }
+
+          const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
 
           return {
             image: {
@@ -439,7 +446,7 @@ export async function onRequest(context) {
 
         // Optimized: Combined taste profile query (uploads + likes + views in one UNION ALL) — reduces 7→5 DB calls
         const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes] = await Promise.all([
-          db.execute("SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images ORDER BY uploadedAt DESC"),
+          db.execute("SELECT * FROM images ORDER BY uploadedAt DESC"),
           db.execute("SELECT * FROM likes"),
           db.execute({ sql: "SELECT followedTags FROM users WHERE uploaderUid = ?", args: [userUid] }),
           // Single combined query for uploads + likes + views taste signals
@@ -572,7 +579,11 @@ export async function onRequest(context) {
           // 7. Discovery randomness
           const randomFactor = Math.random() * 1.5;
 
-          const totalScore = (tasteScore * 4.0) + (followBoost * 2.0) + (socialProof * 2.0) + (searchBoost * 3.0) + (recencyScore * 2.0) + popularity + randomFactor;
+          // 8. Video format boost (push newly uploaded videos)
+          const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl);
+          const videoBoost = isVideo && ageInHours < 168 ? 4.0 : (isVideo ? 1.0 : 0);
+
+          const totalScore = (tasteScore * 4.0) + (followBoost * 2.0) + (socialProof * 2.0) + (searchBoost * 3.0) + (recencyScore * 2.0) + popularity + videoBoost + randomFactor;
 
           return {
             image: {
@@ -606,11 +617,11 @@ export async function onRequest(context) {
         return Response.json({ success: true, images, personalized: true }, { status: 200, headers: cacheHeaders });
       }
 
-      let imagesQuery = "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images ORDER BY uploadedAt DESC";
+      let imagesQuery = "SELECT * FROM images ORDER BY uploadedAt DESC";
       let imagesArgs = [];
 
       if (uploaderUid) {
-        imagesQuery = "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC";
+        imagesQuery = "SELECT * FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC";
         imagesArgs = [uploaderUid];
       }
 

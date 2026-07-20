@@ -231,26 +231,11 @@ const App: React.FC = () => {
 
   // Caching Synchronizers to update LocalStorage dynamically when states modify
   useEffect(() => {
-    if (allImages.length > 0) {
-      try {
-        // Limit offline cache to 50 images to prevent 5MB localStorage QuotaExceededError
-        localStorage.setItem('cached_all_images', JSON.stringify(allImages.slice(0, 50)));
-      } catch (err) {
-        console.warn("Failed to write to offline all-images cache:", err.message);
-      }
-    }
-  }, [allImages]);
-
-  useEffect(() => {
-    if (displayedImages.length > 0) {
-      try {
-        // Limit offline cache to 50 images to prevent 5MB localStorage QuotaExceededError
-        localStorage.setItem('cached_displayed_images', JSON.stringify(displayedImages.slice(0, 50)));
-      } catch (err) {
-        console.warn("Failed to write to offline displayed-images cache:", err.message);
-      }
-    }
-  }, [displayedImages]);
+    try {
+      localStorage.removeItem('cached_all_images');
+      localStorage.removeItem('cached_displayed_images');
+    } catch (e) {}
+  }, []);
 
   // Network Status Monitor
   useEffect(() => {
