@@ -215,7 +215,8 @@ export async function onRequest(context) {
     const isBot = /bot|googlebot|crawler|spider|robot|crawling|facebookexternalhit|twitterbot/i.test(userAgent);
     
     if (isBot) {
-      indexHtml = indexHtml.replace(/<script type="module" src="\/index\.tsx"><\/script>/i, '');
+      indexHtml = indexHtml.replace(/<script type="module"[^>]*><\/script>/gi, '');
+      indexHtml = indexHtml.replace(/<script type="importmap">[\s\S]*?<\/script>/gi, '');
     }
 
     return new Response(indexHtml, {

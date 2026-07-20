@@ -26,9 +26,9 @@ interface ImageDetailModalProps {
 }
 
 const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <span className="inline-block bg-border text-secondary text-xs font-medium mr-2 px-2.5 py-1 rounded-full">
-        {children}
-    </span>
+  <span className="inline-block bg-border text-secondary text-xs font-medium mr-2 px-2.5 py-1 rounded-full">
+    {children}
+  </span>
 );
 
 const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({ image, onClose }) => {
@@ -40,20 +40,20 @@ const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({
   let shoutoutText = '';
 
   if (hasOriginalWork) {
-      let sourceText = 'the original source';
-      try {
-          const hostname = new URL(image.originalWorkUrl!).hostname;
-          sourceText = hostname.replace(/^www\./, '');
-      } catch (e) { /* Fallback is fine */ }
-      
-      shoutoutText = `Give credit to the original creator by copying the source link below.`;
-      attributionText = `Image from ${sourceText}`;
-      copyText = `Image source: ${image.originalWorkUrl}`;
+    let sourceText = 'the original source';
+    try {
+      const hostname = new URL(image.originalWorkUrl!).hostname;
+      sourceText = hostname.replace(/^www\./, '');
+    } catch (e) { /* Fallback is fine */ }
+
+    shoutoutText = `Give credit to the original creator by copying the source link below.`;
+    attributionText = `Image from ${sourceText}`;
+    copyText = `Image source: ${image.originalWorkUrl}`;
 
   } else {
-      shoutoutText = `Give a shoutout to ${image.uploaderName} on social or copy the text below to attribute.`;
-      attributionText = `Photo by ${image.uploaderName} on Glass Gallery`;
-      copyText = `Photo by ${image.uploaderName} on Glass Gallery (${image.imageUrl})`;
+    shoutoutText = `Give a shoutout to ${image.uploaderName} on social or copy the text below to attribute.`;
+    attributionText = `Photo by ${image.uploaderName} on Glass Gallery`;
+    copyText = `Photo by ${image.uploaderName} on Glass Gallery (${image.imageUrl})`;
   }
 
 
@@ -77,7 +77,7 @@ const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({
             <p className="text-sm text-secondary mt-1">{shoutoutText}</p>
           </div>
         </div>
-        
+
         <div className="w-full mt-4 p-3 bg-background border border-border rounded-lg text-sm text-primary relative flex justify-between items-center">
           <span className="pr-10">{attributionText}</span>
           <button onClick={handleCopy} className="p-1.5 text-secondary hover:text-primary bg-border rounded-md flex-shrink-0">
@@ -99,26 +99,26 @@ const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({
 };
 
 const HeartIconSolid = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-accent" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
-    </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-accent" viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+  </svg>
 );
 const HeartIconOutline = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-    </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+  </svg>
 );
 
 
-const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ 
-  image, 
-  user, 
-  allImages, 
-  onClose, 
-  onViewProfile, 
-  onImageUpdate, 
-  onImageDelete, 
-  onLikeToggle, 
+const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
+  image,
+  user,
+  allImages,
+  onClose,
+  onViewProfile,
+  onImageUpdate,
+  onImageDelete,
+  onLikeToggle,
   onLocationClick,
   onSelectImage,
   onLoginClick,
@@ -154,7 +154,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       onLoginClick();
       return;
     }
-    
+
     // Optimistic UI update
     setFlatComments(prev => prev.map(c => {
       if (c.id === commentId) {
@@ -264,13 +264,12 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     const avatarUrl = comment.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${comment.userName}`;
 
     return (
-      <div 
-        key={comment.id} 
-        className={`flex flex-col gap-1.5 ${
-          depth > 0 
-            ? `mt-2.5 pl-3 ${depth < 4 ? 'border-l border-border/40 ml-1.5' : 'ml-0'}` 
+      <div
+        key={comment.id}
+        className={`flex flex-col gap-1.5 ${depth > 0
+            ? `mt-2.5 pl-3 ${depth < 4 ? 'border-l border-border/40 ml-1.5' : 'ml-0'}`
             : 'border-b border-border/20 pb-3 last:border-0 last:pb-0'
-        }`}
+          }`}
       >
         <div className="flex gap-2.5 items-start">
           <img
@@ -286,7 +285,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </span>
             </div>
             <p className="text-xs text-primary/90 mt-0.5 leading-relaxed break-words">{comment.content}</p>
-            
+
             <div className="flex items-center mt-1 gap-3">
               <button
                 onClick={() => handleCommentLikeToggle(comment.id)}
@@ -369,14 +368,14 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   };
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoomScale, setZoomScale] = useState(1.0);
-  
+
   const [editedTitle, setEditedTitle] = useState(image.title || '');
   const [editedDescription, setEditedDescription] = useState(image.description || '');
   const [editedLocation, setEditedLocation] = useState(image.location || '');
   const [editedLicense, setEditedLicense] = useState(image.license);
   const [editedLicenseUrl, setEditedLicenseUrl] = useState(image.licenseUrl || '');
   const [editedFlags, setEditedFlags] = useState<string[]>(image.flags || []);
-  
+
   const dynamicTags = React.useMemo(() => {
     const tagsSet = new Set<string>();
     const DEFAULT_FLAGS = [
@@ -391,7 +390,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       'Games'
     ];
     DEFAULT_FLAGS.forEach(flag => tagsSet.add(flag));
-    
+
     allImages.forEach(img => {
       if (Array.isArray(img.flags)) {
         img.flags.forEach(flag => {
@@ -445,7 +444,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     if (currentImage?.id) {
       setIsLoadingSuggestions(true);
       const url = `/api/images?action=suggestions&imageId=${currentImage.id}${user?.uid ? `&userUid=${user.uid}` : ''}`;
-      
+
       fetch(url)
         .then(res => res.json())
         .then(data => {
@@ -481,11 +480,11 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
   useEffect(() => {
     const unsubscribe = subscribeToImage(image.id, (updatedImage) => {
-        if (updatedImage) setCurrentImage(updatedImage);
+      if (updatedImage) setCurrentImage(updatedImage);
     });
     return () => unsubscribe();
   }, [image.id]);
-  
+
   useEffect(() => {
     setCurrentImage(image);
     setEditedTitle(image.title || '');
@@ -501,7 +500,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
   const isOwner = user?.uid === currentImage.uploaderUid;
   const hasLiked = user && currentImage.likedBy?.includes(user.uid);
-  
+
   const handleProfileClick = () => {
     onViewProfile({
       uploaderUid: currentImage.uploaderUid,
@@ -511,10 +510,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   };
 
   const handleLocationClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (currentImage.location && onLocationClick) {
-          onLocationClick(currentImage.location);
-      }
+    e.stopPropagation();
+    if (currentImage.location && onLocationClick) {
+      onLocationClick(currentImage.location);
+    }
   }
 
   const handleEditToggle = () => {
@@ -570,20 +569,20 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       setIsSaving(false);
     }
   };
-  
+
   const handleDeleteClick = () => {
-      setShowDeleteConfirm(true);
+    setShowDeleteConfirm(true);
   };
 
   const handleConfirmDelete = async () => {
-      setIsDeleting(true);
-      try {
-          onImageDelete(currentImage.id);
-      } catch (error) {
-          console.error("Delete failed", error);
-          setIsDeleting(false);
-          setShowDeleteConfirm(false);
-      }
+    setIsDeleting(true);
+    try {
+      onImageDelete(currentImage.id);
+    } catch (error) {
+      console.error("Delete failed", error);
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   const handleDownload = async () => {
@@ -592,11 +591,11 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     onImageUpdate({ ...currentImage, downloadCount: (currentImage.downloadCount || 0) + 1 });
 
     const filename = currentImage.imageUrl.split('/').pop()?.split('?')[0] || 'download.jpg';
-    
+
     // Use the proxy endpoint to avoid CORS issues.
     // The proxy must return Content-Disposition: attachment for this to work as a download.
     const proxyUrl = `/api/downloadProxy?url=${encodeURIComponent(currentImage.imageUrl)}&filename=${encodeURIComponent(filename)}`;
-    
+
     // Create a temporary link and click it. 
     // This uses the browser's native download capability via the proxy headers,
     // avoiding the need for client-side blob processing (which can hit CORS limits).
@@ -614,50 +613,50 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     const origin = window.location.origin;
     const shareUrl = `${origin}/api/share?id=${currentImage.id}`;
     const shareData = {
-        title: currentImage.title || 'Glass Gallery Image',
-        text: `Check out this image by ${currentImage.uploaderName} on Glass Gallery!`,
-        url: shareUrl
+      title: currentImage.title || 'Glass Gallery Image',
+      text: `Check out this image by ${currentImage.uploaderName} on Glass Gallery!`,
+      url: shareUrl
     };
 
     if (navigator.share) {
-        try { await navigator.share(shareData); } catch (err) { console.log("Share cancelled", err); }
+      try { await navigator.share(shareData); } catch (err) { console.log("Share cancelled", err); }
     } else {
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            setShareCopied(true);
-            setTimeout(() => setShareCopied(false), 2000);
-        } catch (err) { console.error("Failed to copy", err); }
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2000);
+      } catch (err) { console.error("Failed to copy", err); }
     }
   };
 
   const handleLikeClick = () => {
-      setIsLikeBtnAnimating(true);
-      onLikeToggle(currentImage);
-      setTimeout(() => setIsLikeBtnAnimating(false), 400);
+    setIsLikeBtnAnimating(true);
+    onLikeToggle(currentImage);
+    setTimeout(() => setIsLikeBtnAnimating(false), 400);
   };
 
   const handleImageTap = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const now = Date.now();
-      const DOUBLE_TAP_DELAY = 300;
-      if (now - lastTap.current < DOUBLE_TAP_DELAY) {
-          // Double Tap: Like image
-          if (!hasLiked) {
-              onLikeToggle(currentImage);
-          }
-          setShowHeartAnimation(true);
-          setIsLikeBtnAnimating(true);
-          setTimeout(() => setShowHeartAnimation(false), 800);
-          setTimeout(() => setIsLikeBtnAnimating(false), 400);
-      } else {
-          // Single Tap: Launch fullscreen theater mode after ensuring it's not a double-tap
-          setTimeout(() => {
-              if (Date.now() - lastTap.current >= DOUBLE_TAP_DELAY) {
-                  setIsFullscreen(true);
-              }
-          }, DOUBLE_TAP_DELAY);
+    e.stopPropagation();
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    if (now - lastTap.current < DOUBLE_TAP_DELAY) {
+      // Double Tap: Like image
+      if (!hasLiked) {
+        onLikeToggle(currentImage);
       }
-      lastTap.current = now;
+      setShowHeartAnimation(true);
+      setIsLikeBtnAnimating(true);
+      setTimeout(() => setShowHeartAnimation(false), 800);
+      setTimeout(() => setIsLikeBtnAnimating(false), 400);
+    } else {
+      // Single Tap: Launch fullscreen theater mode after ensuring it's not a double-tap
+      setTimeout(() => {
+        if (Date.now() - lastTap.current >= DOUBLE_TAP_DELAY) {
+          setIsFullscreen(true);
+        }
+      }, DOUBLE_TAP_DELAY);
+    }
+    lastTap.current = now;
   };
 
   const renderDetails = () => {
@@ -665,16 +664,16 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       return (
         <div className="space-y-4">
           <div>
-             <label htmlFor="title-edit" className="font-semibold mb-2 text-secondary text-sm block">Title</label>
-             <input type="text" id="title-edit" value={editedTitle} onChange={(e) => setEditedTitle(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
+            <label htmlFor="title-edit" className="font-semibold mb-2 text-secondary text-sm block">Title</label>
+            <input type="text" id="title-edit" value={editedTitle} onChange={(e) => setEditedTitle(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
           </div>
           <div>
-             <label htmlFor="loc-edit" className="font-semibold mb-2 text-secondary text-sm block">Location</label>
-             <input type="text" id="loc-edit" value={editedLocation} onChange={(e) => setEditedLocation(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
+            <label htmlFor="loc-edit" className="font-semibold mb-2 text-secondary text-sm block">Location</label>
+            <input type="text" id="loc-edit" value={editedLocation} onChange={(e) => setEditedLocation(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
           </div>
           <div>
-             <label htmlFor="desc-edit" className="font-semibold mb-2 text-secondary text-sm block">Description</label>
-             <textarea id="desc-edit" value={editedDescription} onChange={(e) => setEditedDescription(e.target.value)} rows={3} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
+            <label htmlFor="desc-edit" className="font-semibold mb-2 text-secondary text-sm block">Description</label>
+            <textarea id="desc-edit" value={editedDescription} onChange={(e) => setEditedDescription(e.target.value)} rows={3} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
           </div>
           {/* ... License and Tags inputs same as before ... */}
           <div>
@@ -683,10 +682,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               {LICENSES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
           </div>
-           {editedLicense === 'Other' && (
+          {editedLicense === 'Other' && (
             <div>
               <label htmlFor="licenseUrl-edit" className="font-semibold mb-2 text-secondary text-sm block">License URL</label>
-              <input type="url" id="licenseUrl-edit" value={editedLicenseUrl} onChange={(e) => setEditedLicenseUrl(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder="https://creativecommons.org/licenses/..." required/>
+              <input type="url" id="licenseUrl-edit" value={editedLicenseUrl} onChange={(e) => setEditedLicenseUrl(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder="https://creativecommons.org/licenses/..." required />
             </div>
           )}
           <div>
@@ -710,54 +709,54 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
     return (
       <div className="space-y-4">
-         {(currentImage.title || currentImage.description) && (
-            <div className="mb-2">
-                 {currentImage.title && <h1 className="text-2xl font-bold text-primary mb-2">{currentImage.title}</h1>}
-                 {currentImage.description && <p className="text-primary/80 text-sm whitespace-pre-wrap leading-relaxed">{currentImage.description}</p>}
-            </div>
-         )}
-         
-         {currentImage.location && (
-            <div>
-                <h4 className="font-semibold mb-1 text-secondary text-sm">Location</h4>
-                <button 
-                    onClick={handleLocationClick} 
-                    className={`flex items-center gap-1 text-sm font-medium ${onLocationClick ? 'text-accent hover:underline cursor-pointer' : 'text-primary cursor-default'}`}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                    {currentImage.location}
-                </button>
-            </div>
-         )}
+        {(currentImage.title || currentImage.description) && (
+          <div className="mb-2">
+            {currentImage.title && <h1 className="text-2xl font-bold text-primary mb-2">{currentImage.title}</h1>}
+            {currentImage.description && <p className="text-primary/80 text-sm whitespace-pre-wrap leading-relaxed">{currentImage.description}</p>}
+          </div>
+        )}
+
+        {currentImage.location && (
+          <div>
+            <h4 className="font-semibold mb-1 text-secondary text-sm">Location</h4>
+            <button
+              onClick={handleLocationClick}
+              className={`flex items-center gap-1 text-sm font-medium ${onLocationClick ? 'text-accent hover:underline cursor-pointer' : 'text-primary cursor-default'}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              {currentImage.location}
+            </button>
+          </div>
+        )}
 
         <div className="flex gap-6">
-             <div>
-                <h4 className="font-semibold mb-1 text-secondary text-sm">Downloads</h4>
-                <InfoChip>{(currentImage.downloadCount || 0).toLocaleString()}</InfoChip>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-1 text-secondary text-sm">License</h4>
-              {currentImage.license === 'Other' && currentImage.licenseUrl ? (
-                 <a href={currentImage.licenseUrl} target="_blank" rel="noopener noreferrer" className="inline-block bg-border text-accent hover:underline text-xs font-medium px-2.5 py-1 rounded-full">
-                    {licenseName}
-                 </a>
-              ) : licenseExplanationUrl ? (
-                 <a href={licenseExplanationUrl} target="_blank" rel="noopener noreferrer" className="inline-block bg-border text-secondary hover:text-primary hover:underline text-xs font-medium px-2.5 py-1 rounded-full transition-colors">
-                    {licenseName}
-                 </a>
-              ) : (
-                <InfoChip>{licenseName}</InfoChip>
-              )}
-            </div>
+          <div>
+            <h4 className="font-semibold mb-1 text-secondary text-sm">Downloads</h4>
+            <InfoChip>{(currentImage.downloadCount || 0).toLocaleString()}</InfoChip>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-1 text-secondary text-sm">License</h4>
+            {currentImage.license === 'Other' && currentImage.licenseUrl ? (
+              <a href={currentImage.licenseUrl} target="_blank" rel="noopener noreferrer" className="inline-block bg-border text-accent hover:underline text-xs font-medium px-2.5 py-1 rounded-full">
+                {licenseName}
+              </a>
+            ) : licenseExplanationUrl ? (
+              <a href={licenseExplanationUrl} target="_blank" rel="noopener noreferrer" className="inline-block bg-border text-secondary hover:text-primary hover:underline text-xs font-medium px-2.5 py-1 rounded-full transition-colors">
+                {licenseName}
+              </a>
+            ) : (
+              <InfoChip>{licenseName}</InfoChip>
+            )}
+          </div>
         </div>
 
         {currentImage.originalWorkUrl && (
-           <div>
-             <h4 className="font-semibold mb-1 text-secondary text-sm">Original Source</h4>
-             <a href={currentImage.originalWorkUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:underline truncate block">
-               {currentImage.originalWorkUrl}
-             </a>
-           </div>
+          <div>
+            <h4 className="font-semibold mb-1 text-secondary text-sm">Original Source</h4>
+            <a href={currentImage.originalWorkUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent hover:underline truncate block">
+              {currentImage.originalWorkUrl}
+            </a>
+          </div>
         )}
 
         {currentImage.flags && currentImage.flags.length > 0 && (
@@ -774,7 +773,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in" onClick={onClose}>
-      <SEOHead 
+      <SEOHead
         title={currentImage.title || `Image by ${currentImage.uploaderName}`}
         description={currentImage.description || `Check out this amazing image.`}
         imageUrl={currentImage.imageUrl}
@@ -783,21 +782,21 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         author={currentImage.uploaderName}
       />
 
-      <div 
+      <div
         ref={modalRef}
-        className="bg-surface border border-border rounded-3xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col md:flex-row overflow-hidden relative" 
+        className="bg-surface border border-border rounded-3xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col md:flex-row overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left Column: Pin details panel (Scrollable) */}
-        <div 
+        <div
           ref={leftPanelRef}
           className="w-full md:w-[45%] flex flex-col h-full border-b md:border-b-0 md:border-r border-border overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 bg-background/5"
         >
           {/* Action Bar Header */}
           <div className="sticky top-0 z-30 bg-surface/90 backdrop-blur-md px-4 py-3 flex items-center justify-between border-b border-border/40 flex-shrink-0">
-            <button 
-              onClick={onClose} 
-              className="p-2 rounded-full hover:bg-border/70 text-secondary hover:text-primary transition-all flex items-center justify-center" 
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-border/70 text-secondary hover:text-primary transition-all flex items-center justify-center"
               title="Close Modal"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -806,8 +805,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             </button>
             <div className="flex items-center gap-2">
               {/* Like/Heart Button */}
-              <button 
-                onClick={handleLikeClick} 
+              <button
+                onClick={handleLikeClick}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-semibold transition-all text-sm ${hasLiked ? 'bg-red-500/20 text-red-500' : 'bg-border/60 hover:bg-border text-secondary hover:text-primary'}`}
               >
                 <div className={isLikeBtnAnimating ? 'animate-like-bounce' : ''}>
@@ -817,9 +816,9 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </button>
 
               {/* Share Button */}
-              <button 
-                onClick={handleShare} 
-                title="Share Image" 
+              <button
+                onClick={handleShare}
+                title="Share Image"
                 className="p-2 rounded-full hover:bg-border/60 text-secondary hover:text-primary transition-all"
               >
                 {shareCopied ? (
@@ -834,9 +833,9 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </button>
 
               {/* Download Button */}
-              <button 
-                onClick={handleDownload} 
-                title="Download Image" 
+              <button
+                onClick={handleDownload}
+                title="Download Image"
                 className="p-2 rounded-full hover:bg-border/60 text-secondary hover:text-primary transition-all"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -845,9 +844,9 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </button>
 
               {/* Embed / Add to site button */}
-              <button 
-                onClick={() => setShowEmbedModal(true)} 
-                title="Embed this image on your site" 
+              <button
+                onClick={() => setShowEmbedModal(true)}
+                title="Embed this image on your site"
                 className="p-2 rounded-full hover:bg-border/60 text-secondary hover:text-primary transition-all"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -856,8 +855,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </button>
 
               {/* Credit/Attribution button */}
-              <button 
-                onClick={() => setShowAttribution(true)} 
+              <button
+                onClick={() => setShowAttribution(true)}
                 className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-1.5 rounded-full text-xs transition-all shadow-md active:scale-95 ml-1"
               >
                 Credit
@@ -868,7 +867,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           {/* Main Image/Video Container */}
           <div className="bg-background flex-shrink-0 flex items-center justify-center p-4 relative group select-none min-h-[300px]">
             {isVideoUrl(currentImage.imageUrl) ? (
-              <video 
+              <video
                 src={currentImage.imageUrl}
                 autoPlay
                 muted
@@ -878,9 +877,9 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 className={`max-w-full max-h-[48vh] object-contain rounded-2xl shadow-lg transition-transform duration-300 hover:scale-[1.01] ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : ''}`}
               />
             ) : (
-              <img 
-                src={currentImage.imageUrl} 
-                alt={currentImage.title || 'Pinterest Pin'} 
+              <img
+                src={currentImage.imageUrl}
+                alt={currentImage.title || 'Pinterest Pin'}
                 className={`max-w-full max-h-[48vh] object-contain rounded-2xl shadow-lg transition-transform duration-300 hover:scale-[1.01] ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
                 onClick={isFlagged && !revealed ? undefined : handleImageTap}
               />
@@ -903,11 +902,11 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             {isFlagged && !revealed && (
               <div className="absolute inset-0 bg-black/75 backdrop-blur-lg z-20 flex flex-col items-center justify-center p-6 text-center rounded-2xl transition-all duration-300">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-red-500 mb-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 <h4 className="text-white text-base font-bold uppercase tracking-wider mb-2">Sensitive Content Warning</h4>
                 <p className="text-white/80 text-sm max-w-xs mb-4">This image has been flagged by automated content safety moderation.</p>
-                <button 
+                <button
                   onClick={() => setRevealed(true)}
                   className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-full text-sm transition-all shadow-md active:scale-95"
                 >
@@ -926,15 +925,31 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
           {/* Details Pane */}
           <div className="p-6 flex flex-col space-y-5">
+            {/* Pinterest Mobile App Promo Banner */}
+            {(!((window as any).Capacitor?.isNativePlatform?.()) && (window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobi/i.test(navigator.userAgent))) && (
+              <div className="bg-gradient-to-r from-red-600 to-rose-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between gap-3 mb-2 animate-fade-in">
+                <div className="flex-1">
+                  <h4 className="font-bold text-sm">Glass Gallery App</h4>
+                  <p className="text-[11px] text-white/90 leading-tight">Get the full experience with high-speed uploads, native GPS coordinates, and offline browsing!</p>
+                </div>
+                <a
+                  href="intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://cdn.modvc.org/GlassGallery.apk;end"
+                  className="px-4 py-2 bg-white text-red-600 hover:bg-white/90 text-xs font-bold rounded-full transition-all flex-shrink-0 shadow-md active:scale-95"
+                >
+                  Open App
+                </a>
+              </div>
+            )}
+
             {/* Uploader Profile Row */}
-            <button 
-              onClick={handleProfileClick} 
+            <button
+              onClick={handleProfileClick}
               className="flex items-center gap-3 hover:bg-border/50 p-2 -m-2 rounded-xl transition-colors text-left w-full"
             >
-              <img 
-                src={currentImage.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`} 
-                alt={currentImage.uploaderName} 
-                className="w-10 h-10 rounded-full object-cover" 
+              <img
+                src={currentImage.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`}
+                alt={currentImage.uploaderName}
+                className="w-10 h-10 rounded-full object-cover"
               />
               <div>
                 <p className="font-semibold text-sm">{currentImage.uploaderName}</p>
@@ -961,13 +976,13 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 </svg>
                 {flatComments.length} Comments
               </h3>
-              
+
               {/* Comment Input */}
               {user ? (
                 <div className="flex gap-2.5 items-start mb-5">
-                  <img 
-                    src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'User'}`} 
-                    alt="Current user" 
+                  <img
+                    src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'User'}`}
+                    alt="Current user"
                     className="w-8 h-8 rounded-full object-cover flex-shrink-0"
                   />
                   <div className="flex-1 flex flex-col gap-2">
@@ -1025,18 +1040,18 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                       Cancel
                     </Button>
                     <Button onClick={handleSave} disabled={isSaving}>
-                      {isSaving ? <Spinner/> : 'Save'}
+                      {isSaving ? <Spinner /> : 'Save'}
                     </Button>
                   </>
                 ) : (
                   <>
-                    <Button 
-                      onClick={handleDeleteClick} 
-                      variant="secondary" 
-                      className="!bg-red-900/50 !text-red-400 hover:!bg-red-800/50" 
+                    <Button
+                      onClick={handleDeleteClick}
+                      variant="secondary"
+                      className="!bg-red-900/50 !text-red-400 hover:!bg-red-800/50"
                       disabled={isDeleting}
                     >
-                      {isDeleting ? <Spinner/> : 'Delete'}
+                      {isDeleting ? <Spinner /> : 'Delete'}
                     </Button>
                     <Button onClick={handleEditToggle} variant="secondary">
                       Edit
@@ -1049,7 +1064,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         </div>
 
         {/* Right Column: "More Like This" Masonry Feed (Scrollable) */}
-        <div 
+        <div
           ref={rightPanelRef}
           className="w-full md:w-[55%] flex flex-col h-full bg-surface overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 p-6 md:p-8"
         >
@@ -1072,7 +1087,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           ) : displayRelated.length > 0 ? (
             <div className="columns-2 gap-4 animate-fade-in">
               {displayRelated.map(img => (
-                <div 
+                <div
                   key={img.id}
                   onClick={() => handleSelectRelated(img)}
                   className="break-inside-avoid mb-5 group cursor-pointer flex flex-col bg-surface border border-border/50 hover:border-accent/40 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 hover:scale-[1.03] hover:shadow-md"
@@ -1083,10 +1098,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   <div className="p-3 flex flex-col gap-1.5 bg-surface">
                     <p className="text-xs font-bold text-primary truncate leading-tight group-hover:text-accent transition-colors">{img.title || 'Untitled'}</p>
                     <div className="flex items-center gap-1.5">
-                      <img 
-                        src={img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName}`} 
-                        alt={img.uploaderName} 
-                        className="w-4 h-4 rounded-full object-cover" 
+                      <img
+                        src={img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName}`}
+                        alt={img.uploaderName}
+                        className="w-4 h-4 rounded-full object-cover"
                       />
                       <p className="text-[10px] font-medium text-secondary truncate">by {img.uploaderName}</p>
                     </div>
@@ -1126,18 +1141,18 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           </div>
         )}
       </div>
-       {showAttribution && <AttributionModal image={currentImage} onClose={() => setShowAttribution(false)} />}
-       {showEmbedModal && <EmbedModal image={currentImage} onClose={() => setShowEmbedModal(false)} />}
+      {showAttribution && <AttributionModal image={currentImage} onClose={() => setShowAttribution(false)} />}
+      {showEmbedModal && <EmbedModal image={currentImage} onClose={() => setShowEmbedModal(false)} />}
 
       {/* Fullscreen Lightbox Theater Overlay */}
       {isFullscreen && (
-        <div 
+        <div
           className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in select-none"
           onClick={() => setIsFullscreen(false)}
         >
           {/* Ambient Glassmorphic Backdrop */}
-          <div 
-            className="absolute inset-0 bg-cover bg-center blur-3xl opacity-35 scale-105 pointer-events-none transition-all duration-700" 
+          <div
+            className="absolute inset-0 bg-cover bg-center blur-3xl opacity-35 scale-105 pointer-events-none transition-all duration-700"
             style={{ backgroundImage: `url(${currentImage.imageUrl})` }}
           />
 
@@ -1160,7 +1175,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             {/* Quick social actions on fullscreen */}
             <div className="flex items-center gap-3 pointer-events-auto">
               {/* Share */}
-              <button 
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleShare();
@@ -1174,23 +1189,23 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </button>
 
               {/* Profile */}
-              <button 
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleProfileClick();
                 }}
                 className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white font-semibold text-sm transition-all flex items-center gap-1.5 shadow-lg cursor-pointer hover:scale-105 active:scale-95"
               >
-                <img 
-                  src={currentImage.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`} 
-                  alt={currentImage.uploaderName} 
-                  className="w-5 h-5 rounded-full object-cover" 
+                <img
+                  src={currentImage.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`}
+                  alt={currentImage.uploaderName}
+                  className="w-5 h-5 rounded-full object-cover"
                 />
                 Profile
               </button>
 
               {/* Like/Save */}
-              <button 
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleLikeClick();
@@ -1206,12 +1221,12 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           </div>
 
           {/* Centered Image Container */}
-          <div 
+          <div
             className="relative z-10 flex items-center justify-center w-full h-full max-w-[90vw] max-h-[85vh] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {isVideoUrl(currentImage.imageUrl) ? (
-              <video 
+              <video
                 src={currentImage.imageUrl}
                 autoPlay
                 muted
@@ -1222,9 +1237,9 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 style={{ transform: `scale(${zoomScale})` }}
               />
             ) : (
-              <img 
-                src={currentImage.imageUrl} 
-                alt={currentImage.title} 
+              <img
+                src={currentImage.imageUrl}
+                alt={currentImage.title}
                 className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl transition-all duration-300 select-none pointer-events-none"
                 style={{ transform: `scale(${zoomScale})` }}
               />
