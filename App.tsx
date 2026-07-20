@@ -202,9 +202,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (allImages.length > 0) {
       try {
-        localStorage.setItem('cached_all_images', JSON.stringify(allImages));
+        // Limit offline cache to 50 images to prevent 5MB localStorage QuotaExceededError
+        localStorage.setItem('cached_all_images', JSON.stringify(allImages.slice(0, 50)));
       } catch (err) {
-        console.error("Failed to write to offline all-images cache:", err);
+        console.warn("Failed to write to offline all-images cache:", err.message);
       }
     }
   }, [allImages]);
@@ -212,9 +213,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (displayedImages.length > 0) {
       try {
-        localStorage.setItem('cached_displayed_images', JSON.stringify(displayedImages));
+        // Limit offline cache to 50 images to prevent 5MB localStorage QuotaExceededError
+        localStorage.setItem('cached_displayed_images', JSON.stringify(displayedImages.slice(0, 50)));
       } catch (err) {
-        console.error("Failed to write to offline displayed-images cache:", err);
+        console.warn("Failed to write to offline displayed-images cache:", err.message);
       }
     }
   }, [displayedImages]);

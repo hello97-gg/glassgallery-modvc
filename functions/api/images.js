@@ -113,7 +113,7 @@ export async function onRequest(context) {
         // JSON format: return metadata + URL for programmatic use
         if (format === 'json') {
           let parsedFlags = [];
-          try { parsedFlags = targetImage.flags ? JSON.parse(targetImage.flags) : []; } catch {}
+          try { parsedFlags = targetImage.flags ? JSON.parse(targetImage.flags) : []; } catch { }
           return Response.json({
             success: true,
             image: {
@@ -159,8 +159,8 @@ export async function onRequest(context) {
 
         let parsedFlags = [];
         let parsedConcepts = [];
-        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch {}
-        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
+        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
         const image = {
           id: row.id,
@@ -206,8 +206,8 @@ export async function onRequest(context) {
         const target = targetRes.rows[0];
         let targetFlags = [];
         let targetConcepts = [];
-        try { targetFlags = target.flags ? JSON.parse(target.flags) : []; } catch {}
-        try { targetConcepts = target.aiConcepts ? JSON.parse(target.aiConcepts) : []; } catch {}
+        try { targetFlags = target.flags ? JSON.parse(target.flags) : []; } catch { }
+        try { targetConcepts = target.aiConcepts ? JSON.parse(target.aiConcepts) : []; } catch { }
 
         if (targetConcepts.length === 0 && !targetFlags.includes("Flagged")) {
           // Cloudflare Pages Functions run in the request lifecycle. 
@@ -267,8 +267,8 @@ export async function onRequest(context) {
             });
             userUploads.rows.forEach(row => {
               let fl = []; let co = [];
-              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 1.5; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 1.5; });
             });
@@ -278,8 +278,8 @@ export async function onRequest(context) {
             });
             userLikes.rows.forEach(row => {
               let fl = []; let co = [];
-              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 1.0; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 1.0; });
             });
@@ -289,8 +289,8 @@ export async function onRequest(context) {
             });
             userViews.rows.forEach(row => {
               let fl = []; let co = [];
-              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 0.5; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 0.5; });
             });
@@ -300,14 +300,14 @@ export async function onRequest(context) {
             if (maxWeight > 0) {
               for (const key in tasteProfile) { tasteProfile[key] = tasteProfile[key] / maxWeight; }
             }
-          } catch (err) {}
+          } catch (err) { }
         }
 
         const followerCountMap = {};
         try {
           const countsRes = await db.execute("SELECT followingUid, COUNT(*) as cnt FROM follows GROUP BY followingUid");
           countsRes.rows.forEach(r => { followerCountMap[r.followingUid] = parseInt(r.cnt || 0); });
-        } catch (err) {}
+        } catch (err) { }
 
         const targetFollowing = new Set();
         const targetFollowers = new Set();
@@ -320,7 +320,7 @@ export async function onRequest(context) {
             if (r.followerUid === target.uploaderUid) targetFollowing.add(r.followingUid);
             if (r.followingUid === target.uploaderUid) targetFollowers.add(r.followerUid);
           });
-        } catch (err) {}
+        } catch (err) { }
 
         const followingUids = new Set();
         const secondDegreeUids = new Set();
@@ -346,14 +346,14 @@ export async function onRequest(context) {
                 if (!followingUids.has(r.followingUid)) secondDegreeUids.add(r.followingUid);
               });
             }
-          } catch (err) {}
+          } catch (err) { }
         }
 
         const scoredImages = allImagesRes.rows.map(row => {
           const id = row.id;
           let fl = []; let co = [];
-          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
           let conceptOverlap = 0;
           const targetWords = new Set();
@@ -372,7 +372,7 @@ export async function onRequest(context) {
           let metadataMatch = 0;
           const targetText = `${target.title || ''} ${target.description || ''} ${target.location || ''}`.toLowerCase();
           const candidateText = `${row.title || ''} ${row.description || ''} ${row.location || ''}`.toLowerCase();
-          
+
           const tokens = targetText.split(/\s+/).filter(t => t.length > 3);
           tokens.forEach(tok => { if (candidateText.includes(tok)) metadataMatch += 0.5; });
 
@@ -483,8 +483,8 @@ export async function onRequest(context) {
           combinedTasteRes.rows.forEach(row => {
             const weight = sourceWeights[row.source] || 0.5;
             let fl = []; let co = [];
-            try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-            try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+            try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+            try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
             fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + weight; });
             co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + weight; });
           });
@@ -529,8 +529,8 @@ export async function onRequest(context) {
         // Score all images
         const scoredImages = allImagesRes.rows.map(row => {
           let fl = []; let co = [];
-          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
           // 1. Taste affinity score
           let tasteScore = 0;
@@ -629,8 +629,8 @@ export async function onRequest(context) {
         const id = row.id;
         let parsedFlags = [];
         let parsedConcepts = [];
-        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch {}
-        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
+        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
         return {
           id: row.id,
@@ -772,9 +772,9 @@ Return the response strictly as a JSON object with this exact format:
         if (!authHeader) {
           return Response.json({ success: false, error: "Missing API Key in Authorization header or x-api-key header." }, { status: 401, headers: corsHeaders });
         }
-        
+
         let apiKeyInput = authHeader.replace(/^Bearer\s+/i, '').trim();
-        
+
         const userRes = await db.execute({
           sql: "SELECT * FROM users WHERE apiKey = ?",
           args: [apiKeyInput]
@@ -801,7 +801,7 @@ Return the response strictly as a JSON object with this exact format:
         let extension = 'jpg';
         let contentType = 'image/jpeg';
         let isVideo = false;
-        
+
         if (image.startsWith('http://') || image.startsWith('https://')) {
           try {
             const fetchRes = await fetch(image);
@@ -838,7 +838,7 @@ Return the response strictly as a JSON object with this exact format:
             const len = binaryString.length;
             buffer = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
-                buffer[i] = binaryString.charCodeAt(i);
+              buffer[i] = binaryString.charCodeAt(i);
             }
           } catch (err) {
             return Response.json({ success: false, error: "Failed to parse Base64 media data." }, { status: 400, headers: corsHeaders });
@@ -847,7 +847,7 @@ Return the response strictly as a JSON object with this exact format:
 
         const TEN_MB = 10 * 1024 * 1024;
         if (buffer.byteLength > TEN_MB) {
-            return Response.json({ success: false, error: "File exceeds maximum size of 10MB." }, { status: 400, headers: corsHeaders });
+          return Response.json({ success: false, error: "File exceeds maximum size of 10MB." }, { status: 400, headers: corsHeaders });
         }
 
         // --- Image Compression Logic using Photon (Skip for Videos) ---
@@ -861,13 +861,13 @@ Return the response strictly as a JSON object with this exact format:
             const ONE_MB = 1024 * 1024;
 
             if (width > MAX_WIDTH || buffer.byteLength > ONE_MB) {
-                if (width > MAX_WIDTH) {
-                  const newHeight = Math.round(height * (MAX_WIDTH / width));
-                  const resized = resize(photonImg, MAX_WIDTH, newHeight, SamplingFilter.Lanczos3);
-                  photonImg.free();
-                  photonImg = resized;
-                }
-                buffer = photonImg.get_bytes_jpeg(80);
+              if (width > MAX_WIDTH) {
+                const newHeight = Math.round(height * (MAX_WIDTH / width));
+                const resized = resize(photonImg, MAX_WIDTH, newHeight, SamplingFilter.Lanczos3);
+                photonImg.free();
+                photonImg = resized;
+              }
+              buffer = photonImg.get_bytes_jpeg(80);
             }
             photonImg.free();
           } catch (photonErr) {
@@ -892,7 +892,7 @@ Return the response strictly as a JSON object with this exact format:
         });
 
         const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
-        
+
         await S3.send(new PutObjectCommand({
           Bucket: R2_BUCKET,
           Key: uniqueFileName,
@@ -1183,7 +1183,7 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
           propagated = true;
           break;
         }
-      } catch (e) {}
+      } catch (e) { }
       await new Promise(resolve => setTimeout(resolve, 1500));
       urlAttempt++;
     }
@@ -1276,7 +1276,7 @@ Return the response strictly as a JSON object with this exact format:
       isUnsafe = normalizedText.includes("unsafe");
       const match = resultText.match(/\[.*?\]/s);
       if (match) {
-        try { aiConcepts = JSON.parse(match[0]); } catch (je) {}
+        try { aiConcepts = JSON.parse(match[0]); } catch (je) { }
       }
     }
 
