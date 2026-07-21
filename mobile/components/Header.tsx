@@ -20,15 +20,15 @@ interface SidebarProps {
 const NavItem: React.FC<{ children: React.ReactNode, label: string, onClick?: () => void, active?: boolean, isProminent?: boolean }> = ({ children, label, onClick, active, isProminent }) => (
   <button
     onClick={onClick}
-    className={`flex items-center w-full p-3 my-3 rounded-lg transition-all duration-200 group-hover:space-x-4
-      ${active ? 'bg-surface font-semibold text-primary' : ''}
-      ${isProminent ? 'bg-accent text-primary font-semibold hover:bg-accent-hover' : ''}
+    title={label}
+    className={`flex items-center justify-center w-12 h-12 my-1.5 rounded-xl transition-all active:scale-95
+      ${active ? 'bg-surface font-semibold text-accent shadow-sm' : ''}
+      ${isProminent ? 'bg-accent text-surface font-semibold hover:opacity-90 shadow-md' : ''}
       ${!active && !isProminent ? 'text-secondary hover:text-primary hover:bg-surface/80' : ''}
     `}
     aria-label={label}
   >
-    <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">{children}</div>
-    <span className="text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">{label}</span>
+    <div className="w-6 h-6 flex items-center justify-center">{children}</div>
   </button>
 );
 
@@ -46,26 +46,16 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
     }
   }
 
-  const getLogoText = () => {
-      switch(activeView) {
-          case 'explore': return 'Glass Explore';
-          case 'api': return 'Glass API';
-          case 'profile': return 'Glass Profile';
-          default: return 'Glass Gallery';
-      }
-  }
-
   return (
-    <aside className="h-screen w-20 hover:w-56 transition-all duration-300 group bg-background border-r border-border p-3 flex flex-col fixed top-0 left-0 z-30">
-      <div className="flex items-center group-hover:space-x-3 p-3 mb-8">
-         <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden">
+    <aside className="h-screen w-20 bg-background border-r border-border p-3 flex flex-col items-center fixed top-0 left-0 z-30">
+      <div className="flex items-center justify-center p-2 mb-4 cursor-pointer" onClick={() => setView('home')} title="Glass Gallery">
+         <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden hover:scale-105 transition-transform">
             <img src="/favicon.svg" className="w-6 h-6 object-contain" alt="Glass Gallery Logo" />
         </div>
-        <span className="text-xl font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">{getLogoText()}</span>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-grow flex flex-col">
+      <nav className="flex-grow flex flex-col items-center w-full">
         <NavItem label="Home" active={activeView === 'home'} onClick={() => setView('home')}>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -96,7 +86,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
           </svg>
         </NavItem>
 
-        <div className="mt-4 pt-4 border-t border-border">
+        <div className="mt-2 pt-2 border-t border-border flex flex-col items-center w-full">
             <NavItem label="Legal & Terms" onClick={onOpenLegal}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -108,41 +98,37 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
               href="https://github.com/hello97-gg/glassgallery-modvc" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="flex items-center w-full p-3 my-3 rounded-lg transition-all duration-200 group-hover:space-x-4 text-secondary hover:text-primary hover:bg-surface/80"
+              title="GitHub Open Source"
+              className="flex items-center justify-center w-12 h-12 my-1.5 rounded-xl text-secondary hover:text-primary hover:bg-surface/80 transition-colors"
               aria-label="GitHub"
             >
-              <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+              <div className="w-6 h-6 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
               </div>
-              <span className="text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Open Source</span>
             </a>
         </div>
       </nav>
 
       {/* User Profile / Login */}
-      <div className="mt-auto">
+      <div className="mt-auto flex justify-center w-full pb-2">
         {user ? (
           <div className="relative">
-            <button onClick={() => setDropdownOpen(!dropdownOpen)} className="flex items-center w-full p-2 rounded-lg hover:bg-surface">
+            <button onClick={() => setDropdownOpen(!dropdownOpen)} className="p-1 rounded-full hover:ring-2 hover:ring-accent transition-all" title={user.displayName || 'User Profile'}>
               <img
-                src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}&backgroundColor=ff5722,e91e63,9c27b0,673ab7,3f51b5,2196f3,03a9f4,00bcd4,009688,4caf50,8bc34a,cddc39,ffeb3b,ffc107,ff9800`}
+                src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`}
                 alt="User Avatar"
-                className="w-10 h-10 rounded-full flex-shrink-0"
+                className="w-10 h-10 rounded-full flex-shrink-0 object-cover"
               />
-              <div className="text-left opacity-0 group-hover:opacity-100 transition-opacity duration-200 group-hover:ml-3 overflow-hidden">
-                <p className="text-sm font-semibold text-primary truncate whitespace-nowrap">{user.displayName || 'User'}</p>
-                <p className="text-xs text-secondary truncate whitespace-nowrap">Options</p>
-              </div>
             </button>
             {dropdownOpen && (
-              <div className="absolute left-0 bottom-full mb-2 w-52 bg-surface border border-border rounded-lg shadow-xl py-1 z-10">
+              <div className="absolute left-12 bottom-0 mb-2 w-52 bg-surface border border-border rounded-xl shadow-xl py-1 z-50 animate-fade-in">
                 <div className="px-4 py-2 text-xs text-secondary border-b border-border">
                   Signed in as<br />
                   <span className="font-semibold text-sm text-primary">{user.displayName || user.email}</span>
                 </div>
                 <button
                   onClick={handleMyProfileClick}
-                  className="block w-full text-left px-4 py-2 text-sm text-primary hover:bg-border"
+                  className="block w-full text-left px-4 py-2 text-sm text-primary hover:bg-border transition-colors"
                 >
                   My Profile
                 </button>
@@ -151,7 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
                     logOut();
                     setDropdownOpen(false);
                   }}
-                  className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/20"
+                  className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/20 transition-colors"
                 >
                   Sign Out
                 </button>

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { ImageMeta, ProfileUser } from '../types';
 import { isVideoUrl } from '../utils/mediaUtils';
+import VideoPlayer from './VideoPlayer';
 
 interface CreatorDashboardProps {
   images: ImageMeta[];
@@ -354,10 +355,10 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
           >
             <div className="relative overflow-hidden rounded-xl border border-border">
               {isVideoUrl(selectedImage.imageUrl) ? (
-                <video 
+                <VideoPlayer 
                   src={selectedImage.imageUrl} 
                   className="w-full md:w-32 aspect-video object-cover group-hover:scale-105 transition-transform duration-300"
-                  muted loop playsInline
+                  muted loop 
                 />
               ) : (
                 <img 
@@ -670,10 +671,10 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
                       className="group cursor-pointer relative aspect-video rounded-xl overflow-hidden border border-border shadow-sm"
                     >
                       {isVideoUrl(latestImage.imageUrl) ? (
-                        <video 
+                        <VideoPlayer 
                           src={latestImage.imageUrl} 
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          muted loop playsInline
+                          muted loop 
                         />
                       ) : (
                         <img 
@@ -831,7 +832,7 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
                           }}
                         >
                           {isVideoUrl(img.imageUrl) ? (
-                            <video src={img.imageUrl} className="w-12 aspect-video object-cover rounded-md border border-white/10 group-hover/thumb:scale-105 transition-transform" muted loop playsInline />
+                            <VideoPlayer src={img.imageUrl} className="w-12 aspect-video object-cover rounded-md border border-white/10 group-hover/thumb:scale-105 transition-transform" muted loop />
                           ) : (
                             <img src={img.imageUrl} alt={img.title} className="w-12 aspect-video object-cover rounded-md border border-white/10 group-hover/thumb:scale-105 transition-transform" />
                           )}
@@ -950,10 +951,10 @@ const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ images, followersCo
                     className="group relative aspect-video rounded-xl overflow-hidden border border-border shadow-sm cursor-pointer"
                   >
                     {isVideoUrl(spotlightImage.imageUrl) ? (
-                      <video 
+                      <VideoPlayer 
                         src={spotlightImage.imageUrl} 
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        muted loop playsInline
+                        muted loop 
                       />
                     ) : (
                       <img 

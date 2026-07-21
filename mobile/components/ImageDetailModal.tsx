@@ -10,6 +10,7 @@ import { App as CapApp } from '@capacitor/app';
 import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
+import { isVideoUrl } from '../../utils/mediaUtils';
 
 interface ImageDetailModalProps {
   image: ImageMeta;
@@ -823,12 +824,23 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 >
                   {/* Pinterest Pin Rounded Image Container with organic aspect height */}
                   <div className="relative overflow-hidden w-full rounded-2xl bg-neutral-900/10 dark:bg-white/5 shadow-sm group-hover:shadow-md transition-all duration-300">
-                    <img 
-                      src={img.imageUrl} 
-                      alt={img.title || 'Related photo'} 
-                      className="w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.02]" 
-                      loading="lazy"
-                    />
+                    {isVideoUrl(img.imageUrl) ? (
+                      <video 
+                        src={img.imageUrl} 
+                        muted 
+                        autoPlay 
+                        loop 
+                        playsInline 
+                        className="w-full h-auto object-contain pointer-events-none transition-transform duration-500 group-hover:scale-[1.02]" 
+                      />
+                    ) : (
+                      <img 
+                        src={img.imageUrl} 
+                        alt={img.title || 'Related photo'} 
+                        className="w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.02]" 
+                        loading="lazy"
+                      />
+                    )}
                   </div>
                   {/* Pinterest Minimalist Metadata Row */}
                   <div className="pt-2 px-1 flex flex-col gap-1">

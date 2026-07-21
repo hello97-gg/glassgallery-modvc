@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SEOHead from '../../components/SEOHead';
 import Header from '../../components/Header';
 import type { ImageMeta } from '../../types';
+import { isVideoUrl } from '../../../utils/mediaUtils';
 
 interface ImagePageProps {
   image: ImageMeta;
@@ -202,7 +203,11 @@ const ImagePage: React.FC<ImagePageProps> = ({ image, error }) => {
                     href={`/image/${img.id}`}
                     className="break-inside-avoid mb-3 block group cursor-pointer relative overflow-hidden rounded-xl bg-background border border-border/50 hover:border-accent/40 shadow-sm transition-all duration-300 hover:scale-[1.03]"
                   >
-                    <img src={img.imageUrl} alt={img.title || 'Related photo'} className="w-full object-cover rounded-xl" />
+                    {isVideoUrl(img.imageUrl) ? (
+                      <video src={img.imageUrl} muted autoPlay loop playsInline className="w-full object-cover rounded-xl pointer-events-none" />
+                    ) : (
+                      <img src={img.imageUrl} alt={img.title || 'Related photo'} className="w-full object-cover rounded-xl" />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-2 flex flex-col justify-end">
                       <p className="text-[10px] font-semibold text-white truncate">{img.title || 'Untitled'}</p>
                       <p className="text-[8px] text-white/80 truncate">by {img.uploaderName}</p>

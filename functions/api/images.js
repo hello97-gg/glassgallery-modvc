@@ -18,6 +18,19 @@ export async function onRequest(context) {
   const request = context.request;
   const env = context.env;
 
+  // Patch fetch to support duplex: 'half' for AWS SDK v3 streaming
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url, init) => {
+    console.log("[FETCH URL]", url);
+    console.log("[FETCH INIT HEADERS]", init?.headers);
+    if (init && init.body) {
+       console.log("[FETCH INIT BODY TYPE]", typeof init.body, Object.prototype.toString.call(init.body));
+       // Attempt to always add duplex half if body is present
+       init.duplex = 'half';
+    }
+    return originalFetch(url, init);
+  };
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -965,6 +978,53 @@ Return the response strictly as a JSON object with this exact format:
         }, { status: 200, headers: corsHeaders });
       }
 
+      // Action: Create image entry (Step 1 of direct upload)
+      if (action === 'create') {
+        let authHeader = request.headers.get('authorization') || request.headers.get('x-api-key');
+        if (!authHeader) return Response.json({ success: false, error: "Missing API Key." }, { status: 401, headers: corsHeaders });
+
+        let apiKeyInput = authHeader.replace(/^Bearer\s+/i, '').trim();
+        const userRes = await db.execute({ sql: "SELECT * FROM users WHERE apiKey = ?", args: [apiKeyInput] });
+        if (userRes.rows.length === 0) return Response.json({ success: false, error: "Invalid API key." }, { status: 401, headers: corsHeaders });
+
+        const userRow = userRes.rows[0];
+        const uploaderUid = userRow.uploaderUid;
+        const uploaderName = userRow.uploaderName;
+        const uploaderPhotoURL = userRow.uploaderPhotoURL;
+
+        const { title, description, license, licenseUrl, originalWorkUrl, location, tags, filename } = body;
+        let extension = 'mp4';
+        if (filename) extension = filename.split('.').pop().toLowerCase();
+
+        const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
+        
+        const publicDomain = env.R2_PUBLIC_DOMAIN;
+        if (!publicDomain) {
+          throw new Error("Server Misconfiguration: R2_PUBLIC_DOMAIN environment variable is missing.");
+        }
+        const domain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
+        const imageUrl = `${domain}/${uniqueFileName}`; // Expected URL
+
+        const uploadedAt = new Date().toISOString();
+
+        await db.execute({
+          sql: `INSERT INTO images (
+            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            title, description, license, licenseUrl, flags, originalWorkUrl,
+            uploadedAt, likeCount, downloadCount, location, aiConcepts
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          args: [
+            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            title || '', description || '', license || 'CC0', licenseUrl || '',
+            JSON.stringify(tags || []), originalWorkUrl || '', uploadedAt, location || '',
+            JSON.stringify([])
+          ]
+        });
+
+        return Response.json({ success: true, imageId: id, uploadUrl: `/api/images/upload?id=${id}&filename=${uniqueFileName}` }, { status: 200, headers: corsHeaders });
+      }
+
       // Action: Add/Upload image
       if (action === 'upload') {
         const {
@@ -1166,6 +1226,154 @@ Return the response strictly as a JSON object with this exact format:
       }
 
       return Response.json({ success: false, error: `Invalid action: ${action}` }, { status: 400, headers: corsHeaders });
+    }
+
+    if (request.method === 'PUT') {
+      const action = url.searchParams.get('action');
+      
+      // Action: Direct Stream Passthrough (Raw Binary)
+      if (action === 'api_upload_stream') {
+        let authHeader = request.headers.get('authorization') || request.headers.get('x-api-key');
+        if (!authHeader) {
+          return Response.json({ success: false, error: "Missing API Key." }, { status: 401, headers: corsHeaders });
+        }
+
+        let apiKeyInput = authHeader.replace(/^Bearer\s+/i, '').trim();
+        const userRes = await db.execute({
+          sql: "SELECT * FROM users WHERE apiKey = ?",
+          args: [apiKeyInput]
+        });
+
+        if (userRes.rows.length === 0) {
+          return Response.json({ success: false, error: "Invalid API key." }, { status: 401, headers: corsHeaders });
+        }
+
+        const userRow = userRes.rows[0];
+        const uploaderUid = userRow.uploaderUid;
+        const uploaderName = userRow.uploaderName;
+        const uploaderPhotoURL = userRow.uploaderPhotoURL;
+
+        // Metadata passed via headers
+        const title = request.headers.get('x-image-title') || '';
+        const description = request.headers.get('x-image-description') || '';
+        const location = request.headers.get('x-image-location') || '';
+        const license = request.headers.get('x-image-license') || 'CC0';
+        const licenseUrl = request.headers.get('x-image-license-url') || '';
+        const originalWorkUrl = request.headers.get('x-image-original-work-url') || '';
+        const filename = request.headers.get('x-file-name') || 'video.mp4';
+        let tags = [];
+        try {
+          const tagsHeader = request.headers.get('x-image-tags');
+          if (tagsHeader) tags = JSON.parse(tagsHeader);
+        } catch(e) {}
+        
+        let contentType = request.headers.get('content-type') || 'application/octet-stream';
+        let extension = filename.split('.').pop().toLowerCase();
+        if (contentType === 'video/mp4') extension = 'mp4';
+        
+        // Ensure request body exists
+        if (!request.body) {
+           return Response.json({ success: false, error: "Missing request body stream." }, { status: 400, headers: corsHeaders });
+        }
+
+        const contentLengthHeader = request.headers.get('content-length');
+        if (!contentLengthHeader) {
+          return Response.json({ success: false, error: "Length Required: Content-Length header is missing." }, { status: 411, headers: corsHeaders });
+        }
+
+        const size = parseInt(contentLengthHeader, 10);
+        const TEN_MB = 10 * 1024 * 1024; // 10 MB upload size limit matching web and api_upload
+        if (size > TEN_MB) {
+          return Response.json({ success: false, error: "Payload Too Large: Maximum allowed size is 10MB." }, { status: 413, headers: corsHeaders });
+        }
+
+        const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+        const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
+        const publicDomain = env.R2_PUBLIC_DOMAIN;
+        if (!publicDomain) {
+          throw new Error("Server Misconfiguration: R2_PUBLIC_DOMAIN environment variable is missing.");
+        }
+
+        const { AwsClient } = await import("aws4fetch");
+        const aws = new AwsClient({
+          accessKeyId: env.R2_ACCESS_KEY_ID,
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+          service: 's3',
+          region: 'auto'
+        });
+
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
+        const s3Url = new URL(`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET}/${uniqueFileName}`);
+        
+        // Directly pipe the stream to R2 - virtually 0ms CPU time
+        const s3Res = await aws.fetch(s3Url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': contentType,
+                'Content-Length': contentLengthHeader
+            },
+            body: request.body,
+            duplex: 'half'
+        });
+
+        if (!s3Res.ok) {
+            const errText = await s3Res.text();
+            throw new Error(`R2 Upload failed: ${s3Res.status} ${errText}`);
+        }
+
+        const domain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
+        const imageUrl = `${domain}/${uniqueFileName}`;
+
+        const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        let updatedFlags = tags || [];
+        let isUnsafe = false;
+        let aiConceptsArr = [];
+
+        try {
+          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env);
+          isUnsafe = safetyRes.isUnsafe;
+          aiConceptsArr = safetyRes.aiConcepts || [];
+        } catch (err) {
+          console.error("[API Stream Upload Content Safety] Moderation failed:", err);
+        }
+
+        if (isUnsafe && !updatedFlags.includes("Flagged")) {
+          updatedFlags.push("Flagged");
+        }
+
+        const uploadedAt = new Date().toISOString();
+
+        await db.execute({
+          sql: `INSERT INTO images (
+            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            title, description, license, licenseUrl, flags, originalWorkUrl,
+            uploadedAt, likeCount, downloadCount, location, aiConcepts
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          args: [
+            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            title || '', description || '', license || 'CC0', licenseUrl || '',
+            JSON.stringify(updatedFlags), originalWorkUrl || '', uploadedAt, location || '',
+            JSON.stringify(aiConceptsArr)
+          ]
+        });
+
+        if (isUnsafe) {
+          const notifId = 'notif_' + Math.random().toString(36).substring(2, 15);
+          await db.execute({
+            sql: `INSERT INTO notifications (id, recipientUid, actorUid, actorName, actorPhotoURL, type, imageId, imageUrl, createdAt, read)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            args: [notifId, uploaderUid, 'system', 'System Moderator', '', 'flagged', id, imageUrl, uploadedAt]
+          }).catch(err => console.error("[Content Safety] Notification failed:", err));
+        }
+
+        return Response.json({
+          success: true,
+          imageId: id,
+          imageUrl,
+          flagged: isUnsafe,
+          aiConcepts: aiConceptsArr
+        }, { status: 200, headers: corsHeaders });
+      }
     }
 
     return Response.json({ success: false, error: "Method not allowed." }, { status: 405, headers: corsHeaders });

@@ -20,9 +20,12 @@
     "@cf-wasm/photon": "^0.1.0",
     "@google/genai": "^1.29.1",
     "@libsql/client": "^0.17.3",
+    "aws4fetch": "^1.0.20",
     "browser-image-compression": "^2.0.2",
     "firebase": "^11.10.0",
     "jigsawstack": "^0.3.7",
+    "plyr": "^3.8.4",
+    "plyr-react": "^6.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

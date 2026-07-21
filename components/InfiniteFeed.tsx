@@ -4,6 +4,7 @@ import type { ImageMeta, ProfileUser } from '../types';
 import { recordWatchInterest } from '../services/interestTracker';
 import { isVideoUrl } from '../utils/mediaUtils';
 import EmbedModal from './EmbedModal';
+import VideoPlayer from './VideoPlayer';
 import Button from './Button';
 import Spinner from './Spinner';
 
@@ -21,6 +22,8 @@ interface InfiniteFeedProps {
   onSaveToggle: (image: ImageMeta) => void;
   onImageDelete: (imageId: string) => void;
   onImageEdit: (image: ImageMeta) => void;
+  topicFilter?: string;
+  onClearTopicFilter?: () => void;
 }
 
 export const FeedItem: React.FC<{
@@ -43,7 +46,13 @@ export const FeedItem: React.FC<{
   const [showEmbed, setShowEmbed] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
@@ -206,13 +215,13 @@ export const FeedItem: React.FC<{
           {/* Image/Video Attachment */}
           <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-black/5">
              {isVideoUrl(image.imageUrl) ? (
-                 <video 
+                 <VideoPlayer 
                    src={image.imageUrl} 
-                   autoPlay 
                    muted 
                    loop 
-                   playsInline onTimeUpdate={handleVideoTimeUpdate} 
-                   controls
+                   autoPlay
+                   preload="metadata"
+                   onTimeUpdate={handleVideoTimeUpdate}
                    className="w-full h-full object-contain max-h-[500px]"
                  />
              ) : (
@@ -291,10 +300,13 @@ export const FeedItem: React.FC<{
                    e.stopPropagation();
                    const url = `${window.location.origin}/image/${image.id}`;
                    if (navigator.share) {
-                       navigator.share({ title: image.title, url });
+                       navigator.share({ title: image.title, url }).catch(() => {
+                           navigator.clipboard.writeText(url);
+                           showToast("Link copied to clipboard!");
+                       });
                    } else {
                        navigator.clipboard.writeText(url);
-                       alert("Link copied to clipboard!");
+                       showToast("Link copied to clipboard!");
                    }
                 }}
              >
@@ -344,51 +356,72 @@ export const FeedItem: React.FC<{
           </div>
         </div>
       )}
+      {toastMessage && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-accent text-white px-6 py-3 rounded-full shadow-2xl z-[100] animate-fade-in font-bold text-[15px] whitespace-nowrap">
+          {toastMessage}
+        </div>
+      )}
     </article>
   );
 };
 
-const InfiniteFeed: React.FC<InfiniteFeedProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, onLoginClick, feedTab, setFeedTab, onCreateClick, savedImages, onSaveToggle, onImageDelete, onImageEdit }) => {
+const InfiniteFeed: React.FC<InfiniteFeedProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, onLoginClick, feedTab, setFeedTab, onCreateClick, savedImages, onSaveToggle, onImageDelete, onImageEdit, topicFilter, onClearTopicFilter }) => {
   return (
     <div className="w-full flex justify-center bg-background min-h-screen">
        <div className="w-full max-w-2xl border-l border-r border-border min-h-screen pb-20 md:pb-0">
           {/* Top Header Tabs */}
           <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border">
              <div className="flex">
-                <button 
-                  className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'discover' ? 'text-primary' : 'text-secondary font-medium'}`}
-                  onClick={() => setFeedTab('discover')}
-                >
-                  Discover
-                  {feedTab === 'discover' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
-                </button>
-                <button 
-                  className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'following' ? 'text-primary' : 'text-secondary font-medium'}`}
-                  onClick={() => {
-                     if (!user) onLoginClick();
-                     else setFeedTab('following');
-                  }}
-                >
-                  Following
-                  {feedTab === 'following' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
-                </button>
+              {topicFilter ? (
+                <div className="flex items-center gap-4 py-3 px-4 w-full">
+                  <button onClick={onClearTopicFilter} className="p-2 hover:bg-surface/50 rounded-full transition-colors text-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                  <h1 className="text-xl font-bold text-primary truncate">Search: {topicFilter}</h1>
+                </div>
+              ) : (
+                <>
+                  <button 
+                    className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'discover' ? 'text-primary' : 'text-secondary font-medium'}`}
+                    onClick={() => setFeedTab('discover')}
+                  >
+                    Discover
+                    {feedTab === 'discover' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
+                  </button>
+                  <button 
+                    className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'following' ? 'text-primary' : 'text-secondary font-medium'}`}
+                    onClick={() => {
+                       if (!user) onLoginClick();
+                       else setFeedTab('following');
+                    }}
+                  >
+                    Following
+                    {feedTab === 'following' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
+                  </button>
+                </>
+              )}
              </div>
           </div>
 
           {/* Create Post Section */}
-          <div className="flex gap-4 p-4 border-b border-border hover:bg-surface/30 cursor-text transition-colors" onClick={user ? onCreateClick : onLoginClick}>
-             <img 
-                 src={user?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user?.displayName || 'Guest'}`}
-                 alt="User"
-                 className="w-10 h-10 rounded-full object-cover shrink-0 cursor-pointer"
-             />
-             <div className="flex-1 flex flex-col justify-center">
-                 <div className="text-[20px] text-secondary/70 font-medium">What is happening?!</div>
-             </div>
-             <button className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-accent hover:bg-accent/10 transition-colors mt-0.5">
-                 <svg viewBox="0 0 24 24" className="w-[22px] h-[22px] fill-current"><g><path d="M3 5.5C3 4.119 4.119 3 5.5 3h13C19.881 3 21 4.119 21 5.5v13c0 1.381-1.119 2.5-2.5 2.5h-13C4.119 21 3 19.881 3 18.5v-13zM5.5 5c-.276 0-.5.224-.5.5v9.086l3-3 3 3 5-5 3 3V5.5c0-.276-.224-.5-.5-.5h-13zM19 15.414l-3-3-5 5-3-3-3 3V18.5c0 .276.224.5.5.5h13c.276 0 .5-.224.5-.5v-3.086zM9.75 7C8.784 7 8 7.784 8 8.75s.784 1.75 1.75 1.75 1.75-.784 1.75-1.75S10.716 7 9.75 7z"></path></g></svg>
-             </button>
-          </div>
+          {/* Create Post Section - Hidden if topic filter is active */}
+          {!topicFilter && (
+            <div className="flex gap-4 p-4 border-b border-border hover:bg-surface/30 cursor-text transition-colors" onClick={user ? onCreateClick : onLoginClick}>
+               <img 
+                   src={user?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user?.displayName || 'Guest'}`}
+                   alt="User"
+                   className="w-10 h-10 rounded-full object-cover shrink-0 cursor-pointer"
+               />
+               <div className="flex-1 flex flex-col justify-center">
+                   <div className="text-[20px] text-secondary/70 font-medium">What is happening?!</div>
+               </div>
+               <button className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-accent hover:bg-accent/10 transition-colors mt-0.5">
+                   <svg viewBox="0 0 24 24" className="w-[22px] h-[22px] fill-current"><g><path d="M3 5.5C3 4.119 4.119 3 5.5 3h13C19.881 3 21 4.119 21 5.5v13c0 1.381-1.119 2.5-2.5 2.5h-13C4.119 21 3 19.881 3 18.5v-13zM5.5 5c-.276 0-.5.224-.5.5v9.086l3-3 3 3 5-5 3 3V5.5c0-.276-.224-.5-.5-.5h-13zM19 15.414l-3-3-5 5-3-3-3 3V18.5c0 .276.224.5.5.5h13c.276 0 .5-.224.5-.5v-3.086zM9.75 7C8.784 7 8 7.784 8 8.75s.784 1.75 1.75 1.75 1.75-.784 1.75-1.75S10.716 7 9.75 7z"></path></g></svg>
+               </button>
+            </div>
+          )}
 
           {/* Feed List */}
           <div className="flex flex-col">

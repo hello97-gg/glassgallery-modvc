@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ImageMeta } from '../types';
 import { isVideoUrl } from '../utils/mediaUtils';
+import VideoPlayer from './VideoPlayer';
 
 interface EmbedModalProps {
   image: ImageMeta;
@@ -76,7 +77,7 @@ const EmbedModal: React.FC<EmbedModalProps> = ({ image, onClose }) => {
         <div className="px-6 pb-3 w-full">
           <div className="flex items-center gap-3 p-3 bg-background rounded-xl border border-border">
             {isVideoUrl(image.imageUrl) ? (
-               <video src={image.imageUrl} className="w-14 h-14 object-cover rounded-lg flex-shrink-0 bg-black" />
+               <VideoPlayer src={image.imageUrl} muted className="w-14 h-14 object-cover rounded-lg flex-shrink-0 bg-black" />
             ) : (
                <img src={image.imageUrl} alt={title} className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
             )}

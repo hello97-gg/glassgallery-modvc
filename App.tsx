@@ -29,6 +29,7 @@ import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
 import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
 import MobileAppPromo from './components/MobileAppPromo';
+import TrendingSidebar from './components/TrendingSidebar';
 
 // Global Fetch Interceptor for Capacitor Native Platform to reroute relative paths to the production API
 if (Capacitor.isNativePlatform()) {
@@ -73,7 +74,7 @@ const SkeletonFeedPost: React.FC = () => {
   const heightClass = SKELETON_HEIGHTS[Math.floor(Math.random() * SKELETON_HEIGHTS.length)];
   
   return (
-    <div className="flex gap-3 p-4 border-b border-border w-full animate-pulse">
+    <div className="flex gap-3 p-4 border-b border-border w-full">
       {/* Avatar Skeleton */}
       <div className="shrink-0">
         <div className="w-10 h-10 rounded-full bg-surface" />
@@ -133,11 +134,11 @@ const SkeletonGrid: React.FC<{ feedTab: 'discover' | 'following', user: User | n
         <div className="flex flex-col">
           {/* Mock Create Post Section */}
           <div className="flex gap-4 p-4 border-b border-border">
-             <div className="w-10 h-10 rounded-full bg-surface animate-pulse shrink-0" />
+             <div className="w-10 h-10 rounded-full bg-surface shrink-0" />
              <div className="flex-1 flex flex-col justify-center">
-                 <div className="h-6 w-48 bg-surface rounded animate-pulse" />
+                 <div className="h-6 w-48 bg-surface rounded" />
              </div>
-             <div className="shrink-0 w-9 h-9 rounded-full bg-surface animate-pulse mt-0.5" />
+             <div className="shrink-0 w-9 h-9 rounded-full bg-surface mt-0.5" />
           </div>
 
           {Array.from({ length: 5 }).map((_, index) => (
@@ -302,6 +303,7 @@ const App: React.FC = () => {
   const [lastView, setLastView] = useState<'home' | 'discover' | 'explore' | 'api' | 'legal'>('home');
   
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
+  const [homeTopicFilter, setHomeTopicFilter] = useState('');
 
   const [savedImages, setSavedImages] = useState<Set<string>>(new Set());
 
@@ -353,18 +355,39 @@ const App: React.FC = () => {
   }, [user]);
 
   const activeAllImages = useMemo(() => {
+    let result = allImages;
     if (feedTab === 'following') {
-       return allImages.filter(img => followingUids.has(img.uploaderUid));
+       result = result.filter(img => followingUids.has(img.uploaderUid));
     }
-    return allImages;
-  }, [allImages, feedTab, followingUids]);
+    if (homeTopicFilter) {
+       const lowerTopic = homeTopicFilter.toLowerCase();
+       result = result.filter(img => 
+         img.flags?.some(f => f.toLowerCase() === lowerTopic) ||
+         img.title?.toLowerCase().includes(lowerTopic) ||
+         img.description?.toLowerCase().includes(lowerTopic) ||
+         img.aiConcepts?.some(c => c.toLowerCase() === lowerTopic)
+       );
+    }
+    return result;
+  }, [allImages, feedTab, followingUids, homeTopicFilter]);
+
+  const lastFilterState = useRef({ feedTab, homeTopicFilter, loaded: false });
 
   useEffect(() => {
     if (activeView === 'home') {
-      setDisplayedImages(activeAllImages.slice(0, PAGE_SIZE));
-      setCurrentIndex(PAGE_SIZE);
+      const filterChanged = 
+        lastFilterState.current.feedTab !== feedTab || 
+        lastFilterState.current.homeTopicFilter !== homeTopicFilter;
+        
+      const isInitialLoad = !lastFilterState.current.loaded && activeAllImages.length > 0;
+      
+      if (filterChanged || isInitialLoad) {
+        lastFilterState.current = { feedTab, homeTopicFilter, loaded: activeAllImages.length > 0 };
+        setDisplayedImages(activeAllImages.slice(0, PAGE_SIZE));
+        setCurrentIndex(PAGE_SIZE);
+      }
     }
-  }, [feedTab, followingUids, activeView]);
+  }, [activeAllImages, activeView, feedTab, homeTopicFilter]);
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   
@@ -813,23 +836,18 @@ const App: React.FC = () => {
   const loadMoreImages = useCallback(() => {
     if (imagesLoading || activeAllImages.length === 0 || isLoadingMore.current) return;
 
-    isLoadingMore.current = true;
-
-    let newImages: ImageMeta[] = [];
-
-    if (currentIndex < activeAllImages.length) {
-        const nextIndex = currentIndex + PAGE_SIZE;
-        newImages = activeAllImages.slice(currentIndex, nextIndex);
-        setCurrentIndex(nextIndex);
-    } else {
-        // Infinite scroll loop back to start! Reshuffle using our dynamic smart addictive sort!
-        const reshuffled = smartSortImages(activeAllImages, currentUserProfile);
-        newImages = reshuffled.slice(0, PAGE_SIZE);
-        setCurrentIndex(PAGE_SIZE);
+    if (currentIndex >= activeAllImages.length) {
+      isLoadingMore.current = false;
+      return;
     }
 
+    isLoadingMore.current = true;
+
+    const nextIndex = currentIndex + PAGE_SIZE;
+    const newImages = activeAllImages.slice(currentIndex, nextIndex);
+    setCurrentIndex(nextIndex);
+
     if (newImages.length > 0) {
-        // Dynamic unique loop suffix keys to prevent any DOM/React duplicate key collisions
         const uniqueTime = Date.now();
         const processed = newImages.map((img, idx) => ({
             ...img,
@@ -838,10 +856,8 @@ const App: React.FC = () => {
         setDisplayedImages(prev => [...prev, ...processed]);
     }
 
-    // Reset guard immediately - React batches state updates so DOM won't actually
-    // re-render until next frame, preventing double-fires naturally
     requestAnimationFrame(() => { isLoadingMore.current = false; });
-  }, [currentIndex, allImages, imagesLoading, currentUserProfile]);
+  }, [currentIndex, activeAllImages, imagesLoading]);
 
   useEffect(() => {
     let ticking = false;
@@ -850,10 +866,9 @@ const App: React.FC = () => {
       ticking = true;
       requestAnimationFrame(() => {
         if (['home', 'discover', 'explore', 'post'].includes(activeView) && !isLoadingMore.current) {
-            // Aggressive preload: start loading 1500px BEFORE bottom so content
-            // is already rendered by the time the user scrolls there
-            const scrollThreshold = 1500;
-            const isNearBottom = window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - scrollThreshold;
+            const scrollThreshold = 500;
+            const hasUserScrolled = window.scrollY > 50;
+            const isNearBottom = hasUserScrolled && (window.innerHeight + window.scrollY >= document.documentElement.offsetHeight - scrollThreshold);
             
             if (isNearBottom) {
               loadMoreImages();
@@ -974,23 +989,25 @@ const App: React.FC = () => {
       const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
       
       setSelectedFeedPost(viewIncremented);
-      setAllImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
-      setDisplayedImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
-      
       saveScrollPosition();
       setActiveView('post');
+      window.scrollTo({ top: 0, behavior: 'instant' });
       updateURL({ image: baseId });
       if (user) {
         recordImageView(baseId, user.uid);
       }
       recordClickInterest(viewIncremented);
+      
+      // Update counts asynchronously without locking the UI thread
+      setTimeout(() => {
+        setAllImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
+        setDisplayedImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
+      }, 50);
     };
 
     if (document.startViewTransition) {
       document.startViewTransition(() => {
-        flushSync(() => {
-          doClick();
-        });
+        doClick();
       });
     } else {
       doClick();
@@ -1007,6 +1024,7 @@ const App: React.FC = () => {
   const handleLocationClick = (location: string) => {
       setExploreSearchTerm(location);
       setActiveView('explore');
+      window.scrollTo({ top: 0, behavior: 'instant' });
       updateURL({ search: location });
       setSelectedImage(null);
   }
@@ -1070,49 +1088,63 @@ const App: React.FC = () => {
   }, [activeView]);
 
   const handleViewProfile = (userToView: ProfileUser) => {
-    saveScrollPosition();
-    if (activeView !== 'profile') {
-        setLastView(activeView as 'home' | 'explore' | 'api');
+    const doViewProfile = () => {
+      saveScrollPosition();
+      if (activeView !== 'profile') {
+          setLastView(activeView as 'home' | 'explore' | 'api');
+      }
+      setProfileUser(userToView);
+      setActiveView('profile');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      setSelectedImage(null);
+      updateURL({ user: userToView.uploaderUid });
+    };
+
+    if (document.startViewTransition) {
+      document.startViewTransition(() => {
+        flushSync(() => {
+          doViewProfile();
+        });
+      });
+    } else {
+      doViewProfile();
     }
-    setProfileUser(userToView);
-    setActiveView('profile');
-    setSelectedImage(null);
-    updateURL({ user: userToView.uploaderUid });
   };
 
   const handleBack = () => {
     saveScrollPosition();
     setActiveView(lastView);
+    window.scrollTo({ top: scrollPositions.current[lastView] || 0, behavior: 'instant' });
     setProfileUser(null);
     updateURL(null);
   }
   
-  const handleSetView = (view: 'home' | 'explore' | 'notifications' | 'api') => {
-    if (view === activeView && (view === 'home' || view === 'explore')) {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        setAllImages(prevImages => {
-             const reshuffled = smartSortImages(prevImages, currentUserProfile);
-             setDisplayedImages(reshuffled.slice(0, PAGE_SIZE));
-             setCurrentIndex(PAGE_SIZE);
-             return reshuffled;
-        });
+  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api') => {
+    if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
         if (view === 'explore') {
             setExploreSearchTerm('');
             updateURL(null);
+        } else if (view === 'home') {
+            setHomeTopicFilter('');
         }
     } else {
         saveScrollPosition();
         setActiveView(view);
+        window.scrollTo({ top: 0, behavior: 'instant' });
         setProfileUser(null);
         setExploreSearchTerm('');
+        if (view === 'home') {
+            setHomeTopicFilter('');
+        }
         
         if (view === 'api') {
-            updateURL({ view: 'api' });
+          updateURL({ view: 'api' });
         } else {
-            updateURL(null);
+          updateURL(null);
         }
     }
-  }
+  };
 
   const handleOpenLegal = (tab: 'terms' | 'privacy' | 'guidelines' = 'terms') => {
       saveScrollPosition();
@@ -1221,7 +1253,7 @@ const App: React.FC = () => {
 
     // Fix for SEO: Do NOT block on authLoading. Only block if images are strictly loading and empty.
     // If auth is loading, we just render as if 'guest'.
-    if (imagesLoading && displayedImages.length === 0 && activeView !== 'profile') {
+    if (imagesLoading && displayedImages.length === 0 && (activeView === 'home' || activeView === 'explore' || activeView === 'discover')) {
        return <SkeletonGrid feedTab={feedTab} user={user} />;
     }
     
@@ -1290,6 +1322,11 @@ const App: React.FC = () => {
                     onLikeToggle={handleLikeToggle}
                     initialSearchTerm={exploreSearchTerm}
                     onNavigateToApi={() => handleSetView('api')}
+                    onTrendingTopicClick={(topic) => {
+                        setHomeTopicFilter(topic);
+                        handleSetView('home');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                 />
             </>
         );
@@ -1392,6 +1429,8 @@ const App: React.FC = () => {
                     setSelectedImage(img);
                     setForceEditMode(true);
                 }}
+                topicFilter={homeTopicFilter}
+                onClearTopicFilter={() => setHomeTopicFilter('')}
             />
         </>
     );
@@ -1417,6 +1456,22 @@ const App: React.FC = () => {
       <main className={`flex-1 min-w-0 ${activeView === 'home' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
         {renderContent()}
       </main>
+
+      {/* Right Sidebar for Trending topics - Twitter/Bluesky style */}
+      {['home', 'discover', 'post'].includes(activeView) && (
+        <aside className="hidden xl:block w-80 pr-6 pt-6 flex-shrink-0 sticky top-0 h-screen overflow-y-auto hidden-scrollbar self-start">
+          <div className="pb-6">
+            <TrendingSidebar 
+              onTopicClick={(topic) => {
+                setHomeTopicFilter(topic);
+                setActiveView('home');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                updateURL(null);
+              }} 
+            />
+          </div>
+        </aside>
+      )}
 
       <BottomNav
         user={user}

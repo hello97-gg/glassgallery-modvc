@@ -6,6 +6,8 @@ import ImageGrid from './ImageGrid';
 import Button from './Button';
 import { recordSearchInterest } from '../services/interestTracker';
 import { isVideoUrl } from '../utils/mediaUtils';
+import TrendingSidebar from './TrendingSidebar';
+import { getAuth } from 'firebase/auth';
 
 interface ExplorePageProps {
   images: ImageMeta[];
@@ -15,6 +17,7 @@ interface ExplorePageProps {
   onLikeToggle: (image: ImageMeta) => void;
   initialSearchTerm?: string;
   onNavigateToApi?: () => void;
+  onTrendingTopicClick?: (topic: string) => void;
 }
 
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
@@ -22,12 +25,10 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
   const [hasError, setHasError] = useState(false);
 
   return (
-    <div onClick={onClick} className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1">
-      {/* Loading Shimmer / Spinner */}
+    <div onClick={onClick} className="relative aspect-1 cursor-pointer group bg-surface/50 rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:scale-[1.02]">
+      {/* Clean static placeholder - no spinning loader loops */}
       {!isLoaded && !hasError && (
-        <div className="absolute inset-0 bg-[#121212] flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
-        </div>
+        <div className="absolute inset-0 bg-surface/80" />
       )}
 
       {/* Fallback for Broken Images */}
@@ -37,22 +38,13 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
           </svg>
         </div>
-      ) : isVideoUrl(image.imageUrl) ? (
-        <video 
-          src={image.imageUrl} 
-          muted
-          autoPlay
-          loop
-          playsInline
-          className={`w-full h-full object-cover transition-all duration-500 ease-in-out group-hover:scale-110 pointer-events-none ${isLoaded ? 'opacity-100' : 'opacity-0'}`} 
-          onLoadedData={() => setIsLoaded(true)}
-          onError={() => setHasError(true)}
-        />
       ) : (
         <img 
           src={image.imageUrl} 
           alt={flag} 
-          className={`w-full h-full object-cover transition-all duration-500 ease-in-out group-hover:scale-110 ${isLoaded ? 'opacity-100' : 'opacity-0'}`} 
+          loading="lazy"
+          decoding="async"
+          className={`w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 ${isLoaded ? 'opacity-100' : 'opacity-0'}`} 
           onLoad={() => setIsLoaded(true)}
           onError={() => setHasError(true)}
         />
@@ -65,7 +57,7 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
   );
 };
 
-const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, initialSearchTerm = '', onNavigateToApi }) => {
+const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, initialSearchTerm = '', onNavigateToApi, onTrendingTopicClick }) => {
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchTerm);
 
@@ -103,6 +95,18 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
   }, [images]);
 
   const sortedFlags = useMemo(() => Object.keys(imagesByFlag).sort(), [imagesByFlag]);
+
+  // Pre-calculate deterministic static representative images for category cards to prevent video stream overload & RAM leaks
+  const representativeImages = useMemo(() => {
+    const map: Record<string, ImageMeta> = {};
+    Object.entries(imagesByFlag).forEach(([flag, categoryImages]: [string, ImageMeta[]]) => {
+      if (categoryImages.length > 0) {
+        const staticImg = categoryImages.find(img => !isVideoUrl(img.imageUrl));
+        map[flag] = staticImg || categoryImages[0];
+      }
+    });
+    return map;
+  }, [imagesByFlag]);
 
   // Search Logic
   const searchResults = useMemo(() => {
@@ -250,56 +254,71 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
             </div>
         </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4">
-        {sortedFlags.map((flag) => {
-          const categoryImages = imagesByFlag[flag];
-          if (!categoryImages || categoryImages.length === 0) return null;
-          
-          const representativeImage = categoryImages[Math.floor(Math.random() * categoryImages.length)];
-          if (!representativeImage) return null;
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 md:gap-4">
+            {sortedFlags.map((flag) => {
+              const categoryImages = imagesByFlag[flag];
+              if (!categoryImages || categoryImages.length === 0) return null;
+              
+              const representativeImage = representativeImages[flag];
+              if (!representativeImage) return null;
 
-          return (
-            <CategoryCard 
-              key={flag} 
-              flag={flag} 
-              image={representativeImage} 
-              onClick={() => setSelectedFlag(flag)} 
-            />
-          );
-        })}
-        
-        {/* Open Source Promo Card */}
-        <a 
-          href="https://github.com/hello97-gg/glassgallery-modvc"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1 border border-border flex flex-col items-center justify-center p-6 text-center"
-        >
-             <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mb-4 text-background group-hover:scale-110 transition-transform duration-300">
-                <svg viewBox="0 0 24 24" className="h-8 w-8" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-             </div>
-             <h3 className="text-primary font-bold text-lg mb-2">We are Open Source!</h3>
-             <p className="text-secondary text-sm">Star us on GitHub.</p>
-        </a>
-
-        {/* API Docs Promo Card */}
-        {onNavigateToApi && (
-            <div 
-              onClick={onNavigateToApi}
+              return (
+                <CategoryCard 
+                  key={flag} 
+                  flag={flag} 
+                  image={representativeImage} 
+                  onClick={() => setSelectedFlag(flag)} 
+                />
+              );
+            })}
+            
+            {/* Open Source Promo Card */}
+            <a 
+              href="https://github.com/hello97-gg/glassgallery-modvc"
+              target="_blank"
+              rel="noopener noreferrer"
               className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1 border border-border flex flex-col items-center justify-center p-6 text-center"
             >
-                 <div className="w-16 h-16 bg-surface border border-border rounded-full flex items-center justify-center mb-4 text-primary group-hover:scale-110 transition-transform duration-300">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                    </svg>
+                 <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mb-4 text-background group-hover:scale-110 transition-transform duration-300">
+                    <svg viewBox="0 0 24 24" className="h-8 w-8" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
                  </div>
-                 <h3 className="text-primary font-bold text-lg mb-2">Developer API</h3>
-                 <p className="text-secondary text-sm">Build on top of Glass Gallery.</p>
-            </div>
-        )}
+                 <h3 className="text-primary font-bold text-lg mb-2">We are Open Source!</h3>
+                 <p className="text-secondary text-sm">Star us on GitHub.</p>
+            </a>
+
+            {/* API Docs Promo Card */}
+            {onNavigateToApi && (
+                <div 
+                  onClick={onNavigateToApi}
+                  className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1 border border-border flex flex-col items-center justify-center p-6 text-center"
+                >
+                     <div className="w-16 h-16 bg-surface border border-border rounded-full flex items-center justify-center mb-4 text-primary group-hover:scale-110 transition-transform duration-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                     </div>
+                     <h3 className="text-primary font-bold text-lg mb-2">Developer API</h3>
+                     <p className="text-secondary text-sm">Build on top of Glass Gallery.</p>
+                </div>
+            )}
+          </div>
+        </div>
+
+        {/* Trending Sidebar */}
+        <div className="w-full lg:w-80 flex-shrink-0">
+          <TrendingSidebar onTopicClick={(topic) => {
+            if (onTrendingTopicClick) {
+              onTrendingTopicClick(topic);
+            } else {
+              setSelectedFlag(topic);
+            }
+          }} />
+        </div>
       </div>
     </div>
   );
-};
+}
 
 export default ExplorePage;

@@ -9,6 +9,7 @@ import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
 import EmbedModal from './EmbedModal';
+import VideoPlayer from './VideoPlayer';
 
 interface ImageDetailModalProps {
   image: ImageMeta;
@@ -867,13 +868,11 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           {/* Main Image/Video Container */}
           <div className="bg-background flex-shrink-0 flex items-center justify-center p-4 relative group select-none min-h-[300px]">
             {isVideoUrl(currentImage.imageUrl) ? (
-              <video
+              <VideoPlayer
                 src={currentImage.imageUrl}
                 autoPlay
                 muted
                 loop
-                playsInline
-                controls
                 className={`max-w-full max-h-[48vh] object-contain rounded-2xl shadow-lg transition-transform duration-300 hover:scale-[1.01] ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : ''}`}
               />
             ) : (
@@ -1093,7 +1092,17 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   className="break-inside-avoid mb-5 group cursor-pointer flex flex-col bg-surface border border-border/50 hover:border-accent/40 rounded-2xl shadow-sm overflow-hidden transition-all duration-300 hover:scale-[1.03] hover:shadow-md"
                 >
                   <div className="relative overflow-hidden w-full bg-background/20">
-                    <img src={img.imageUrl} alt={img.title || 'Related photo'} className="w-full object-cover max-h-[240px] transition-transform duration-500 group-hover:scale-105" />
+                    {isVideoUrl(img.imageUrl) ? (
+                      <VideoPlayer
+                        src={img.imageUrl}
+                        muted
+                        autoPlay
+                        loop
+                        className="w-full object-cover max-h-[240px] pointer-events-none transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <img src={img.imageUrl} alt={img.title || 'Related photo'} className="w-full object-cover max-h-[240px] transition-transform duration-500 group-hover:scale-105" />
+                    )}
                   </div>
                   <div className="p-3 flex flex-col gap-1.5 bg-surface">
                     <p className="text-xs font-bold text-primary truncate leading-tight group-hover:text-accent transition-colors">{img.title || 'Untitled'}</p>
@@ -1226,13 +1235,11 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {isVideoUrl(currentImage.imageUrl) ? (
-              <video
+              <VideoPlayer
                 src={currentImage.imageUrl}
                 autoPlay
                 muted
                 loop
-                playsInline
-                controls
                 className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl transition-all duration-300 select-none"
                 style={{ transform: `scale(${zoomScale})` }}
               />

@@ -75,13 +75,10 @@ const SkeletonCard: React.FC = () => {
   return (
     <div 
       className={`
-        bg-surface rounded-xl overflow-hidden mb-4 md:mb-6 break-inside-avoid
+        bg-surface/50 rounded-xl mb-4 md:mb-6 break-inside-avoid
         ${heightClass}
-        relative
       `}
-    >
-      <div className="absolute inset-0 bg-gradient-to-r from-surface via-border to-surface bg-[length:200%_100%] animate-shimmer" />
-    </div>
+    />
   );
 };
 
@@ -810,23 +807,18 @@ const App: React.FC = () => {
   const loadMoreImages = useCallback(() => {
     if (imagesLoading || allImages.length === 0 || isLoadingMore.current) return;
 
-    isLoadingMore.current = true;
-
-    let newImages: ImageMeta[] = [];
-
-    if (currentIndex < allImages.length) {
-        const nextIndex = currentIndex + PAGE_SIZE;
-        newImages = allImages.slice(currentIndex, nextIndex);
-        setCurrentIndex(nextIndex);
-    } else {
-        // Infinite scroll loop back to start! Reshuffle using our dynamic smart addictive sort!
-        const reshuffled = smartSortImages(allImages, currentUserProfile);
-        newImages = reshuffled.slice(0, PAGE_SIZE);
-        setCurrentIndex(PAGE_SIZE);
+    if (currentIndex >= allImages.length) {
+      isLoadingMore.current = false;
+      return;
     }
 
+    isLoadingMore.current = true;
+
+    const nextIndex = currentIndex + PAGE_SIZE;
+    const newImages = allImages.slice(currentIndex, nextIndex);
+    setCurrentIndex(nextIndex);
+
     if (newImages.length > 0) {
-        // Dynamic unique loop suffix keys to prevent any DOM/React duplicate key collisions
         const uniqueTime = Date.now();
         const processed = newImages.map((img, idx) => ({
             ...img,
@@ -835,10 +827,8 @@ const App: React.FC = () => {
         setDisplayedImages(prev => [...prev, ...processed]);
     }
 
-    // Reset guard immediately - React batches state updates so DOM won't actually
-    // re-render until next frame, preventing double-fires naturally
     requestAnimationFrame(() => { isLoadingMore.current = false; });
-  }, [currentIndex, allImages, imagesLoading, currentUserProfile]);
+  }, [currentIndex, allImages, imagesLoading]);
 
   useEffect(() => {
     let ticking = false;
@@ -847,10 +837,9 @@ const App: React.FC = () => {
       ticking = true;
       requestAnimationFrame(() => {
         if (activeView === 'home' && !isLoadingMore.current) {
-            // Aggressive preload: start loading 1500px BEFORE bottom so content
-            // is already rendered by the time the user scrolls there
-            const scrollThreshold = 1500;
-            const isNearBottom = window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - scrollThreshold;
+            const scrollThreshold = 500;
+            const hasUserScrolled = window.scrollY > 50;
+            const isNearBottom = hasUserScrolled && (window.innerHeight + window.scrollY >= document.documentElement.offsetHeight - scrollThreshold);
             
             if (isNearBottom) {
               loadMoreImages();

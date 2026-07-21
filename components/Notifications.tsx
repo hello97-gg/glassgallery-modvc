@@ -159,16 +159,16 @@ export const NotificationBell: React.FC<{
                         if (onClick) onClick();
                         else setIsOpen(!isOpen);
                     }}
-                    className="relative flex items-center w-full p-3 my-3 rounded-lg transition-all duration-200 group-hover:space-x-4 text-secondary hover:text-primary hover:bg-surface/80"
+                    title="Notifications"
+                    className="flex items-center justify-center w-12 h-12 my-1.5 rounded-xl transition-all active:scale-95 text-secondary hover:text-primary hover:bg-surface/80"
                     aria-label="Notifications"
                 >
-                     <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center relative">
+                     <div className="w-6 h-6 flex items-center justify-center relative">
                         <BellIcon />
                         {unreadCount > 0 && (
-                             <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-background"></span>
+                             <span className="absolute -top-1 -right-1 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"></span>
                         )}
                      </div>
-                     <span className="text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">Notifications</span>
                 </button>
                 {isOpen && !onClick && <NotificationsPanel notifications={notifications} onClose={() => setIsOpen(false)} onImageClick={onImageClick} onViewProfile={onViewProfile} onMarkAsRead={onMarkAsRead} />}
             </div>

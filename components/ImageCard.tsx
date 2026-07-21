@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { isVideoUrl } from '../utils/mediaUtils';
+import VideoPlayer from './VideoPlayer';
 
 interface ImageCardProps {
   image: ImageMeta;
@@ -111,9 +112,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
       onClick={handleCardClick}
     >
       {!isLoaded && !hasError && (
-        <div className="absolute inset-0 bg-gradient-to-r from-surface via-border/50 to-surface bg-[length:200%_100%] animate-shimmer flex items-center justify-center min-h-[150px]">
-          <div className="w-5 h-5 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
-        </div>
+        <div className="absolute inset-0 bg-surface/60 min-h-[150px] transition-opacity duration-300" />
       )}
       
       {/* Anchor tag wraps the media for proper Google indexation */}
@@ -130,10 +129,11 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
             <video
               src={imageSrc}
               muted
-              autoPlay
               loop
+              autoPlay
               playsInline
-              className={`w-full h-auto min-h-[150px] object-cover pointer-events-none transition-all duration-500 ease-in-out ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
+              preload="metadata"
+              className={`w-full h-auto min-h-[150px] object-cover pointer-events-none transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
               onLoadedData={() => setIsLoaded(true)}
               onError={() => setHasError(true)}
             />
@@ -149,8 +149,9 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
             ref={imgRef}
             src={imageSrc}
             alt={image.title || "Image on Glass Gallery"}
-            className={`w-full h-auto min-h-[150px] object-cover scale-[1.05] transition-all duration-500 ease-in-out ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
+            className={`w-full h-auto min-h-[150px] object-cover transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${isFlagged && !revealed ? 'blur-2xl scale-[1.05]' : ''}`}
             loading="lazy"
+            decoding="async"
             onLoad={() => setIsLoaded(true)}
             onError={handleImageError}
           />

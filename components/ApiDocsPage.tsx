@@ -214,6 +214,41 @@ Content-Type: application/json`}
             </div>
         </div>
 
+        {/* PUT Direct Stream Upload Endpoint Card */}
+        <div className="bg-surface border border-border rounded-xl p-5 md:p-6 mb-8 shadow-lg w-full overflow-hidden">
+            <div className="flex flex-col gap-3 mb-4">
+                <span className="self-start px-3 py-1 rounded-md bg-accent/20 text-accent font-bold text-sm">PUT (STREAM)</span>
+                <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=api_upload_stream</code>
+            </div>
+            <p className="text-secondary mb-5 text-sm md:text-base">
+                Upload video files or images via direct stream passthrough with 0ms CPU memory decoding time! Supports files up to 10MB natively to R2.
+            </p>
+            <div className="space-y-4">
+                <div>
+                    <h4 className="text-sm font-bold text-primary mb-2">Request Headers (Metadata passed via headers)</h4>
+                    <pre className="p-3 bg-black/30 border border-border rounded-md text-xs font-mono text-secondary whitespace-pre-wrap">
+{`Authorization: Bearer <YOUR_API_KEY>
+Content-Type: video/mp4
+Content-Length: <SIZE_IN_BYTES> (max 10MB / 10485760 bytes)
+X-File-Name: video.mp4
+X-Image-Title: Awesome Video
+X-Image-Description: Short video description
+X-Image-Location: City, Country
+X-Image-License: CC0
+X-Image-License-Url: https://...
+X-Image-Original-Work-Url: https://...
+X-Image-Tags: ["Urban", "Street"]`}
+                    </pre>
+                </div>
+                <div>
+                    <h4 className="text-sm font-bold text-primary mb-2">Body</h4>
+                    <p className="text-secondary text-sm">
+                        Raw binary stream (e.g. read directly from file). Do NOT JSON/Base64 encode the body. Max 10MB.
+                    </p>
+                </div>
+            </div>
+        </div>
+
         {/* Parameters */}
         <div className="mb-12 w-full">
             <h2 className="text-2xl font-bold text-primary mb-6">Parameters</h2>

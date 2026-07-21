@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, Comment, ProfileUser } from '../types';
-import { getCommentsForImage, addCommentToImage, toggleCommentLike } from '../services/firestoreService';
+import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, getFollowStats, toggleFollowUser } from '../services/firestoreService';
 import { recordWatchInterest } from '../services/interestTracker';
 import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
 import Spinner from './Spinner';
+import VideoPlayer from './VideoPlayer';
+import EmbedModal from './EmbedModal';
 import { FeedItem } from './InfiniteFeed';
 
 interface PostDetailViewProps {
@@ -41,8 +44,47 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [newCommentText, setNewCommentText] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [isFollowLoading, setIsFollowLoading] = useState(false);
+  const [showEmbed, setShowEmbed] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const watchLoggedRef = useRef(false);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  useEffect(() => {
+    if (user && currentImage.uploaderUid && user.uid !== currentImage.uploaderUid) {
+      getFollowStats(currentImage.uploaderUid, user.uid).then(stats => {
+        setIsFollowing(stats.isFollowing);
+      }).catch(err => console.error(err));
+    } else {
+      setIsFollowing(false);
+    }
+  }, [user, currentImage.uploaderUid]);
+
+  const handleFollow = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) {
+      onLoginClick();
+      return;
+    }
+    setIsFollowLoading(true);
+    try {
+      const res = await toggleFollowUser(user.uid, currentImage.uploaderUid, user.displayName || 'User', user.photoURL || '');
+      setIsFollowing(res.isFollowing);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFollowLoading(false);
+    }
+  };
 
   const relatedImages = useMemo(() => {
     return getRelatedImages(currentImage, suggestedImages, 12);
@@ -56,6 +98,42 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
         watchLoggedRef.current = true;
         recordWatchInterest(currentImage, ratio);
       }
+    }
+  };
+
+  const navigateToPost = (img: ImageMeta) => {
+    if (!document.startViewTransition) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      setHistory(prev => [...prev, currentImage]);
+      setCurrentImage(img);
+      return;
+    }
+    document.startViewTransition(() => {
+      flushSync(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        setHistory(prev => [...prev, currentImage]);
+        setCurrentImage(img);
+      });
+    });
+  };
+
+  const navigateBack = () => {
+    if (history.length > 0) {
+      if (!document.startViewTransition) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        setCurrentImage(history[history.length - 1]);
+        setHistory(prev => prev.slice(0, -1));
+        return;
+      }
+      document.startViewTransition(() => {
+        flushSync(() => {
+          window.scrollTo({ top: 0, behavior: 'instant' });
+          setCurrentImage(history[history.length - 1]);
+          setHistory(prev => prev.slice(0, -1));
+        });
+      });
+    } else {
+      onClose();
     }
   };
 
@@ -97,8 +175,6 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   };
 
   useEffect(() => {
-    // Scroll to top on load for full page view!
-    window.scrollTo({ top: 0, behavior: 'smooth' });
     loadComments(currentImage.id);
     setReplyToId(null);
     setReplyText('');
@@ -188,6 +264,23 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
     }
   };
 
+  const handleEditSubmit = async (commentId: string) => {
+    if (!user || !editCommentText.trim()) return;
+    setIsSubmittingComment(true);
+    try {
+      await editComment(commentId, user.uid, editCommentText);
+      setFlatComments(prev => prev.map(c => 
+        c.id === commentId ? { ...c, content: editCommentText.trim() } : c
+      ));
+      setEditingCommentId(null);
+      setEditCommentText('');
+    } catch (err) {
+      console.error("Failed to edit comment:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
   const handleCommentLikeToggle = async (commentId: string) => {
     if (!user) {
       onLoginClick();
@@ -261,7 +354,38 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                 {new Date(comment.createdAt).toLocaleDateString()}
               </span>
             </div>
-            <p className="text-[14px] text-primary mt-1 leading-normal break-words">{comment.content}</p>
+            {editingCommentId === comment.id ? (
+              <div className="mt-2 flex flex-col gap-2 pr-4">
+                <textarea
+                  value={editCommentText}
+                  onChange={(e) => setEditCommentText(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm text-primary resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+                  rows={2}
+                  autoFocus
+                />
+                <div className="flex gap-2 justify-end">
+                  <button 
+                    onClick={() => {
+                      setEditingCommentId(null);
+                      setEditCommentText('');
+                    }}
+                    className="text-xs text-secondary hover:text-primary px-3 py-1.5 font-medium transition-colors"
+                    disabled={isSubmittingComment}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => handleEditSubmit(comment.id)}
+                    disabled={!editCommentText.trim() || isSubmittingComment}
+                    className="bg-primary text-background px-4 py-1.5 rounded-full text-xs font-bold hover:bg-white/90 transition-colors disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[14px] text-primary mt-1 leading-normal break-words whitespace-pre-wrap">{comment.content}</p>
+            )}
 
             <div className="flex items-center mt-2 gap-4">
               <button
@@ -300,6 +424,18 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                 </svg>
                 Reply
               </button>
+
+              {user?.uid === comment.userUid && (
+                <button
+                  onClick={() => {
+                    setEditingCommentId(comment.id);
+                    setEditCommentText(comment.content);
+                  }}
+                  className="text-xs text-secondary hover:text-primary font-semibold transition-colors ml-2"
+                >
+                  Edit
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -355,12 +491,7 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                if (history.length > 0) {
-                  setCurrentImage(history[history.length - 1]);
-                  setHistory(prev => prev.slice(0, -1));
-                } else {
-                  onClose();
-                }
+                navigateBack();
               }} 
               className="text-secondary hover:text-primary transition-colors p-1.5 rounded-full hover:bg-surface/50"
               aria-label="Back"
@@ -372,37 +503,22 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
               </svg>
             </button>
             <h1 className="text-xl font-bold text-primary cursor-pointer" onClick={() => {
-                if (history.length > 0) {
-                  setCurrentImage(history[history.length - 1]);
-                  setHistory(prev => prev.slice(0, -1));
-                } else {
-                  onClose();
-                }
+                navigateBack();
             }}>Post</h1>
           </div>
 
           {/* Main Content Area */}
           <div className="flex-1 overflow-y-visible">
             {/* User Info */}
-            <div className="flex items-center gap-3 px-4 pt-4">
-              <img
-                src={
-                  currentImage.uploaderPhotoURL ||
-                  `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`
-                }
-                alt={currentImage.uploaderName}
-                className="w-12 h-12 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => {
-                  onViewProfile({
-                    uploaderUid: currentImage.uploaderUid,
-                    uploaderName: currentImage.uploaderName,
-                    uploaderPhotoURL: currentImage.uploaderPhotoURL
-                  });
-                }}
-              />
-              <div className="flex flex-col min-w-0">
-                <span
-                  className="font-bold text-[16px] text-primary hover:underline cursor-pointer truncate"
+            <div className="flex items-center justify-between px-4 pt-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={
+                    currentImage.uploaderPhotoURL ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`
+                  }
+                  alt={currentImage.uploaderName}
+                  className="w-11 h-11 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
                   onClick={() => {
                     onViewProfile({
                       uploaderUid: currentImage.uploaderUid,
@@ -410,12 +526,81 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                       uploaderPhotoURL: currentImage.uploaderPhotoURL
                     });
                   }}
-                >
-                  {currentImage.uploaderName}
-                </span>
-                <span className="text-[14px] text-secondary truncate">
-                  @{currentImage.uploaderName.toLowerCase().replace(/\s+/g, '')}
-                </span>
+                />
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="font-bold text-[15px] text-primary hover:underline cursor-pointer truncate"
+                      onClick={() => {
+                        onViewProfile({
+                          uploaderUid: currentImage.uploaderUid,
+                          uploaderName: currentImage.uploaderName,
+                          uploaderPhotoURL: currentImage.uploaderPhotoURL
+                        });
+                      }}
+                    >
+                      {currentImage.uploaderName}
+                    </span>
+                  </div>
+                  <span className="text-[15px] text-secondary truncate">
+                    @{currentImage.uploaderName.toLowerCase().replace(/\s+/g, '')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {(!user || user.uid !== currentImage.uploaderUid) && (
+                  <button 
+                    onClick={handleFollow}
+                    disabled={isFollowLoading}
+                    className={`flex items-center gap-1 font-bold text-sm px-4 py-1.5 rounded-full transition-all ${
+                      isFollowing 
+                        ? 'bg-transparent border border-border text-primary hover:bg-surface' 
+                        : 'bg-primary text-background hover:opacity-90'
+                    }`}
+                  >
+                    {!isFollowing && <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4 fill-current"><path d="M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2h7z"></path></svg>}
+                    {isFollowing ? 'Following' : 'Follow'}
+                  </button>
+                )}
+                <div className="relative">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDropdown(!showDropdown);
+                    }}
+                    className="text-secondary hover:text-primary transition-colors p-2 hover:bg-surface/50 rounded-full"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" className="w-5 h-5 fill-current">
+                      <circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle>
+                    </svg>
+                  </button>
+                  {showDropdown && (
+                    <div className="absolute right-0 mt-1 w-48 bg-surface border border-border rounded-xl shadow-lg z-50 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          setShowDropdown(false);
+                          const url = `${window.location.origin}/image/${currentImage.id}`;
+                          navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard!'));
+                        }}
+                        className="w-full text-left px-4 py-3 text-[15px] font-bold text-primary hover:bg-background transition-colors flex items-center gap-3"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[18px] h-[18px] fill-current"><g><path d="M18.36 5.64c-1.95-1.96-5.11-1.96-7.07 0L9.88 7.05 8.46 5.64l1.42-1.42c2.73-2.73 7.16-2.73 9.9 0 2.73 2.74 2.73 7.17 0 9.9l-1.42 1.42-1.41-1.42 1.41-1.41c1.96-1.96 1.96-5.12 0-7.07zm-2.12 3.53l-7.07 7.07-1.41-1.41 7.07-7.07 1.41 1.41zm-12.02.71l1.42-1.42 1.41 1.42-1.42 1.41c-1.96 1.96-1.96 5.12 0 7.07 1.95 1.96 5.11 1.96 7.07 0l1.41-1.41 1.42 1.41-1.42 1.42c-2.73 2.73-7.16 2.73-9.9 0-2.73-2.74-2.73-7.17 0-9.9z"></path></g></svg>
+                        Copy link to post
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDropdown(false);
+                          setShowEmbed(true);
+                        }}
+                        className="w-full text-left px-4 py-3 text-[15px] font-bold text-primary hover:bg-background transition-colors flex items-center gap-3"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[18px] h-[18px] fill-current"><g><path d="M22 12l-7.5 5.5v-3.5c-3.1 0-6.1 1.2-8.5 3.5 1.1-4.7 4.2-8.3 8.5-9.5V4.5L22 12z"></path></g></svg>
+                        Embed post
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -428,13 +613,12 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             {/* Image/Video */}
             <div className="rounded-2xl border border-border overflow-hidden max-h-[500px] mx-4 mt-4 bg-black/5">
               {isVideoUrl(currentImage.imageUrl) ? (
-                  <video 
+                  <VideoPlayer 
                     src={currentImage.imageUrl} 
                     autoPlay 
                     muted 
                     loop 
-                    playsInline onTimeUpdate={handleVideoTimeUpdate} 
-                    controls
+                    onTimeUpdate={handleVideoTimeUpdate} 
                     className="w-full h-full object-contain max-h-[500px] bg-black/40"
                   />
               ) : (
@@ -491,6 +675,21 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                       </g>
                     </svg>
                   )}
+                </div>
+              </button>
+
+              {/* Share */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(!showDropdown);
+                }}
+                className="flex items-center gap-1.5 group transition-colors hover:text-accent"
+              >
+                <div className="w-10 h-10 rounded-full flex items-center justify-center group-hover:bg-accent/10 transition-colors">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[22px] h-[22px] fill-current">
+                    <g><path d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z"></path></g>
+                  </svg>
                 </div>
               </button>
             </div>
@@ -554,9 +753,7 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                           image={suggestedImg}
                           user={user}
                           onImageClick={(img) => {
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                              setHistory(prev => [...prev, currentImage]);
-                              setCurrentImage(img);
+                              navigateToPost(img);
                           }}
                           onViewProfile={onViewProfile}
                           onLikeToggle={onLikeToggle}
@@ -569,6 +766,18 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             </div>
           </div>
        </div>
+
+       {showEmbed && (
+         <div className="fixed inset-0 z-[60]" onClick={(e) => e.stopPropagation()}>
+           <EmbedModal image={currentImage} onClose={() => setShowEmbed(false)} />
+         </div>
+       )}
+
+       {toastMessage && (
+         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-accent text-white px-6 py-3 rounded-full shadow-2xl z-[100] animate-fade-in font-bold text-[15px]">
+           {toastMessage}
+         </div>
+       )}
     </div>
   );
 };

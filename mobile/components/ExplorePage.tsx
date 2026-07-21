@@ -22,12 +22,10 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
   const [hasError, setHasError] = useState(false);
 
   return (
-    <div onClick={onClick} className="relative aspect-1 cursor-pointer group bg-surface rounded-xl overflow-hidden shadow-lg transition-all duration-300 hover:shadow-accent/20 hover:-translate-y-1">
-      {/* Loading Shimmer / Spinner */}
+    <div onClick={onClick} className="relative aspect-1 cursor-pointer group bg-surface/50 rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:scale-[1.02]">
+      {/* Clean static placeholder - no spinning loader loops */}
       {!isLoaded && !hasError && (
-        <div className="absolute inset-0 bg-[#121212] flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-accent/20 border-t-accent rounded-full animate-spin" />
-        </div>
+        <div className="absolute inset-0 bg-surface/80" />
       )}
 
       {/* Fallback for Broken Images */}
@@ -41,7 +39,9 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
         <img 
           src={image.imageUrl} 
           alt={flag} 
-          className={`w-full h-full object-cover transition-all duration-500 ease-in-out group-hover:scale-110 ${isLoaded ? 'opacity-100' : 'opacity-0'}`} 
+          loading="lazy"
+          decoding="async"
+          className={`w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 ${isLoaded ? 'opacity-100' : 'opacity-0'}`} 
           onLoad={() => setIsLoaded(true)}
           onError={() => setHasError(true)}
         />

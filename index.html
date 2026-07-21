@@ -120,7 +120,7 @@
     <style>
       /* Ultra-smooth hardware-accelerated inertia scrolling for mobile devices */
       html, body {
-        overflow-y: auto;
+        overflow-x: hidden;
         -webkit-overflow-scrolling: touch;
         scroll-behavior: smooth;
       }
@@ -138,6 +138,15 @@
         backface-visibility: hidden;
         perspective: 1000px;
         will-change: transform;
+      }
+      
+      /* Hide scrollbar for elements with hidden-scrollbar class */
+      .hidden-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .hidden-scrollbar {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
       }
     </style>
 </head>

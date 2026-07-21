@@ -12,6 +12,7 @@ import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { isVideoFile } from '../utils/mediaUtils';
+import VideoPlayer from './VideoPlayer';
 
 interface UploadModalProps {
   user: User;
@@ -395,7 +396,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
        if (preview) {
            const previewIsVideo = file?.type.startsWith('video/') || (file && isVideoFile(file.name));
            if (previewIsVideo) {
-               return <video src={preview} controls className="max-h-full rounded-md object-contain w-full h-full bg-black" />;
+               return <VideoPlayer src={preview} autoPlay muted loop className="w-full h-full object-contain max-h-[500px]" />;
            }
            return <img src={preview} alt="Preview" className="max-h-full rounded-md object-contain" />;
        }

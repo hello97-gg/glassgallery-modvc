@@ -105,6 +105,30 @@ export async function onRequest(context) {
         return Response.json({ success: true, isLiked }, { status: 200, headers: corsHeaders });
       }
 
+      // --- Action: Edit a comment ---
+      if (action === 'edit') {
+        const { commentId, userUid, content } = body;
+        if (!commentId || !userUid || !content || !content.trim()) {
+          return Response.json({ success: false, error: "Missing required fields for edit." }, { status: 400, headers: corsHeaders });
+        }
+
+        // Verify ownership
+        const ownerRes = await db.execute({
+          sql: "SELECT userUid FROM comments WHERE id = ?",
+          args: [commentId]
+        });
+        if (ownerRes.rows.length === 0 || ownerRes.rows[0].userUid !== userUid) {
+          return Response.json({ success: false, error: "Unauthorized to edit this comment." }, { status: 403, headers: corsHeaders });
+        }
+
+        await db.execute({
+          sql: "UPDATE comments SET content = ? WHERE id = ?",
+          args: [content.trim(), commentId]
+        });
+
+        return Response.json({ success: true }, { status: 200, headers: corsHeaders });
+      }
+
       // --- Action: Add a Comment or Nested Reply ---
       const { imageId, userUid, userName, userPhotoURL, content, parentId } = body;
 

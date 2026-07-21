@@ -1,7 +1,8 @@
 import type { ImageMeta, Notification, ProfileUser, Comment } from '../types';
 import type { User } from 'firebase/auth';
 
-export const PAGE_SIZE = 20;
+export const PAGE_SIZE = 50;
+export const CACHE_TIME_MS = 1000 * 60 * 5; // 5 minutes
 
 // Compatibility helper to mimic Firestore's Timestamp object
 // This avoids breaking frontend UI components that call .toDate() on dates.
@@ -504,6 +505,23 @@ export const addCommentToImage = async (
         return data.comment as Comment;
     } catch (error) {
         console.error("Error adding comment to image: ", error);
+        throw error;
+    }
+};
+
+export const editComment = async (commentId: string, userUid: string, content: string): Promise<void> => {
+    try {
+        const response = await fetch('/api/comments?action=edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commentId, userUid, content })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to edit comment.");
+        }
+    } catch (error) {
+        console.error("Error editing comment:", error);
         throw error;
     }
 };
