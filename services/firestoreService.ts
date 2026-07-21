@@ -1,7 +1,7 @@
 import type { ImageMeta, Notification, ProfileUser, Comment } from '../types';
 import type { User } from 'firebase/auth';
 
-export const PAGE_SIZE = 50;
+export const PAGE_SIZE = 20;
 export const CACHE_TIME_MS = 1000 * 60 * 5; // 5 minutes
 
 // Compatibility helper to mimic Firestore's Timestamp object

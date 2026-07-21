@@ -150,61 +150,104 @@ const SkeletonGrid: React.FC<{ feedTab: 'discover' | 'following', user: User | n
   );
 };
 
-// Smart "Addictive" sorting algorithm
+// Stable random seed per session (prevents reshuffling on re-renders)
+const SESSION_SEED = Math.random();
+const seededRandom = (id: string): number => {
+  let hash = 0;
+  const str = id + SESSION_SEED.toString();
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash % 1000) / 1000;
+};
+
+// Smart "Addictive" sorting algorithm — Twitter-inspired with content diversity
 const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): ImageMeta[] => {
   const now = Date.now();
 
-  // Extend ImageMeta with a temporary sortScore for sorting
-  type ImageWithScore = ImageMeta & { sortScore?: number };
+  type ImageWithScore = ImageMeta & { sortScore?: number; isVideo?: boolean };
 
-  return images
+  const scored = images
     .map((image: ImageMeta): ImageWithScore => {
       const uploadedAt = image.uploadedAt?.toDate ? image.uploadedAt.toDate().getTime() : now;
       const ageInHours = (now - uploadedAt) / (1000 * 60 * 60);
 
-      // 1. Recency Score (Aggressive Exponential Decay)
+      // 1. Recency Score — Twitter-style time decay (smoother curve)
       let recencyScore = 0;
-      if (ageInHours < 0.5) {
-          recencyScore = 3000; 
-      } else if (ageInHours < 4) {
-          recencyScore = 1500; 
+      if (ageInHours < 1) {
+          recencyScore = 2000;
+      } else if (ageInHours < 6) {
+          recencyScore = 1200;
       } else if (ageInHours < 24) {
-          recencyScore = 800;  
+          recencyScore = 600;
       } else if (ageInHours < 72) {
-          recencyScore = 300;  
+          recencyScore = 250;
+      } else if (ageInHours < 168) {
+          recencyScore = 100;
       } else {
-          recencyScore = 100 / (Math.max(1, ageInHours / 24)); 
+          recencyScore = 50 / (Math.max(1, ageInHours / 168));
       }
 
-      // 2. Popularity/Dopamine Score
+      // 2. Engagement velocity — reward content that is getting lots of interaction relative to age
       const likeCount = image.likeCount || 0;
       const downloadCount = image.downloadCount || 0;
-      const popularityScore = (likeCount * 15) + (downloadCount * 5); 
+      const ageHoursFloor = Math.max(1, ageInHours);
+      const velocityScore = ((likeCount * 10) + (downloadCount * 3)) / Math.sqrt(ageHoursFloor);
+      const popularityScore = Math.min(velocityScore, 800); // Cap to prevent mega-viral items from dominating
 
-      // 3. Personalized Smart AI & Taste Profile Affinity Boost
+      // 3. Personalized affinity boost
       let personalizationBoost = 0;
       if (profile && profile.followedTags && profile.followedTags.length > 0) {
           const imgTags = image.flags || [];
           const overlap = imgTags.filter(t => profile.followedTags?.includes(t));
-          personalizationBoost += overlap.length * 1200;
+          personalizationBoost += overlap.length * 600;
       }
 
-      // 4. Client-side interest boost (search history + click history from localStorage)
-      const interestBoost = getInterestBoost(image);
+      // 4. Client-side interest boost
+      const interestBoost = Math.min(getInterestBoost(image), 500); // Cap it
 
-      // 5. Video format boost (Push newly uploaded videos up in the feed)
+      // 5. Moderate video boost — NOT massive, just a slight nudge for fresh videos
       const isVideo = isVideoUrl(image.imageUrl);
-      const videoBoost = isVideo && ageInHours < 168 ? 2000 : (isVideo ? 500 : 0);
+      const videoBoost = isVideo && ageInHours < 48 ? 300 : (isVideo ? 100 : 0);
 
-      // 6. Variable Reward (Randomness)
-      const randomFactor = Math.random() * 250;
+      // 6. Stable per-session randomness (same order between re-renders)
+      const randomFactor = seededRandom(image.id) * 200;
 
       const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + videoBoost + randomFactor;
 
-      return { ...image, sortScore: finalScore };
+      return { ...image, sortScore: finalScore, isVideo };
     })
-    .sort((a, b) => (b.sortScore ?? 0) - (a.sortScore ?? 0)) 
-    .map(({ sortScore, ...rest }) => rest); 
+    .sort((a, b) => (b.sortScore ?? 0) - (a.sortScore ?? 0));
+
+  // Content diversity enforcement: cap videos at ~30% of feed
+  // Interleave content so you don't get walls of videos or walls of images
+  const maxVideoRatio = 0.3;
+  const result: ImageMeta[] = [];
+  let videoCount = 0;
+
+  for (const item of scored) {
+    const currentRatio = result.length > 0 ? videoCount / result.length : 0;
+    if (item.isVideo && currentRatio >= maxVideoRatio && result.length > 5) {
+      // Push video to end instead of skipping
+      continue;
+    }
+    if (item.isVideo) videoCount++;
+    const { sortScore, isVideo: _isVideo, ...rest } = item;
+    result.push(rest as ImageMeta);
+  }
+
+  // Add back any deferred videos at the end
+  for (const item of scored) {
+    const baseId = item.id;
+    if (!result.find(r => r.id === baseId)) {
+      const { sortScore, isVideo: _isVideo, ...rest } = item;
+      result.push(rest as ImageMeta);
+    }
+  }
+
+  return result;
 };
 
 
@@ -252,23 +295,17 @@ const App: React.FC = () => {
   // Track network status online/offline for instant background auto-refreshes
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Caching Synchronizers to update IndexedDB dynamically when states modify
+  // Caching Synchronizers — debounced to prevent lag from constant writes
+  const cacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (allImages.length > 0) {
-        // Store up to 250 images in IndexedDB to avoid quota issues while supporting massive offline feeds
-        setCachedData('cached_all_images', allImages.slice(0, 250)).catch(err => {
-            console.warn("Failed to write to offline all-images idb cache:", err.message);
-        });
+        if (cacheTimerRef.current) clearTimeout(cacheTimerRef.current);
+        cacheTimerRef.current = setTimeout(() => {
+            setCachedData('cached_all_images', allImages.slice(0, 100)).catch(() => {});
+            setCachedData('cached_displayed_images', displayedImages.slice(0, 100)).catch(() => {});
+        }, 5000); // Write cache at most once every 5 seconds
     }
-  }, [allImages]);
-
-  useEffect(() => {
-    if (displayedImages.length > 0) {
-        setCachedData('cached_displayed_images', displayedImages.slice(0, 250)).catch(err => {
-            console.warn("Failed to write to offline displayed-images idb cache:", err.message);
-        });
-    }
-  }, [displayedImages]);
+  }, [allImages, displayedImages]);
 
   // Network Status Monitor
   useEffect(() => {
@@ -719,6 +756,11 @@ const App: React.FC = () => {
   // We use a hybrid approach:
   // 1. Fetch once with .get() to ensure crawlers/bots get data immediately without waiting for websocket.
   // 2. Set up .onSnapshot() for real-time updates for connected users.
+  // Use a ref for profile so the subscription callback always reads the latest value
+  // without causing re-subscription (which would re-sort and reshuffle the feed).
+  const profileRef = useRef(currentUserProfile);
+  profileRef.current = currentUserProfile;
+
   useEffect(() => {
     let unsubscribe: () => void;
 
@@ -745,16 +787,17 @@ const App: React.FC = () => {
         // Real-time listener (keeps data fresh, handles new uploads)
         unsubscribe = subscribeToImages((fetchedImages) => {
             setAllImages((prevImages) => {
-                 // If this is the very first load, handle it cleanly
+                 // If this is the very first load, sort once and display
                   if (prevImages.length === 0) {
-                      const sorted = smartSortImages(fetchedImages, currentUserProfile);
+                      const sorted = smartSortImages(fetchedImages, profileRef.current);
                       setDisplayedImages(sorted.slice(0, PAGE_SIZE));
                       setCurrentIndex(PAGE_SIZE);
                       setImagesLoading(false);
                       return sorted;
                   }
                  
-                 // Merge updates logic - use base IDs (strip _loop_ suffixes) for matching
+                 // On subsequent polls: ONLY merge metadata (likes, downloads, etc.)
+                 // Do NOT re-sort — this prevents the feed from randomly reshuffling
                  const newMap = new Map(fetchedImages.map(i => [i.id, i]));
                  const currentBaseIds = new Set(prevImages.map(i => i.id.split('_loop_')[0]));
                  const newUploads = fetchedImages.filter(i => !currentBaseIds.has(i.id));
@@ -764,7 +807,16 @@ const App: React.FC = () => {
                     .map(img => {
                         const baseId = img.id.split('_loop_')[0];
                         const freshData = newMap.get(baseId);
-                        return freshData ? { ...freshData, id: img.id } : img;
+                        if (freshData) {
+                            // Only update engagement data, preserve position
+                            return { 
+                                ...img, 
+                                likeCount: freshData.likeCount, 
+                                downloadCount: freshData.downloadCount,
+                                likedBy: freshData.likedBy
+                            };
+                        }
+                        return img;
                     });
                  
                  if (newUploads.length > 0) {
@@ -781,14 +833,22 @@ const App: React.FC = () => {
                  updatedList.forEach(img => uniqueMapAll.set(img.id, img));
                  updatedList = Array.from(uniqueMapAll.values());
 
-                 // Update display list quietly - preserve loop-suffixed IDs
+                 // Update display list quietly - only update engagement data, preserve order
                  setDisplayedImages(prevDisplayed => {
                     let updatedDisplayed = prevDisplayed
                         .filter(d => newMap.has(d.id.split('_loop_')[0]))
                         .map(d => {
                             const baseId = d.id.split('_loop_')[0];
                             const freshData = newMap.get(baseId);
-                            return freshData ? { ...freshData, id: d.id } : d;
+                            if (freshData) {
+                                return { 
+                                    ...d, 
+                                    likeCount: freshData.likeCount, 
+                                    downloadCount: freshData.downloadCount,
+                                    likedBy: freshData.likedBy
+                                };
+                            }
+                            return d;
                         });
                     
                     if (newUploads.length > 0) {
@@ -813,7 +873,7 @@ const App: React.FC = () => {
     return () => {
         if (unsubscribe) unsubscribe();
     };
-  }, [activeView, currentUserProfile, isOnline]);
+  }, [activeView, isOnline]);
 
   // Sync selectedImage and selectedFeedPost
   useEffect(() => {

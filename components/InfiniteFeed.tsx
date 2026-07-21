@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, memo } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { recordWatchInterest } from '../services/interestTracker';
@@ -37,7 +37,7 @@ export const FeedItem: React.FC<{
   onSaveToggle: (image: ImageMeta) => void;
   onImageDelete: (imageId: string) => void;
   onImageEdit: (image: ImageMeta) => void;
-}> = ({ image, user, onImageClick, onViewProfile, onLikeToggle, onLoginClick, savedImages, onSaveToggle, onImageDelete, onImageEdit }) => {
+}> = memo(({ image, user, onImageClick, onViewProfile, onLikeToggle, onLoginClick, savedImages, onSaveToggle, onImageDelete, onImageEdit }) => {
   const hasLiked = user ? (image.likedBy || []).includes(user.uid) : false;
   const baseId = image.id.split('_loop_')[0];
   const hasSaved = savedImages.has(baseId);
@@ -363,7 +363,19 @@ export const FeedItem: React.FC<{
       )}
     </article>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render when meaningful data changes
+  const prevBase = prevProps.image.id.split('_loop_')[0];
+  const nextBase = nextProps.image.id.split('_loop_')[0];
+  return (
+    prevBase === nextBase &&
+    prevProps.image.likeCount === nextProps.image.likeCount &&
+    prevProps.image.downloadCount === nextProps.image.downloadCount &&
+    (prevProps.image.likedBy || []).length === (nextProps.image.likedBy || []).length &&
+    prevProps.user?.uid === nextProps.user?.uid &&
+    prevProps.savedImages === nextProps.savedImages
+  );
+});
 
 const InfiniteFeed: React.FC<InfiniteFeedProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, onLoginClick, feedTab, setFeedTab, onCreateClick, savedImages, onSaveToggle, onImageDelete, onImageEdit, topicFilter, onClearTopicFilter }) => {
   return (

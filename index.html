@@ -132,12 +132,10 @@
         overscroll-behavior-y: contain !important;
       }
       
-      /* Force hardware acceleration on images and grid elements to keep GPU active during scroll */
-      img, .break-inside-avoid {
+      /* Hardware acceleration only for grid layout elements, NOT images */
+      .break-inside-avoid {
         transform: translateZ(0);
         backface-visibility: hidden;
-        perspective: 1000px;
-        will-change: transform;
       }
       
       /* Hide scrollbar for elements with hidden-scrollbar class */
