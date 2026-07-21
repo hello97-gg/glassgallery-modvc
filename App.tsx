@@ -150,11 +150,13 @@ const SkeletonGrid: React.FC<{ feedTab: 'discover' | 'following', user: User | n
   );
 };
 
-// Stable random seed per session (prevents reshuffling on re-renders)
-const SESSION_SEED = Math.random();
+// Mutable random seed — refreshed on Home click and page load for fresh content
+let sessionSeed = Math.random() + Date.now();
+const refreshSessionSeed = () => { sessionSeed = Math.random() + Date.now(); };
+
 const seededRandom = (id: string): number => {
   let hash = 0;
-  const str = id + SESSION_SEED.toString();
+  const str = id + sessionSeed.toString();
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
@@ -177,74 +179,98 @@ const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): Ima
       // 1. Recency Score — Twitter-style time decay (smoother curve)
       let recencyScore = 0;
       if (ageInHours < 1) {
-          recencyScore = 2000;
+          recencyScore = 1800;
       } else if (ageInHours < 6) {
-          recencyScore = 1200;
+          recencyScore = 1000;
       } else if (ageInHours < 24) {
-          recencyScore = 600;
+          recencyScore = 500;
       } else if (ageInHours < 72) {
-          recencyScore = 250;
+          recencyScore = 200;
       } else if (ageInHours < 168) {
-          recencyScore = 100;
+          recencyScore = 80;
       } else {
-          recencyScore = 50 / (Math.max(1, ageInHours / 168));
+          recencyScore = 40 / (Math.max(1, ageInHours / 168));
       }
 
-      // 2. Engagement velocity — reward content that is getting lots of interaction relative to age
+      // 2. Engagement velocity — reward content getting interaction relative to age
       const likeCount = image.likeCount || 0;
       const downloadCount = image.downloadCount || 0;
       const ageHoursFloor = Math.max(1, ageInHours);
       const velocityScore = ((likeCount * 10) + (downloadCount * 3)) / Math.sqrt(ageHoursFloor);
-      const popularityScore = Math.min(velocityScore, 800); // Cap to prevent mega-viral items from dominating
+      const popularityScore = Math.min(velocityScore, 600);
 
       // 3. Personalized affinity boost
       let personalizationBoost = 0;
       if (profile && profile.followedTags && profile.followedTags.length > 0) {
           const imgTags = image.flags || [];
           const overlap = imgTags.filter(t => profile.followedTags?.includes(t));
-          personalizationBoost += overlap.length * 600;
+          personalizationBoost += overlap.length * 400;
       }
 
       // 4. Client-side interest boost
-      const interestBoost = Math.min(getInterestBoost(image), 500); // Cap it
+      const interestBoost = Math.min(getInterestBoost(image), 400);
 
-      // 5. Moderate video boost — NOT massive, just a slight nudge for fresh videos
+      // 5. Moderate video boost
       const isVideo = isVideoUrl(image.imageUrl);
-      const videoBoost = isVideo && ageInHours < 48 ? 300 : (isVideo ? 100 : 0);
+      const videoBoost = isVideo && ageInHours < 48 ? 200 : (isVideo ? 50 : 0);
 
-      // 6. Stable per-session randomness (same order between re-renders)
-      const randomFactor = seededRandom(image.id) * 200;
+      // 6. "In case you missed it" — occasionally boost older popular content (Twitter-like discovery)
+      let surpriseBoost = 0;
+      if (ageInHours > 24 && likeCount >= 3) {
+          // ~20% chance to boost older popular content into the top section
+          const surprise = seededRandom(image.id + '_surprise');
+          if (surprise < 0.2) {
+              surpriseBoost = 800 + (likeCount * 20);
+          }
+      }
 
-      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + videoBoost + randomFactor;
+      // 7. Large randomness factor — makes every Home click feel fresh and interesting
+      const randomFactor = seededRandom(image.id) * 600;
+
+      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + videoBoost + surpriseBoost + randomFactor;
 
       return { ...image, sortScore: finalScore, isVideo };
     })
     .sort((a, b) => (b.sortScore ?? 0) - (a.sortScore ?? 0));
 
-  // Content diversity enforcement: cap videos at ~30% of feed
-  // Interleave content so you don't get walls of videos or walls of images
+  // Content diversity enforcement:
+  // 1. Cap videos at ~30% of feed
+  // 2. Prevent same creator from appearing back-to-back (creator diversity)
   const maxVideoRatio = 0.3;
   const result: ImageMeta[] = [];
+  const deferred: ImageWithScore[] = [];
   let videoCount = 0;
 
   for (const item of scored) {
     const currentRatio = result.length > 0 ? videoCount / result.length : 0;
+
+    // Video ratio cap
     if (item.isVideo && currentRatio >= maxVideoRatio && result.length > 5) {
-      // Push video to end instead of skipping
+      deferred.push(item);
       continue;
     }
+
+    // Creator diversity: don't show 3+ posts from the same user in a row
+    if (result.length >= 2) {
+      const last1 = result[result.length - 1];
+      const last2 = result[result.length - 2];
+      if (last1.uploaderUid === item.uploaderUid && last2.uploaderUid === item.uploaderUid) {
+        deferred.push(item);
+        continue;
+      }
+    }
+
     if (item.isVideo) videoCount++;
     const { sortScore, isVideo: _isVideo, ...rest } = item;
     result.push(rest as ImageMeta);
   }
 
-  // Add back any deferred videos at the end
-  for (const item of scored) {
-    const baseId = item.id;
-    if (!result.find(r => r.id === baseId)) {
-      const { sortScore, isVideo: _isVideo, ...rest } = item;
-      result.push(rest as ImageMeta);
-    }
+  // Interleave deferred content throughout the feed (not just at the end)
+  for (const item of deferred) {
+    const { sortScore, isVideo: _isVideo, ...rest } = item;
+    // Insert at a position after the first third of the feed
+    const insertPos = Math.min(result.length, Math.floor(result.length * 0.3) + Math.floor(seededRandom(item.id + '_pos') * result.length * 0.7));
+    result.splice(insertPos, 0, rest as ImageMeta);
   }
 
   return result;
@@ -1187,6 +1213,12 @@ const App: React.FC = () => {
             updateURL(null);
         } else if (view === 'home') {
             setHomeTopicFilter('');
+            // Refresh feed with new sort order (like Twitter pull-to-refresh)
+            refreshSessionSeed();
+            const freshSorted = smartSortImages(allImages, profileRef.current);
+            setAllImages(freshSorted);
+            setDisplayedImages(freshSorted.slice(0, PAGE_SIZE));
+            setCurrentIndex(PAGE_SIZE);
         }
     } else {
         saveScrollPosition();
@@ -1196,6 +1228,12 @@ const App: React.FC = () => {
         setExploreSearchTerm('');
         if (view === 'home') {
             setHomeTopicFilter('');
+            // Refresh feed with new sort order when navigating to Home
+            refreshSessionSeed();
+            const freshSorted = smartSortImages(allImages, profileRef.current);
+            setAllImages(freshSorted);
+            setDisplayedImages(freshSorted.slice(0, PAGE_SIZE));
+            setCurrentIndex(PAGE_SIZE);
         }
         
         if (view === 'api') {
