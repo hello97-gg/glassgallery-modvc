@@ -120,9 +120,8 @@
     <style>
       /* Ultra-smooth hardware-accelerated inertia scrolling for mobile devices */
       html, body {
-        overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        scroll-behavior: auto !important; /* Bypasses software delay interpolation for instant 120Hz tracking */
+        scroll-behavior: smooth;
       }
       
       /* Target all overflow-y scroll panels in the app for momentum scrolling */

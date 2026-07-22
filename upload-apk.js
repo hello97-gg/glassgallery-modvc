@@ -18,9 +18,9 @@ envFile.split('\n').forEach(line => {
   }
 });
 
-const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
 const R2_BUCKET = env['R2_BUCKET_NAME'] || "glassgallery";
-const publicDomain = env['R2_PUBLIC_DOMAIN'] || "https://cdn.modvc.org";
+const publicDomain = env['R2_PUBLIC_DOMAIN'] || "https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev";
 
 const S3 = new S3Client({
   region: "auto",

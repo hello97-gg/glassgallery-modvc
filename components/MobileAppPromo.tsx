@@ -55,7 +55,7 @@ const MobileAppPromo: React.FC = () => {
         localStorage.setItem('mobile_banner_dismissed', 'true');
     };
 
-    const launchUrl = "intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://cdn.modvc.org/GlassGallery.apk;end";
+    const launchUrl = "intent://open#Intent;scheme=glassgallery;package=org.modvc.glassgallery;S.browser_fallback_url=https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/GlassGallery.apk;end";
 
     if (!isMobile) return null;
 

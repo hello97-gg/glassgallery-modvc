@@ -172,7 +172,7 @@ const App: React.FC = () => {
 
   const checkForUpdates = useCallback(async () => {
     try {
-      const res = await fetch('https://cdn.modvc.org/version.json?t=' + Date.now(), {
+      const res = await fetch('https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/version.json?t=' + Date.now(), {
         cache: 'no-store'
       });
       if (res.ok) {

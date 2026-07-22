@@ -1,7 +1,7 @@
 {
   "versionCode": 6,
   "versionName": "1.0.5",
-  "apkUrl": "https://cdn.modvc.org/GlassGallery.apk",
+  "apkUrl": "https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/GlassGallery.apk",
   "releaseNotes": "Smooth touch gestures pinch-to-zoom and panning integrated, manual zoom buttons removed!",
   "forceUpdate": false
 }

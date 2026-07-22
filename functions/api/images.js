@@ -869,9 +869,9 @@ Return the response strictly as a JSON object with this exact format:
           }
         }
 
-        const TEN_MB = 10 * 1024 * 1024;
-        if (buffer.byteLength > TEN_MB) {
-          return Response.json({ success: false, error: "File exceeds maximum size of 10MB." }, { status: 400, headers: corsHeaders });
+        const FIFTY_MB = 50 * 1024 * 1024;
+        if (buffer.byteLength > FIFTY_MB) {
+          return Response.json({ success: false, error: "File exceeds maximum size of 50MB." }, { status: 400, headers: corsHeaders });
         }
 
         // --- Image Compression Logic using Photon (Skip for Videos) ---
@@ -899,7 +899,7 @@ Return the response strictly as a JSON object with this exact format:
           }
         }
 
-        const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+        const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
         const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
         const publicDomain = env.R2_PUBLIC_DOMAIN;
         if (!publicDomain) {
@@ -1282,12 +1282,12 @@ Return the response strictly as a JSON object with this exact format:
         }
 
         const size = parseInt(contentLengthHeader, 10);
-        const TEN_MB = 10 * 1024 * 1024; // 10 MB upload size limit matching web and api_upload
-        if (size > TEN_MB) {
-          return Response.json({ success: false, error: "Payload Too Large: Maximum allowed size is 10MB." }, { status: 413, headers: corsHeaders });
+        const FIFTY_MB = 50 * 1024 * 1024; // 50 MB upload size limit matching web and api_upload
+        if (size > FIFTY_MB) {
+          return Response.json({ success: false, error: "Payload Too Large: Maximum allowed size is 50MB." }, { status: 413, headers: corsHeaders });
         }
 
-        const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+        const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
         const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
         const publicDomain = env.R2_PUBLIC_DOMAIN;
         if (!publicDomain) {

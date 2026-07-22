@@ -21,7 +21,7 @@ export async function onRequest(context) {
         throw new Error("Server Misconfiguration: R2_PUBLIC_DOMAIN environment variable is missing.");
     }
 
-    const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+    const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
     const R2_BUCKET = context.env.R2_BUCKET_NAME || "glassgallery";
 
     // Initialize S3 Client for Cloudflare R2

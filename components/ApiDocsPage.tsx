@@ -122,7 +122,7 @@ const ApiDocsPage: React.FC = () => {
             <div className="absolute inset-0 bg-gradient-to-br from-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <div className="flex flex-col gap-3 mb-4 relative z-10">
                 <span className="self-start px-3 py-1 rounded-md bg-purple-500/20 text-purple-400 font-bold text-sm">EDGE FEATURE</span>
-                <code className="text-primary font-mono text-sm md:text-lg break-all">https://cdn.modvc.org/cdn-cgi/image/width=W,height=H/&#123;filename.jpg&#125;</code>
+                <code className="text-primary font-mono text-sm md:text-lg break-all">https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/cdn-cgi/image/width=W,height=H/&#123;filename.jpg&#125;</code>
             </div>
             <p className="text-secondary mb-0 text-sm md:text-base relative z-10">
                 <strong>Dynamic Resizing API:</strong> Because images are served via Cloudflare R2 Edge, you can dynamically resize and compress any image on the fly simply by prepending <code className="text-accent bg-accent/10 px-1 py-0.5 rounded">/cdn-cgi/image/width=X,height=Y/</code> to the CDN URL path!
@@ -136,7 +136,7 @@ const ApiDocsPage: React.FC = () => {
                 <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=api_upload</code>
             </div>
             <p className="text-secondary mb-5 text-sm md:text-base">
-                Uploads an image or video directly to the gallery using your personal developer API Key. Supports Base64 media payload or public URLs, custom tags, and licensing metadata. Videos must be under 10MB.
+                Uploads an image or video directly to the gallery using your personal developer API Key. Supports Base64 media payload or public URLs, custom tags, and licensing metadata. Videos must be under 50MB.
             </p>
             <div className="space-y-4">
                 <div>
@@ -163,7 +163,7 @@ Content-Type: application/json`}
                                     <td className="py-2 px-3 font-mono text-accent">image</td>
                                     <td className="py-2 px-3 text-secondary">string</td>
                                     <td className="py-2 px-3 text-emerald-400 font-bold">Yes</td>
-                                    <td className="py-2 px-3 text-secondary">Base64-encoded image/video string OR a public image/video URL to import. Videos must be under 10MB.</td>
+                                    <td className="py-2 px-3 text-secondary">Base64-encoded image/video string OR a public image/video URL to import. Videos must be under 50MB.</td>
                                 </tr>
                                 <tr className="border-b border-border/30">
                                     <td className="py-2 px-3 font-mono text-accent">title</td>
@@ -221,7 +221,7 @@ Content-Type: application/json`}
                 <code className="text-primary font-mono text-sm md:text-lg break-all">/api/images?action=api_upload_stream</code>
             </div>
             <p className="text-secondary mb-5 text-sm md:text-base">
-                Upload video files or images via direct stream passthrough with 0ms CPU memory decoding time! Supports files up to 10MB natively to R2.
+                Upload video files or images via direct stream passthrough with 0ms CPU memory decoding time! Supports files up to 50MB natively to R2.
             </p>
             <div className="space-y-4">
                 <div>
@@ -229,7 +229,7 @@ Content-Type: application/json`}
                     <pre className="p-3 bg-black/30 border border-border rounded-md text-xs font-mono text-secondary whitespace-pre-wrap">
 {`Authorization: Bearer <YOUR_API_KEY>
 Content-Type: video/mp4
-Content-Length: <SIZE_IN_BYTES> (max 10MB / 10485760 bytes)
+Content-Length: <SIZE_IN_BYTES> (max 50MB / 52428800 bytes)
 X-File-Name: video.mp4
 X-Image-Title: Awesome Video
 X-Image-Description: Short video description
@@ -243,7 +243,7 @@ X-Image-Tags: ["Urban", "Street"]`}
                 <div>
                     <h4 className="text-sm font-bold text-primary mb-2">Body</h4>
                     <p className="text-secondary text-sm">
-                        Raw binary stream (e.g. read directly from file). Do NOT JSON/Base64 encode the body. Max 10MB.
+                        Raw binary stream (e.g. read directly from file). Do NOT JSON/Base64 encode the body. Max 50MB.
                     </p>
                 </div>
             </div>
@@ -325,7 +325,7 @@ window.location.href = 'https://gg.modvc.org/api/images?action=download&imageId=
                     language="html" 
                     code={`<!-- Load a lightweight 400x300 thumbnail -->
 <img 
-  src="https://cdn.modvc.org/cdn-cgi/image/width=400,height=300,fit=cover/image_name.jpg" 
+  src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/cdn-cgi/image/width=400,height=300,fit=cover/image_name.jpg" 
   alt="Resized Image" 
 />`} 
                 />
@@ -415,7 +415,7 @@ async function fetchAndDownloadRandom() {
 
   // 2. Build the dynamically resized Cloudflare Edge URL
   const imagePath = new URL(image.imageUrl).pathname;
-  const resizedUrl = \`https://cdn.modvc.org/cdn-cgi/image/width=\${WIDTH},height=\${HEIGHT},fit=cover\${imagePath}\`;
+  const resizedUrl = \`https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/cdn-cgi/image/width=\${WIDTH},height=\${HEIGHT},fit=cover\${imagePath}\`;
   
   console.log('Optimized CDN URL:', resizedUrl);
 

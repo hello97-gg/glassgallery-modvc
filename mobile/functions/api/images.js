@@ -40,6 +40,8 @@ export async function onRequest(context) {
           return Response.json({ success: false, error: "Missing imageId or id parameter." }, { status: 400, headers: corsHeaders });
         }
 
+
+
         // 1. Check if image exists and fetch the CDN URL
         const targetRes = await db.execute({
           sql: "SELECT imageUrl FROM images WHERE id = ?",
@@ -794,6 +796,11 @@ Return the response strictly as a JSON object with this exact format:
           }
         }
 
+        const FIFTY_MB = 50 * 1024 * 1024;
+        if (buffer.byteLength > FIFTY_MB) {
+          return Response.json({ success: false, error: "File exceeds maximum size of 50MB." }, { status: 400, headers: corsHeaders });
+        }
+
         // --- Image Compression Logic using Photon ---
         try {
           let photonImg = PhotonImage.new_from_byteslice(buffer);
@@ -817,7 +824,7 @@ Return the response strictly as a JSON object with this exact format:
           console.error("Photon compression error:", photonErr);
         }
 
-        const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+        const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
         const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
         const publicDomain = env.R2_PUBLIC_DOMAIN;
         if (!publicDomain) {

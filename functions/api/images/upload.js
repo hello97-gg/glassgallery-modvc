@@ -55,13 +55,13 @@ export async function onRequest(context) {
       return Response.json({ success: false, error: "Length Required: Content-Length header is missing." }, { status: 411, headers: corsHeaders });
     }
 
-    const size = parseInt(contentLengthHeader, 10);
-    const TEN_MB = 10 * 1024 * 1024; // 10MB web/api upload size limit
-    if (size > TEN_MB) {
-      return Response.json({ success: false, error: "Payload Too Large: Maximum allowed size is 10MB." }, { status: 413, headers: corsHeaders });
+    const contentLength = parseInt(contentLengthHeader, 10);
+    const FIFTY_MB = 50 * 1024 * 1024; // 50MB web/api upload size limit
+    if (contentLength > FIFTY_MB) {
+      return Response.json({ success: false, error: "Payload Too Large: Maximum allowed size is 50MB." }, { status: 413, headers: corsHeaders });
     }
 
-    const R2_ACCOUNT_ID = "d8e8828f54e7dac7c17e397d1998f745";
+    const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
     const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
     
     const aws = new AwsClient({

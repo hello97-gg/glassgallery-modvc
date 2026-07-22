@@ -307,7 +307,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
         </div>
 
         {/* Trending Sidebar */}
-        <div className="w-full lg:w-80 flex-shrink-0">
+        <div className="w-full lg:w-80 flex-shrink-0 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:overflow-y-auto hidden-scrollbar">
           <TrendingSidebar onTopicClick={(topic) => {
             if (onTrendingTopicClick) {
               onTrendingTopicClick(topic);
