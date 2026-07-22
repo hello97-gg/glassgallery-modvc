@@ -924,8 +924,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
           {/* Details Pane */}
           <div className="p-6 flex flex-col space-y-5">
-            {/* Pinterest Mobile App Promo Banner */}
-            {(!((window as any).Capacitor?.isNativePlatform?.()) && (window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobi/i.test(navigator.userAgent))) && (
+            {/* Pinterest Mobile App Promo Banner (Hidden per user request) */}
+            {false && (!((window as any).Capacitor?.isNativePlatform?.()) && (window.innerWidth <= 768 || /android|iphone|ipad|ipod|mobi/i.test(navigator.userAgent))) && (
               <div className="bg-gradient-to-r from-red-600 to-rose-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between gap-3 mb-2 animate-fade-in">
                 <div className="flex-1">
                   <h4 className="font-bold text-sm">Glass Gallery App</h4>
