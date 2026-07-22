@@ -684,7 +684,7 @@ const App: React.FC = () => {
           setLegalModalTab(tab as 'terms' | 'privacy' | 'guidelines');
           setActiveView('legal');
           setProfileUser(null);
-      } else if (viewParam === 'api') {
+      } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
       } else if (searchTerm) {
@@ -1148,7 +1148,7 @@ const App: React.FC = () => {
     if (activeView !== 'profile') {
         setActiveView('home');
         updateURL(null);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo(0, 0);
     }
   };
 
@@ -1423,7 +1423,7 @@ const App: React.FC = () => {
                     onTrendingTopicClick={(topic) => {
                         setHomeTopicFilter(topic);
                         handleSetView('home');
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        window.scrollTo(0, 0);
                     }}
                 />
             </>
@@ -1563,7 +1563,7 @@ const App: React.FC = () => {
               onTopicClick={(topic) => {
                 setHomeTopicFilter(topic);
                 setActiveView('home');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.scrollTo(0, 0);
                 updateURL(null);
               }} 
             />

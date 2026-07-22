@@ -568,7 +568,7 @@ const App: React.FC = () => {
          };
          setProfileUser(profile);
          setActiveView('profile');
-      } else if (viewParam === 'api') {
+      } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
       } else if (searchTerm) {
