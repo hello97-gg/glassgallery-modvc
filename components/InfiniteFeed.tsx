@@ -8,6 +8,32 @@ import VideoPlayer from './VideoPlayer';
 import Button from './Button';
 import Spinner from './Spinner';
 
+const useVisibility = (margin = "1500px") => {
+  const [isVisible, setIsVisible] = useState(true);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  const ref = useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) {
+           setHeight(el.getBoundingClientRect().height);
+           setIsVisible(false);
+        } else {
+           setIsVisible(true);
+        }
+      },
+      { rootMargin: margin }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [margin]);
+
+  return { ref, isVisible, height };
+};
+
 interface InfiniteFeedProps {
   images: ImageMeta[];
   user: User | null;
@@ -105,8 +131,17 @@ export const FeedItem: React.FC<{
     return Math.floor(seconds) + 's';
   };
 
+  const { ref, isVisible, height } = useVisibility("1500px");
+
   return (
-    <article className="flex gap-3 p-4 border-b border-border hover:bg-surface/30 transition-colors cursor-pointer" onClick={() => onImageClick(image)}>
+    <article 
+       ref={ref} 
+       style={!isVisible && height ? { height } : undefined}
+       className={`flex gap-3 p-4 border-b border-border transition-colors ${isVisible ? 'hover:bg-surface/30 cursor-pointer' : ''}`} 
+       onClick={isVisible ? () => onImageClick(image) : undefined}
+    >
+      {!isVisible ? null : (
+      <>
       {/* Left Column: Avatar */}
       <div className="shrink-0">
          <img 
@@ -360,6 +395,8 @@ export const FeedItem: React.FC<{
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-accent text-white px-6 py-3 rounded-full shadow-2xl z-[100] animate-fade-in font-bold text-[15px] whitespace-nowrap">
           {toastMessage}
         </div>
+      )}
+      </>
       )}
     </article>
   );
