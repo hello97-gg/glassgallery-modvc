@@ -435,6 +435,15 @@ const App: React.FC = () => {
   }, [allImages, feedTab, followingUids, homeTopicFilter]);
 
   const lastFilterState = useRef({ feedTab, homeTopicFilter, loaded: false });
+  const feedTabLimits = useRef<Record<string, number>>({ discover: PAGE_SIZE, following: PAGE_SIZE });
+  const feedTabScroll = useRef<Record<string, number>>({ discover: 0, following: 0 });
+
+  const handleFeedTabChange = (newTab: 'discover' | 'following') => {
+      if (newTab === feedTab) return;
+      feedTabLimits.current[feedTab] = currentIndex;
+      feedTabScroll.current[feedTab] = window.scrollY;
+      setFeedTab(newTab);
+  };
 
   useEffect(() => {
     if (activeView === 'home') {
@@ -445,9 +454,21 @@ const App: React.FC = () => {
       const isInitialLoad = !lastFilterState.current.loaded && activeAllImages.length > 0;
       
       if (filterChanged || isInitialLoad) {
+        const isTabSwitch = lastFilterState.current.feedTab !== feedTab && lastFilterState.current.homeTopicFilter === homeTopicFilter;
         lastFilterState.current = { feedTab, homeTopicFilter, loaded: activeAllImages.length > 0 };
-        setDisplayedImages(activeAllImages.slice(0, PAGE_SIZE));
-        setCurrentIndex(PAGE_SIZE);
+        
+        if (isTabSwitch) {
+            const targetLimit = feedTabLimits.current[feedTab] || PAGE_SIZE;
+            setDisplayedImages(activeAllImages.slice(0, targetLimit));
+            setCurrentIndex(targetLimit);
+            setTimeout(() => {
+                window.scrollTo({ top: feedTabScroll.current[feedTab] || 0, behavior: 'instant' });
+            }, 50);
+        } else {
+            setDisplayedImages(activeAllImages.slice(0, PAGE_SIZE));
+            setCurrentIndex(PAGE_SIZE);
+            window.scrollTo(0, 0);
+        }
       }
     }
   }, [activeAllImages, activeView, feedTab, homeTopicFilter]);
@@ -1518,7 +1539,7 @@ const App: React.FC = () => {
                 onLikeToggle={handleLikeToggle}
                 onLoginClick={() => setLoginModalOpen(true)}
                 feedTab={feedTab}
-                setFeedTab={setFeedTab}
+                setFeedTab={handleFeedTabChange}
                 onCreateClick={handleCreateClick}
                 savedImages={savedImages}
                 onSaveToggle={handleSaveToggle}

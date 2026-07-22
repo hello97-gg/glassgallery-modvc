@@ -436,7 +436,6 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({ images, user, onImageClick,
                     className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'discover' ? 'text-primary' : 'text-secondary font-medium'}`}
                     onClick={() => {
                       setFeedTab('discover');
-                      window.scrollTo(0, 0);
                     }}
                   >
                     Discover
@@ -448,7 +447,6 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({ images, user, onImageClick,
                        if (!user) onLoginClick();
                        else {
                          setFeedTab('following');
-                         window.scrollTo(0, 0);
                        }
                     }}
                   >
