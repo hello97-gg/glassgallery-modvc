@@ -513,6 +513,12 @@ const App: React.FC = () => {
     return deduped;
   }, [feedQueryData, activeAllImages, FEED_BATCH_SIZE]);
 
+  const handleLoadMore = useCallback(() => {
+    if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
+      fetchNextPage();
+    }
+  }, [isFetchingNextPage, hasNextPage, fetchNextPage]);
+
   const lastFilterState = useRef({ feedTab, homeTopicFilter, loaded: false });
   const feedTabLimits = useRef<Record<string, number>>({ discover: FEED_BATCH_SIZE, following: FEED_BATCH_SIZE });
   const feedTabScroll = useRef<Record<string, number>>({ discover: 0, following: 0 });
@@ -1562,12 +1568,7 @@ const App: React.FC = () => {
                         handleSetView('home');
                         window.scrollTo(0, 0);
                     }}
-                    onEndReached={() => {
-                        console.log('[Explore View] Sentinel triggered onEndReached!');
-                        if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
-                            fetchNextPage();
-                        }
-                    }}
+                    onEndReached={handleLoadMore}
                     isFetchingNextPage={isFetchingNextPage}
                 />
             </>
@@ -1590,12 +1591,7 @@ const App: React.FC = () => {
                     onImageClick={handleImageClick} 
                     onViewProfile={handleViewProfile} 
                     onLikeToggle={handleLikeToggle} 
-                    onEndReached={() => {
-                        console.log('[Discover View] Sentinel triggered onEndReached!');
-                        if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
-                            fetchNextPage();
-                        }
-                    }}
+                    onEndReached={handleLoadMore}
                     isFetchingMore={isFetchingNextPage}
                 />
             </>
@@ -1686,11 +1682,7 @@ const App: React.FC = () => {
                 }}
                 topicFilter={homeTopicFilter}
                 onClearTopicFilter={() => setHomeTopicFilter('')}
-                onEndReached={() => {
-                    if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
-                        fetchNextPage();
-                    }
-                }}
+                onEndReached={handleLoadMore}
                 isFetchingNextPage={isFetchingNextPage}
                 virtuosoRef={virtuosoRef}
                 restoreStateFrom={savedVirtuosoStateRef.current[`${activeView}_${feedTab}_${homeTopicFilter || 'all'}`]}
