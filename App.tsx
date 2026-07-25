@@ -319,13 +319,28 @@ const App: React.FC = () => {
     } catch (e) {}
 
     const loadCache = async () => {
-      const cachedAll = await getCachedData<ImageMeta[]>('cached_all_images');
-      if (cachedAll) setAllImages(cachedAll);
-      
-      const cachedDisplayed = await getCachedData<ImageMeta[]>('cached_displayed_images');
-      if (cachedDisplayed && cachedDisplayed.length > 0) {
-        setDisplayedImages(cachedDisplayed);
-        setCurrentIndex(cachedDisplayed.length);
+      try {
+        const cachedAll = await getCachedData<ImageMeta[]>('cached_all_images');
+        if (cachedAll && cachedAll.length > 0) {
+          setAllImages(cachedAll);
+        }
+        
+        const cachedDisplayed = await getCachedData<ImageMeta[]>('cached_displayed_images');
+        if (cachedDisplayed && cachedDisplayed.length > 0) {
+          setDisplayedImages(cachedDisplayed);
+          setCurrentIndex(cachedDisplayed.length);
+          setImagesLoading(false);
+        }
+
+        // Fetch fresh images from database API on initial load
+        const res = await getImagesFromFirestore();
+        if (res.images && res.images.length > 0) {
+          setAllImages(res.images);
+          setDisplayedImages(res.images.slice(0, FEED_BATCH_SIZE));
+        }
+      } catch (err) {
+        console.error("Initial images fetch error:", err);
+      } finally {
         setImagesLoading(false);
       }
     };
@@ -1573,6 +1588,7 @@ const App: React.FC = () => {
                     onViewProfile={handleViewProfile} 
                     onLikeToggle={handleLikeToggle}
                     initialSearchTerm={exploreSearchTerm}
+                    onSearchChange={(term) => setExploreSearchTerm(term)}
                     onNavigateToApi={() => handleSetView('api')}
                     onTrendingTopicClick={(topic) => {
                         setHomeTopicFilter(topic);

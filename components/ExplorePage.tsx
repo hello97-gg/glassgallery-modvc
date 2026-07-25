@@ -99,6 +99,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
   onViewProfile, 
   onLikeToggle, 
   initialSearchTerm = '', 
+  onSearchChange,
   onNavigateToApi, 
   onTrendingTopicClick,
   onEndReached,
@@ -107,8 +108,15 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchTerm);
 
+  const handleSearchInputChange = (term: string) => {
+    setSearchQuery(term);
+    if (onSearchChange) {
+      onSearchChange(term);
+    }
+  };
+
   useEffect(() => {
-    if (initialSearchTerm) {
+    if (initialSearchTerm !== undefined) {
         setSearchQuery(initialSearchTerm);
     }
   }, [initialSearchTerm]);
@@ -185,12 +193,12 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
                         type="text"
                         placeholder="Search tags, users, locations..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => handleSearchInputChange(e.target.value)}
                         autoFocus
                         className="block w-full pl-10 pr-16 py-2 border border-border rounded-full leading-5 bg-surface text-primary placeholder-secondary focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent sm:text-sm transition-all shadow-sm"
                     />
                      {searchQuery && (
-                        <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-12 pr-2 flex items-center text-secondary hover:text-primary">
+                        <button onClick={() => handleSearchInputChange('')} className="absolute inset-y-0 right-12 pr-2 flex items-center text-secondary hover:text-primary">
                            &times;
                         </button>
                     )}
@@ -219,7 +227,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
                     </svg>
                     <h3 className="mt-2 text-sm font-medium text-primary">No matches found</h3>
                     <p className="mt-1 text-sm text-secondary">Try searching for something else like "Tokyo" or "Abstract".</p>
-                    <Button onClick={() => setSearchQuery('')} variant="secondary" size="sm" className="mt-4">Clear Search</Button>
+                    <Button onClick={() => handleSearchInputChange('')} variant="secondary" size="sm" className="mt-4">Clear Search</Button>
                 </div>
             )}
         </div>
@@ -265,7 +273,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
       <div className="animate-fade-in">
         <div className="mb-8 flex items-center gap-4">
            <Button onClick={() => setSelectedFlag(null)} variant="secondary" size="sm" className="!p-2">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                     <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
             </Button>
@@ -301,7 +309,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
                     type="text"
                     placeholder="Search images, tags, users, locations..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => handleSearchInputChange(e.target.value)}
                     className="block w-full pl-10 pr-16 py-2 border border-border rounded-full leading-5 bg-surface text-primary placeholder-secondary focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent sm:text-sm transition-all shadow-sm"
                 />
                 <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
