@@ -256,7 +256,7 @@ export const FeedItem: React.FC<{
               e.stopPropagation();
               onImageClick(image);
             }}
-            className="flex items-center gap-1.5 group hover:text-accent transition-colors"
+            className="flex items-center gap-1.5 group hover:text-accent transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-full"
           >
             <div className="p-2 rounded-full group-hover:bg-accent/10 transition-colors">
               <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current">
@@ -275,7 +275,7 @@ export const FeedItem: React.FC<{
                 onLikeToggle(image);
               }
             }}
-            className={`flex items-center gap-1.5 group transition-colors ${hasLiked ? 'text-pink-500' : 'hover:text-pink-500'}`}
+            className={`flex items-center gap-1.5 group transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-full ${hasLiked ? 'text-pink-500' : 'hover:text-pink-500'}`}
           >
             <div className={`p-2 rounded-full group-hover:bg-pink-500/10 transition-colors`}>
               <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${hasLiked ? 'fill-pink-500' : 'fill-current'}`}>
@@ -300,7 +300,7 @@ export const FeedItem: React.FC<{
               onSaveToggle(image);
               showToast(hasSaved ? 'Removed from Bookmarks' : 'Saved to Bookmarks');
             }}
-            className={`p-2 rounded-full hover:bg-accent/10 hover:text-accent transition-colors ${hasSaved ? 'text-accent' : ''}`}
+            className={`p-2 rounded-full hover:bg-accent/10 hover:text-accent transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${hasSaved ? 'text-accent' : ''}`}
           >
             <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${hasSaved ? 'fill-accent' : 'fill-current'}`}>
               <g><path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v16.86l-7.482-4.68-7.518 4.7V4.5zM6.5 4c-.276 0-.5.224-.5.5v13.64l5.518-3.45L17 18.12V4.5c0-.276-.224-.5-.5-.5h-11z"></path></g>
@@ -314,7 +314,7 @@ export const FeedItem: React.FC<{
               navigator.clipboard.writeText(shareUrl);
               showToast('Post link copied to clipboard!');
             }}
-            className="p-2 rounded-full hover:bg-accent/10 hover:text-accent transition-colors"
+            className="p-2 rounded-full hover:bg-accent/10 hover:text-accent transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           >
             <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current">
               <g><path d="M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41L7.71 9.71 6.3 8.29 12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z"></path></g>

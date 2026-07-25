@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { flushSync } from 'react-dom';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { VirtuosoHandle, State } from 'react-virtuoso';
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
@@ -293,6 +293,7 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
 };
 
 const App: React.FC = () => {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const FEED_BATCH_SIZE = useMemo(() => calculateDynamicBatchSize(), []);
@@ -453,7 +454,7 @@ const App: React.FC = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['feedData', feedTab, homeTopicFilter, user?.uid],
+    queryKey: ['feedData', feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, user?.uid],
     queryFn: async ({ pageParam = 0 }) => {
       isFetchingRef.current = true;
       try {
@@ -1362,6 +1363,30 @@ const App: React.FC = () => {
     });
     setDisplayedImages(updater);
     setAllImages(updater);
+
+    // Optimistically update React Query cache for Instant UI Feedback on Likes/Saves
+    queryClient.setQueriesData({ queryKey: ['feedData'] }, (oldData: any) => {
+      if (!oldData || !oldData.pages) return oldData;
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page: any) => ({
+          ...page,
+          items: page.items.map((img: ImageMeta) => {
+            if (img.id.split('_loop_')[0] === baseId) {
+              return { 
+                ...img, 
+                likedBy: updatedImage.likedBy, 
+                likeCount: updatedImage.likeCount,
+                downloadCount: updatedImage.downloadCount,
+                commentCount: updatedImage.commentCount,
+                viewCount: updatedImage.viewCount
+              };
+            }
+            return img;
+          })
+        }))
+      };
+    });
 
     if (selectedImage) {
       const selectedBaseId = selectedImage.id.split('_loop_')[0];
