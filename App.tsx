@@ -11,6 +11,7 @@ import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, mar
 import { isVideoUrl } from './utils/mediaUtils';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 import { getCachedData, setCachedData } from './utils/idbCache';
+import { calculateDynamicBatchSize } from './utils/performanceUtils';
 
 import Sidebar from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -292,6 +293,7 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const FEED_BATCH_SIZE = useMemo(() => calculateDynamicBatchSize(), []);
   
   const [allImages, setAllImages] = useState<ImageMeta[]>([]);
   const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
@@ -435,7 +437,7 @@ const App: React.FC = () => {
   }, [allImages, feedTab, followingUids, homeTopicFilter]);
 
   const lastFilterState = useRef({ feedTab, homeTopicFilter, loaded: false });
-  const feedTabLimits = useRef<Record<string, number>>({ discover: PAGE_SIZE, following: PAGE_SIZE });
+  const feedTabLimits = useRef<Record<string, number>>({ discover: FEED_BATCH_SIZE, following: FEED_BATCH_SIZE });
   const feedTabScroll = useRef<Record<string, number>>({ discover: 0, following: 0 });
 
   const handleFeedTabChange = (newTab: 'discover' | 'following') => {
@@ -458,15 +460,15 @@ const App: React.FC = () => {
         lastFilterState.current = { feedTab, homeTopicFilter, loaded: activeAllImages.length > 0 };
         
         if (isTabSwitch) {
-            const targetLimit = feedTabLimits.current[feedTab] || PAGE_SIZE;
+            const targetLimit = feedTabLimits.current[feedTab] || FEED_BATCH_SIZE;
             setDisplayedImages(activeAllImages.slice(0, targetLimit));
             setCurrentIndex(targetLimit);
             setTimeout(() => {
                 window.scrollTo({ top: feedTabScroll.current[feedTab] || 0, behavior: 'instant' });
             }, 50);
         } else {
-            setDisplayedImages(activeAllImages.slice(0, PAGE_SIZE));
-            setCurrentIndex(PAGE_SIZE);
+            setDisplayedImages(activeAllImages.slice(0, FEED_BATCH_SIZE));
+            setCurrentIndex(FEED_BATCH_SIZE);
             window.scrollTo(0, 0);
         }
       }
@@ -822,8 +824,8 @@ const App: React.FC = () => {
             if (personalizedImages.length > 0) {
               markPersonalizedFeedFetched();
               setAllImages(personalizedImages);
-              setDisplayedImages(personalizedImages.slice(0, PAGE_SIZE));
-              setCurrentIndex(PAGE_SIZE);
+              setDisplayedImages(personalizedImages.slice(0, FEED_BATCH_SIZE));
+              setCurrentIndex(FEED_BATCH_SIZE);
               setImagesLoading(false);
             }
           }).catch(() => {
@@ -837,8 +839,8 @@ const App: React.FC = () => {
                  // If this is the very first load, sort once and display
                   if (prevImages.length === 0) {
                       const sorted = smartSortImages(fetchedImages, profileRef.current);
-                      setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-                      setCurrentIndex(PAGE_SIZE);
+                      setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
+                      setCurrentIndex(FEED_BATCH_SIZE);
                       setImagesLoading(false);
                       return sorted;
                   }
@@ -950,7 +952,7 @@ const App: React.FC = () => {
 
     isLoadingMore.current = true;
 
-    const nextIndex = currentIndex + PAGE_SIZE;
+    const nextIndex = currentIndex + FEED_BATCH_SIZE;
     const newImages = activeAllImages.slice(currentIndex, nextIndex);
     setCurrentIndex(nextIndex);
 
@@ -973,8 +975,8 @@ const App: React.FC = () => {
       ticking = true;
       requestAnimationFrame(() => {
         if (['home', 'discover', 'explore', 'post'].includes(activeView) && !isLoadingMore.current) {
-            const scrollThreshold = 500;
-            const hasUserScrolled = window.scrollY > 50;
+            const scrollThreshold = 400;
+            const hasUserScrolled = window.scrollY > 30;
             const isNearBottom = hasUserScrolled && (window.innerHeight + window.scrollY >= document.documentElement.offsetHeight - scrollThreshold);
             
             if (isNearBottom) {
@@ -1146,8 +1148,8 @@ const App: React.FC = () => {
          // For personalized feed, images are already sorted by the server
          const sorted = user ? images : smartSortImages(images, currentUserProfile);
          setAllImages(sorted);
-         setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-         setCurrentIndex(PAGE_SIZE);
+         setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
+         setCurrentIndex(FEED_BATCH_SIZE);
          setImagesLoading(false);
     }).catch(err => {
         console.error("Refetch failed", err);
@@ -1155,8 +1157,8 @@ const App: React.FC = () => {
         getImagesFromFirestore().then(({ images }) => {
           const sorted = smartSortImages(images, currentUserProfile);
           setAllImages(sorted);
-          setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-          setCurrentIndex(PAGE_SIZE);
+          setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
+          setCurrentIndex(FEED_BATCH_SIZE);
           setImagesLoading(false);
         }).catch(() => setImagesLoading(false));
     });
@@ -1238,8 +1240,8 @@ const App: React.FC = () => {
             refreshSessionSeed();
             const freshSorted = smartSortImages(allImages, profileRef.current);
             setAllImages(freshSorted);
-            setDisplayedImages(freshSorted.slice(0, PAGE_SIZE));
-            setCurrentIndex(PAGE_SIZE);
+            setDisplayedImages(freshSorted.slice(0, FEED_BATCH_SIZE));
+            setCurrentIndex(FEED_BATCH_SIZE);
         }
     } else {
         saveScrollPosition();
@@ -1253,8 +1255,8 @@ const App: React.FC = () => {
             refreshSessionSeed();
             const freshSorted = smartSortImages(allImages, profileRef.current);
             setAllImages(freshSorted);
-            setDisplayedImages(freshSorted.slice(0, PAGE_SIZE));
-            setCurrentIndex(PAGE_SIZE);
+            setDisplayedImages(freshSorted.slice(0, FEED_BATCH_SIZE));
+            setCurrentIndex(FEED_BATCH_SIZE);
         }
         
         if (view === 'api') {

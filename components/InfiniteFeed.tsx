@@ -8,7 +8,7 @@ import VideoPlayer from './VideoPlayer';
 import Button from './Button';
 import Spinner from './Spinner';
 
-const useVisibility = (margin = "1500px") => {
+const useVisibility = (margin = "350px") => {
   const [isVisible, setIsVisible] = useState(true);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const ref = useRef<HTMLElement>(null);
@@ -73,6 +73,7 @@ export const FeedItem: React.FC<{
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string) => {
@@ -131,12 +132,12 @@ export const FeedItem: React.FC<{
     return Math.floor(seconds) + 's';
   };
 
-  const { ref, isVisible, height } = useVisibility("1500px");
+  const { ref, isVisible, height } = useVisibility("350px");
 
   return (
     <article 
        ref={ref} 
-       style={!isVisible && height ? { height } : undefined}
+       style={!isVisible ? { minHeight: height ? `${height}px` : '420px' } : undefined}
        className={`flex gap-3 p-4 border-b border-border transition-colors ${isVisible ? 'hover:bg-surface/30 cursor-pointer' : ''}`} 
        onClick={isVisible ? () => onImageClick(image) : undefined}
     >
@@ -248,7 +249,7 @@ export const FeedItem: React.FC<{
           </div>
 
           {/* Image/Video Attachment */}
-          <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-black/5">
+          <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-surface/30 relative min-h-[180px] flex items-center justify-center">
              {isVideoUrl(image.imageUrl) ? (
                  <VideoPlayer 
                    src={image.imageUrl} 
@@ -260,12 +261,22 @@ export const FeedItem: React.FC<{
                    className="w-full h-full object-contain max-h-[500px]"
                  />
              ) : (
-                 <img 
-                   src={image.imageUrl} 
-                   alt={image.title || 'Post image'} 
-                   className="w-full h-full object-cover max-h-[500px]"
-                   loading="lazy"
-                 />
+                 <>
+                   {!isImageLoaded && (
+                     <div className="absolute inset-0 bg-gradient-to-br from-surface/80 via-surface/40 to-surface/90 animate-pulse flex items-center justify-center">
+                       <div className="w-7 h-7 border-2 border-accent/40 border-t-accent rounded-full animate-spin"></div>
+                     </div>
+                   )}
+                   <img 
+                     src={image.imageUrl} 
+                     alt={image.title || 'Post image'} 
+                     onLoad={() => setIsImageLoaded(true)}
+                     className={`w-full h-full object-cover max-h-[500px] transition-all duration-500 ease-out ${
+                       isImageLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-95'
+                     }`}
+                     loading="lazy"
+                   />
+                 </>
              )}
           </div>
 

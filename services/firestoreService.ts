@@ -1,7 +1,7 @@
 import type { ImageMeta, Notification, ProfileUser, Comment } from '../types';
 import type { User } from 'firebase/auth';
 
-export const PAGE_SIZE = 20;
+export const PAGE_SIZE = 8;
 export const CACHE_TIME_MS = 1000 * 60 * 5; // 5 minutes
 
 // Compatibility helper to mimic Firestore's Timestamp object
@@ -67,6 +67,10 @@ export const getImagesFromFirestore = async (): Promise<{ images: ImageMeta[] }>
         const response = await fetch('/api/images');
         if (!response.ok) {
             throw new Error(`Server returned status ${response.status}`);
+        }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error('API endpoint returned HTML instead of JSON. Access via port 8788 or verify dev proxy.');
         }
         const data = await response.json();
         if (!data.success) {

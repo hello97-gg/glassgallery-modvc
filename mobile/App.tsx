@@ -13,6 +13,7 @@ import { Filesystem } from '@capacitor/filesystem';
 import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile, markNotificationsAsRead } from './services/firestoreService';
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import type { ImageMeta, ProfileUser, Notification } from './types';
+import { calculateDynamicBatchSize } from './utils/performanceUtils';
 
 import Sidebar from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -159,6 +160,7 @@ const CURRENT_VERSION_NAME = "1.0.5";
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const FEED_BATCH_SIZE = useMemo(() => calculateDynamicBatchSize(), []);
 
   // Update System States
   const [updateInfo, setUpdateInfo] = useState<{
@@ -711,8 +713,8 @@ const App: React.FC = () => {
             if (personalizedImages.length > 0) {
               markPersonalizedFeedFetched();
               setAllImages(personalizedImages);
-              setDisplayedImages(personalizedImages.slice(0, PAGE_SIZE));
-              setCurrentIndex(PAGE_SIZE);
+              setDisplayedImages(personalizedImages.slice(0, FEED_BATCH_SIZE));
+              setCurrentIndex(FEED_BATCH_SIZE);
               setImagesLoading(false);
             }
           }).catch(() => {
@@ -726,8 +728,8 @@ const App: React.FC = () => {
                  // If this is the very first load, handle it cleanly
                   if (prevImages.length === 0) {
                       const sorted = smartSortImages(fetchedImages, currentUserProfile);
-                      setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-                      setCurrentIndex(PAGE_SIZE);
+                      setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
+                      setCurrentIndex(FEED_BATCH_SIZE);
                       setImagesLoading(false);
                       return sorted;
                   }
@@ -814,7 +816,7 @@ const App: React.FC = () => {
 
     isLoadingMore.current = true;
 
-    const nextIndex = currentIndex + PAGE_SIZE;
+    const nextIndex = currentIndex + FEED_BATCH_SIZE;
     const newImages = allImages.slice(currentIndex, nextIndex);
     setCurrentIndex(nextIndex);
 
@@ -955,16 +957,16 @@ const App: React.FC = () => {
     fetchFn.then((images) => {
          const sorted = user ? images : smartSortImages(images, currentUserProfile);
          setAllImages(sorted);
-         setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-         setCurrentIndex(PAGE_SIZE);
+         setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
+         setCurrentIndex(FEED_BATCH_SIZE);
          setImagesLoading(false);
     }).catch(err => {
         console.error("Refetch failed", err);
         getImagesFromFirestore().then(({ images }) => {
           const sorted = smartSortImages(images, currentUserProfile);
           setAllImages(sorted);
-          setDisplayedImages(sorted.slice(0, PAGE_SIZE));
-          setCurrentIndex(PAGE_SIZE);
+          setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
+          setCurrentIndex(FEED_BATCH_SIZE);
           setImagesLoading(false);
         }).catch(() => setImagesLoading(false));
     });
@@ -1046,8 +1048,8 @@ const App: React.FC = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setAllImages(prevImages => {
              const reshuffled = smartSortImages(prevImages, currentUserProfile);
-             setDisplayedImages(reshuffled.slice(0, PAGE_SIZE));
-             setCurrentIndex(PAGE_SIZE);
+             setDisplayedImages(reshuffled.slice(0, FEED_BATCH_SIZE));
+             setCurrentIndex(FEED_BATCH_SIZE);
              return reshuffled;
         });
         if (view === 'explore') {
