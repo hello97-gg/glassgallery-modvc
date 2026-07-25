@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { flushSync } from 'react-dom';
+import { useInfiniteQuery } from '@tanstack/react-query';
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
@@ -300,6 +301,12 @@ const App: React.FC = () => {
   const [imagesLoading, setImagesLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // Fetch-in-flight guard ref
+  const isFetchingRef = useRef(false);
+
+  const profileRef = useRef(currentUserProfile);
+  profileRef.current = currentUserProfile;
+
   useEffect(() => {
     try {
       localStorage.removeItem('cached_all_images');
@@ -435,6 +442,60 @@ const App: React.FC = () => {
     }
     return result;
   }, [allImages, feedTab, followingUids, homeTopicFilter]);
+
+  const {
+    data: feedQueryData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['feedData', feedTab, homeTopicFilter, user?.uid],
+    queryFn: async ({ pageParam = 0 }) => {
+      isFetchingRef.current = true;
+      try {
+        let baseImages = allImages;
+        if (baseImages.length === 0) {
+          const res = await getImagesFromFirestore();
+          baseImages = res.images;
+          setAllImages(baseImages);
+        }
+
+        let filtered = baseImages;
+        if (feedTab === 'following') {
+          filtered = filtered.filter(img => followingUids.has(img.uploaderUid));
+        }
+        if (homeTopicFilter) {
+          const lowerTopic = homeTopicFilter.toLowerCase();
+          filtered = filtered.filter(img => 
+            img.flags?.some(f => f.toLowerCase() === lowerTopic) ||
+            img.title?.toLowerCase().includes(lowerTopic) ||
+            img.description?.toLowerCase().includes(lowerTopic) ||
+            img.aiConcepts?.some(c => c.toLowerCase() === lowerTopic)
+          );
+        }
+
+        const sorted = smartSortImages(filtered, profileRef.current);
+        const pageSize = FEED_BATCH_SIZE;
+        const pageItems = sorted.slice(pageParam, pageParam + pageSize);
+        return {
+          items: pageItems,
+          nextPageParam: pageParam + pageSize < sorted.length ? pageParam + pageSize : undefined,
+        };
+      } finally {
+        isFetchingRef.current = false;
+      }
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextPageParam,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const feedImages = useMemo(() => {
+    if (!feedQueryData) return activeAllImages.slice(0, FEED_BATCH_SIZE);
+    const flattened = feedQueryData.pages.flatMap(page => page.items);
+    return flattened.length > 0 ? flattened : activeAllImages.slice(0, FEED_BATCH_SIZE);
+  }, [feedQueryData, activeAllImages, FEED_BATCH_SIZE]);
 
   const lastFilterState = useRef({ feedTab, homeTopicFilter, loaded: false });
   const feedTabLimits = useRef<Record<string, number>>({ discover: FEED_BATCH_SIZE, following: FEED_BATCH_SIZE });
@@ -811,7 +872,6 @@ const App: React.FC = () => {
   // 2. Set up .onSnapshot() for real-time updates for connected users.
   // Use a ref for profile so the subscription callback always reads the latest value
   // without causing re-subscription (which would re-sort and reshuffle the feed).
-  const profileRef = useRef(currentUserProfile);
   profileRef.current = currentUserProfile;
 
   useEffect(() => {
@@ -1538,7 +1598,7 @@ const App: React.FC = () => {
                 favicon={DEFAULT_FAVICON}
             />
             <InfiniteFeed 
-                images={displayedImages} 
+                images={feedImages.length > 0 ? feedImages : displayedImages} 
                 user={user} 
                 onImageClick={handleFeedImageClick} 
                 onViewProfile={handleViewProfile} 
@@ -1556,6 +1616,12 @@ const App: React.FC = () => {
                 }}
                 topicFilter={homeTopicFilter}
                 onClearTopicFilter={() => setHomeTopicFilter('')}
+                onEndReached={() => {
+                    if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
+                        fetchNextPage();
+                    }
+                }}
+                isFetchingNextPage={isFetchingNextPage}
             />
         </>
     );
