@@ -25,12 +25,23 @@ interface ExplorePageProps {
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete) {
+      if (imgRef.current.naturalWidth > 0) {
+        setIsLoaded(true);
+      } else {
+        setHasError(true);
+      }
+    }
+  }, [image.imageUrl]);
 
   return (
     <div onClick={onClick} className="relative aspect-1 cursor-pointer group bg-surface/50 rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:scale-[1.02]">
       {/* Clean static placeholder - no spinning loader loops */}
       {!isLoaded && !hasError && (
-        <div className="absolute inset-0 bg-surface/80" />
+        <div className="absolute inset-0 bg-surface/80 animate-pulse" />
       )}
 
       {/* Fallback for Broken Images */}
@@ -42,6 +53,7 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
         </div>
       ) : (
         <img 
+          ref={imgRef}
           src={image.imageUrl} 
           alt={flag} 
           loading="lazy"
