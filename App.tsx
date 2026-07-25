@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { VirtuosoHandle, State } from 'react-virtuoso';
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
@@ -303,6 +304,10 @@ const App: React.FC = () => {
 
   // Fetch-in-flight guard ref
   const isFetchingRef = useRef(false);
+
+  // Virtuoso scroll state refs
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+  const savedVirtuosoStateRef = useRef<State | undefined>(undefined);
 
 
 
@@ -1162,6 +1167,10 @@ const App: React.FC = () => {
       
       const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
       
+      virtuosoRef.current?.getState((state) => {
+        savedVirtuosoStateRef.current = state;
+      });
+
       setSelectedFeedPost(viewIncremented);
       saveScrollPosition();
       setActiveView('post');
@@ -1294,6 +1303,7 @@ const App: React.FC = () => {
   }
   
   const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api') => {
+    savedVirtuosoStateRef.current = undefined; // Clear Virtuoso scroll state on explicit nav click
     if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
         window.scrollTo({ top: 0, behavior: 'instant' });
         if (view === 'explore') {
@@ -1623,6 +1633,8 @@ const App: React.FC = () => {
                     }
                 }}
                 isFetchingNextPage={isFetchingNextPage}
+                virtuosoRef={virtuosoRef}
+                restoreStateFrom={savedVirtuosoStateRef.current}
             />
         </>
     );

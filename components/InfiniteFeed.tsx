@@ -1,5 +1,5 @@
 import React, { useState, useRef, memo } from 'react';
-import { Virtuoso } from 'react-virtuoso';
+import { Virtuoso, VirtuosoHandle, State } from 'react-virtuoso';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { recordWatchInterest } from '../services/interestTracker';
@@ -27,6 +27,8 @@ interface InfiniteFeedProps {
   onClearTopicFilter?: () => void;
   onEndReached?: () => void;
   isFetchingNextPage?: boolean;
+  virtuosoRef?: React.RefObject<VirtuosoHandle | null>;
+  restoreStateFrom?: State;
 }
 
 export const FeedItem: React.FC<{
@@ -392,7 +394,9 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
   topicFilter,
   onClearTopicFilter,
   onEndReached,
-  isFetchingNextPage
+  isFetchingNextPage,
+  virtuosoRef,
+  restoreStateFrom
 }) => {
   return (
     <div className="w-full flex justify-center bg-background min-h-screen">
@@ -451,8 +455,10 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
         )}
 
         <Virtuoso
+          ref={virtuosoRef}
           useWindowScroll
           data={images}
+          restoreStateFrom={restoreStateFrom}
           endReached={onEndReached}
           itemContent={(index, image) => (
             <FeedItem

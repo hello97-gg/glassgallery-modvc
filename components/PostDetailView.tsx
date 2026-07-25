@@ -102,6 +102,8 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   };
 
   const navigateToPost = (img: ImageMeta) => {
+    const baseId = img.id.split('_loop_')[0];
+    window.history.pushState({}, '', `/image/${baseId}`);
     if (!document.startViewTransition) {
       window.scrollTo({ top: 0, behavior: 'instant' });
       setHistory(prev => [...prev, currentImage]);
