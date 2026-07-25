@@ -18,6 +18,8 @@ interface ExplorePageProps {
   initialSearchTerm?: string;
   onNavigateToApi?: () => void;
   onTrendingTopicClick?: (topic: string) => void;
+  onEndReached?: () => void;
+  isFetchingNextPage?: boolean;
 }
 
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
@@ -57,7 +59,18 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
   );
 };
 
-const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, initialSearchTerm = '', onNavigateToApi, onTrendingTopicClick }) => {
+const ExplorePage: React.FC<ExplorePageProps> = ({ 
+  images, 
+  user, 
+  onImageClick, 
+  onViewProfile, 
+  onLikeToggle, 
+  initialSearchTerm = '', 
+  onNavigateToApi, 
+  onTrendingTopicClick,
+  onEndReached,
+  isFetchingNextPage
+}) => {
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchTerm);
 
@@ -161,7 +174,15 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
             </div>
             
             {searchResults.length > 0 ? (
-                <ImageGrid images={searchResults} user={user} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={onLikeToggle} />
+                <ImageGrid 
+                  images={searchResults} 
+                  user={user} 
+                  onImageClick={onImageClick} 
+                  onViewProfile={onViewProfile} 
+                  onLikeToggle={onLikeToggle} 
+                  onEndReached={onEndReached}
+                  isFetchingMore={isFetchingNextPage}
+                />
             ) : (
                 <div className="text-center py-16 bg-surface/30 rounded-2xl border border-border border-dashed">
                     <svg className="mx-auto h-12 w-12 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -221,7 +242,15 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
             </Button>
             <h1 className="text-3xl font-bold text-primary">{selectedFlag}</h1>
         </div>
-        <ImageGrid images={imagesByFlag[selectedFlag]} user={user} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={onLikeToggle} />
+        <ImageGrid 
+          images={imagesByFlag[selectedFlag]} 
+          user={user} 
+          onImageClick={onImageClick} 
+          onViewProfile={onViewProfile} 
+          onLikeToggle={onLikeToggle} 
+          onEndReached={onEndReached}
+          isFetchingMore={isFetchingNextPage}
+        />
       </div>
     );
   }

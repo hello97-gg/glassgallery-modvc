@@ -306,9 +306,9 @@ const App: React.FC = () => {
   // Fetch-in-flight guard ref
   const isFetchingRef = useRef(false);
 
-  // Virtuoso scroll state refs
+  // Virtuoso scroll state refs keyed per route/tab
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
-  const savedVirtuosoStateRef = useRef<State | undefined>(undefined);
+  const savedVirtuosoStateRef = useRef<Record<string, State | undefined>>({});
 
 
 
@@ -1168,8 +1168,9 @@ const App: React.FC = () => {
       
       const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
       
+      const currentKey = `${activeView}_${feedTab}_${homeTopicFilter || 'all'}`;
       virtuosoRef.current?.getState((state) => {
-        savedVirtuosoStateRef.current = state;
+        savedVirtuosoStateRef.current[currentKey] = state;
       });
 
       setSelectedFeedPost(viewIncremented);
@@ -1304,7 +1305,8 @@ const App: React.FC = () => {
   }
   
   const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api') => {
-    savedVirtuosoStateRef.current = undefined; // Clear Virtuoso scroll state on explicit nav click
+    const navKey = `${view}_${feedTab}_${homeTopicFilter || 'all'}`;
+    savedVirtuosoStateRef.current[navKey] = undefined; // Clear Virtuoso scroll state on explicit nav click
     if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
         window.scrollTo({ top: 0, behavior: 'instant' });
         if (view === 'explore') {
@@ -1548,6 +1550,12 @@ const App: React.FC = () => {
                         handleSetView('home');
                         window.scrollTo(0, 0);
                     }}
+                    onEndReached={() => {
+                        if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
+                            fetchNextPage();
+                        }
+                    }}
+                    isFetchingNextPage={isFetchingNextPage}
                 />
             </>
         );
@@ -1659,7 +1667,7 @@ const App: React.FC = () => {
                 }}
                 isFetchingNextPage={isFetchingNextPage}
                 virtuosoRef={virtuosoRef}
-                restoreStateFrom={savedVirtuosoStateRef.current}
+                restoreStateFrom={savedVirtuosoStateRef.current[`${activeView}_${feedTab}_${homeTopicFilter || 'all'}`]}
             />
         </>
     );

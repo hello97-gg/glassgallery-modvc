@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import ImageCard from './ImageCard';
+import Spinner from './Spinner';
 
 interface ImageGridProps {
   images: ImageMeta[];
@@ -9,9 +10,27 @@ interface ImageGridProps {
   onImageClick: (image: ImageMeta) => void;
   onViewProfile: (user: ProfileUser) => void;
   onLikeToggle: (image: ImageMeta) => void;
+  onEndReached?: () => void;
+  isFetchingMore?: boolean;
 }
 
-const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle }) => {
+const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, onEndReached, isFetchingMore }) => {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!onEndReached || !sentinelRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          onEndReached();
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [onEndReached]);
+
   if (images.length === 0) {
     return (
       <div className="text-center py-16">
@@ -25,17 +44,22 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
   }
 
   return (
-    <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-6">
-      {images.map((image) => (
-        <ImageCard 
-            key={image.id} 
-            image={image}
-            user={user}
-            onClick={() => onImageClick(image)} 
-            onViewProfile={onViewProfile}
-            onLikeToggle={onLikeToggle}
-        />
-      ))}
+    <div className="flex flex-col w-full">
+      <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-6">
+        {images.map((image) => (
+          <ImageCard 
+              key={image.id} 
+              image={image}
+              user={user}
+              onClick={() => onImageClick(image)} 
+              onViewProfile={onViewProfile}
+              onLikeToggle={onLikeToggle}
+          />
+        ))}
+      </div>
+      <div ref={sentinelRef} className="h-16 w-full flex items-center justify-center py-4 mt-4">
+        {isFetchingMore && <Spinner />}
+      </div>
     </div>
   );
 };
