@@ -18,18 +18,27 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!onEndReached || !sentinelRef.current) return;
+    const el = sentinelRef.current;
+    if (!onEndReached || !el) {
+      console.log('[ImageGrid Observer] Skipping setup - onEndReached or sentinelRef missing', { hasOnEndReached: !!onEndReached, hasSentinel: !!el });
+      return;
+    }
+    console.log('[ImageGrid Observer] Attaching IntersectionObserver to sentinel', { imagesCount: images.length });
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
+          console.log('[ImageGrid Observer] Sentinel visible in viewport, triggering onEndReached()');
           onEndReached();
         }
       },
       { rootMargin: '400px' }
     );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [onEndReached]);
+    observer.observe(el);
+    return () => {
+      console.log('[ImageGrid Observer] Cleaning up / disconnecting IntersectionObserver');
+      observer.disconnect();
+    };
+  }, [onEndReached, images.length]);
 
   if (images.length === 0) {
     return (

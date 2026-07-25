@@ -1171,6 +1171,7 @@ const App: React.FC = () => {
       const currentKey = `${activeView}_${feedTab}_${homeTopicFilter || 'all'}`;
       virtuosoRef.current?.getState((state) => {
         savedVirtuosoStateRef.current[currentKey] = state;
+        console.log('[Virtuoso] Saved scroll state for key:', currentKey, state);
       });
 
       setSelectedFeedPost(viewIncremented);
@@ -1305,8 +1306,8 @@ const App: React.FC = () => {
   }
   
   const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api') => {
-    const navKey = `${view}_${feedTab}_${homeTopicFilter || 'all'}`;
-    savedVirtuosoStateRef.current[navKey] = undefined; // Clear Virtuoso scroll state on explicit nav click
+    savedVirtuosoStateRef.current = {}; // Clear all Virtuoso scroll states on explicit nav click to start fresh
+    console.log('[Nav] Explicit navigation click to view:', view, 'Cleared Virtuoso scroll states');
     if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
         window.scrollTo({ top: 0, behavior: 'instant' });
         if (view === 'explore') {
