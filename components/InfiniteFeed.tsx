@@ -367,13 +367,21 @@ export const FeedItem: React.FC<{
 }, (prevProps, nextProps) => {
   const prevBase = prevProps.image.id.split('_loop_')[0];
   const nextBase = nextProps.image.id.split('_loop_')[0];
+  const uid = nextProps.user?.uid;
+  const prevLiked = uid ? (prevProps.image.likedBy || []).includes(uid) : false;
+  const nextLiked = uid ? (nextProps.image.likedBy || []).includes(uid) : false;
+  const prevSaved = prevProps.savedImages.has(prevBase);
+  const nextSaved = nextProps.savedImages.has(nextBase);
+
   return (
     prevBase === nextBase &&
+    prevProps.image === nextProps.image &&
+    prevLiked === nextLiked &&
+    prevSaved === nextSaved &&
     prevProps.image.likeCount === nextProps.image.likeCount &&
     prevProps.image.downloadCount === nextProps.image.downloadCount &&
-    (prevProps.image.likedBy || []).length === (nextProps.image.likedBy || []).length &&
-    prevProps.user?.uid === nextProps.user?.uid &&
-    prevProps.savedImages === nextProps.savedImages
+    prevProps.image.commentCount === nextProps.image.commentCount &&
+    prevProps.user?.uid === nextProps.user?.uid
   );
 });
 
