@@ -266,6 +266,7 @@ export const FeedItem: React.FC<{
             <span className="text-xs">{image.commentCount || 0}</span>
           </button>
 
+          {/* Like */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -279,12 +280,19 @@ export const FeedItem: React.FC<{
           >
             <div className={`p-2 rounded-full group-hover:bg-pink-500/10 transition-colors`}>
               <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${hasLiked ? 'fill-pink-500' : 'fill-current'}`}>
-                <g><path d="M12 21.638h-.014C9.403 21.59 1.95 14.851 1.95 8.478c0-3.064 2.525-5.554 5.63-5.554 1.774 0 3.424.832 4.42 2.247 1-1.415 2.646-2.247 4.42-2.247 3.105 0 5.63 2.49 5.63 5.554 0 6.373-7.453 13.112-10.036 13.16s-.01.002-.014.002zM7.58 4.924c-1.996 0-3.63 1.595-3.63 3.554 0 4.397 5.2 10.36 8.05 11.144 2.85-.784 8.05-6.747 8.05-11.144 0-1.959-1.634-3.554-3.63-3.554-1.464 0-2.827.917-3.376 2.272h-2.092C10.407 5.841 9.044 4.924 7.58 4.924z"></path></g>
+                <g>
+                  {hasLiked ? (
+                    <path d="M12 21.638h-.014C9.403 21.59 1.95 14.851 1.95 8.478c0-3.064 2.525-5.554 5.63-5.554 1.774 0 3.424.832 4.42 2.247 1-1.415 2.646-2.247 4.42-2.247 3.105 0 5.63 2.49 5.63 5.554 0 6.373-7.453 13.112-10.036 13.16s-.01.002-.014.002z"></path>
+                  ) : (
+                    <path d="M12 21.638h-.014C9.403 21.59 1.95 14.851 1.95 8.478c0-3.064 2.525-5.554 5.63-5.554 1.774 0 3.424.832 4.42 2.247 1-1.415 2.646-2.247 4.42-2.247 3.105 0 5.63 2.49 5.63 5.554 0 6.373-7.453 13.112-10.036 13.16s-.01.002-.014.002zM7.58 4.924c-1.996 0-3.63 1.595-3.63 3.554 0 4.397 5.2 10.36 8.05 11.144 2.85-.784 8.05-6.747 8.05-11.144 0-1.959-1.634-3.554-3.63-3.554-1.464 0-2.827.917-3.376 2.272h-2.092C10.407 5.841 9.044 4.924 7.58 4.924z"></path>
+                  )}
+                </g>
               </svg>
             </div>
             <span className="text-xs">{image.likeCount || 0}</span>
           </button>
 
+          {/* Views */}
           <div className="flex items-center gap-1.5 group">
             <div className="p-2 rounded-full">
               <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] fill-current">
@@ -294,6 +302,7 @@ export const FeedItem: React.FC<{
             <span className="text-xs">{image.viewCount || 0}</span>
           </div>
 
+          {/* Bookmark / Save */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -303,7 +312,13 @@ export const FeedItem: React.FC<{
             className={`p-2 rounded-full hover:bg-accent/10 hover:text-accent transition-colors outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 ${hasSaved ? 'text-accent' : ''}`}
           >
             <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${hasSaved ? 'fill-accent' : 'fill-current'}`}>
-              <g><path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v16.86l-7.482-4.68-7.518 4.7V4.5zM6.5 4c-.276 0-.5.224-.5.5v13.64l5.518-3.45L17 18.12V4.5c0-.276-.224-.5-.5-.5h-11z"></path></g>
+              <g>
+                {hasSaved ? (
+                  <path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5z"></path>
+                ) : (
+                  <path d="M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v16.86l-7.482-4.68-7.518 4.7V4.5zM6.5 4c-.276 0-.5.224-.5.5v13.64l5.518-3.45L17 18.12V4.5c0-.276-.224-.5-.5-.5h-11z"></path>
+                )}
+              </g>
             </svg>
           </button>
 
