@@ -527,10 +527,10 @@ const App: React.FC = () => {
         
         if (isTabSwitch) {
             const targetLimit = feedTabLimits.current[feedTab] || FEED_BATCH_SIZE;
-            flushSync(() => {
+            setTimeout(() => {
                 setDisplayedImages(activeAllImages.slice(0, targetLimit));
                 setCurrentIndex(targetLimit);
-            });
+            }, 0);
             requestAnimationFrame(() => {
                 setTimeout(() => {
                     window.scrollTo({ top: feedTabScroll.current[feedTab] || 0, behavior: 'instant' });

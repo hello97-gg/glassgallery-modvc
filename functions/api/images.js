@@ -651,54 +651,59 @@ export async function onRequest(context) {
       }
       imagesQuery += " ORDER BY uploadedAt DESC";
 
-      if (url.searchParams.has('limit') || cursor) {
-        imagesQuery += " LIMIT ?";
-        imagesArgs.push(limitParam);
+      try {
+        if (url.searchParams.has('limit') || cursor) {
+          imagesQuery += " LIMIT ?";
+          imagesArgs.push(limitParam);
+        }
+
+        const defaultImagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
+        const defaultLikesRes = await db.execute("SELECT * FROM likes");
+
+        const defaultLikesMap = {};
+        defaultLikesRes.rows.forEach(like => {
+          const imgId = like.imageId;
+          const uUid = like.userUid;
+          if (!defaultLikesMap[imgId]) defaultLikesMap[imgId] = [];
+          defaultLikesMap[imgId].push(uUid);
+        });
+
+        const fetchedImages = defaultImagesRes.rows.map(row => {
+          const id = row.id;
+          let parsedFlags = [];
+          let parsedConcepts = [];
+          try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
+          try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
+
+          return {
+            id: row.id,
+            imageUrl: row.imageUrl,
+            uploaderUid: row.uploaderUid,
+            uploaderName: row.uploaderName,
+            uploaderPhotoURL: row.uploaderPhotoURL || '',
+            title: row.title || '',
+            description: row.description || '',
+            license: row.license,
+            licenseUrl: row.licenseUrl || '',
+            originalWorkUrl: row.originalWorkUrl || '',
+            uploadedAt: row.uploadedAt,
+            location: row.location || '',
+            likeCount: parseInt(row.likeCount || 0),
+            downloadCount: parseInt(row.downloadCount || 0),
+            commentCount: parseInt(row.commentCount || 0),
+            viewCount: parseInt(row.viewCount || 0),
+            flags: parsedFlags,
+            aiConcepts: parsedConcepts,
+            likedBy: defaultLikesMap[id] || []
+          };
+        });
+
+        const nextCursor = fetchedImages.length > 0 ? fetchedImages[fetchedImages.length - 1].uploadedAt : null;
+        return Response.json({ success: true, images: fetchedImages, nextCursor }, { status: 200, headers: cacheHeaders });
+      } catch (err) {
+        console.error("Error executing default images query:", err);
+        return Response.json({ success: false, error: err.message }, { status: 500, headers: cacheHeaders });
       }
-
-      const defaultImagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
-      const defaultLikesRes = await db.execute("SELECT * FROM likes");
-
-      const defaultLikesMap = {};
-      defaultLikesRes.rows.forEach(like => {
-        const imgId = like.imageId;
-        const uUid = like.userUid;
-        if (!defaultLikesMap[imgId]) defaultLikesMap[imgId] = [];
-        defaultLikesMap[imgId].push(uUid);
-      });
-
-      const fetchedImages = defaultImagesRes.rows.map(row => {
-        const id = row.id;
-        let parsedFlags = [];
-        let parsedConcepts = [];
-        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
-        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
-
-        return {
-          id: row.id,
-          imageUrl: row.imageUrl,
-          uploaderUid: row.uploaderUid,
-          uploaderName: row.uploaderName,
-          uploaderPhotoURL: row.uploaderPhotoURL || '',
-          title: row.title || '',
-          description: row.description || '',
-          license: row.license,
-          licenseUrl: row.licenseUrl || '',
-          originalWorkUrl: row.originalWorkUrl || '',
-          uploadedAt: row.uploadedAt,
-          location: row.location || '',
-          likeCount: parseInt(row.likeCount || 0),
-          downloadCount: parseInt(row.downloadCount || 0),
-          commentCount: parseInt(row.commentCount || 0),
-          viewCount: parseInt(row.viewCount || 0),
-          flags: parsedFlags,
-          aiConcepts: parsedConcepts,
-          likedBy: defaultLikesMap[id] || []
-        };
-      });
-
-      const nextCursor = fetchedImages.length > 0 ? fetchedImages[fetchedImages.length - 1].uploadedAt : null;
-      return Response.json({ success: true, images: fetchedImages, nextCursor }, { status: 200, headers: cacheHeaders });
     }
 
     // --- POST Method: Upload, Edit, Like, Download, Delete ---
