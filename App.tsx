@@ -461,11 +461,15 @@ const App: React.FC = () => {
         
         if (isTabSwitch) {
             const targetLimit = feedTabLimits.current[feedTab] || FEED_BATCH_SIZE;
-            setDisplayedImages(activeAllImages.slice(0, targetLimit));
-            setCurrentIndex(targetLimit);
-            setTimeout(() => {
-                window.scrollTo({ top: feedTabScroll.current[feedTab] || 0, behavior: 'instant' });
-            }, 50);
+            flushSync(() => {
+                setDisplayedImages(activeAllImages.slice(0, targetLimit));
+                setCurrentIndex(targetLimit);
+            });
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    window.scrollTo({ top: feedTabScroll.current[feedTab] || 0, behavior: 'instant' });
+                }, 100);
+            });
         } else {
             setDisplayedImages(activeAllImages.slice(0, FEED_BATCH_SIZE));
             setCurrentIndex(FEED_BATCH_SIZE);

@@ -8,7 +8,7 @@ import VideoPlayer from './VideoPlayer';
 import Button from './Button';
 import Spinner from './Spinner';
 
-const useVisibility = (margin = "350px") => {
+const useVisibility = (margin = "1500px") => {
   const [isVisible, setIsVisible] = useState(true);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const ref = useRef<HTMLElement>(null);
@@ -132,7 +132,7 @@ export const FeedItem: React.FC<{
     return Math.floor(seconds) + 's';
   };
 
-  const { ref, isVisible, height } = useVisibility("350px");
+  const { ref, isVisible, height } = useVisibility("1500px");
 
   return (
     <article 
