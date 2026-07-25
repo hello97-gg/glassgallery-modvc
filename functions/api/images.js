@@ -628,7 +628,9 @@ export async function onRequest(context) {
         const images = scoredImages.map(item => item.image);
 
         return Response.json({ success: true, images, personalized: true }, { status: 200, headers: cacheHeaders });
-           const cursor = url.searchParams.get('cursor');
+      }
+
+      const cursor = url.searchParams.get('cursor');
       const limitParam = parseInt(url.searchParams.get('limit') || '50');
 
       let imagesQuery = "SELECT * FROM images";
@@ -654,18 +656,18 @@ export async function onRequest(context) {
         imagesArgs.push(limitParam);
       }
 
-      const imagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
-      const likesRes = await db.execute("SELECT * FROM likes");
+      const defaultImagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
+      const defaultLikesRes = await db.execute("SELECT * FROM likes");
 
-      const likesMap = {};
-      likesRes.rows.forEach(like => {
+      const defaultLikesMap = {};
+      defaultLikesRes.rows.forEach(like => {
         const imgId = like.imageId;
         const uUid = like.userUid;
-        if (!likesMap[imgId]) likesMap[imgId] = [];
-        likesMap[imgId].push(uUid);
+        if (!defaultLikesMap[imgId]) defaultLikesMap[imgId] = [];
+        defaultLikesMap[imgId].push(uUid);
       });
 
-      const images = imagesRes.rows.map(row => {
+      const fetchedImages = defaultImagesRes.rows.map(row => {
         const id = row.id;
         let parsedFlags = [];
         let parsedConcepts = [];
@@ -691,12 +693,12 @@ export async function onRequest(context) {
           viewCount: parseInt(row.viewCount || 0),
           flags: parsedFlags,
           aiConcepts: parsedConcepts,
-          likedBy: likesMap[id] || []
+          likedBy: defaultLikesMap[id] || []
         };
       });
 
-      const nextCursor = images.length > 0 ? images[images.length - 1].uploadedAt : null;
-      return Response.json({ success: true, images, nextCursor }, { status: 200, headers: cacheHeaders }); });
+      const nextCursor = fetchedImages.length > 0 ? fetchedImages[fetchedImages.length - 1].uploadedAt : null;
+      return Response.json({ success: true, images: fetchedImages, nextCursor }, { status: 200, headers: cacheHeaders });
     }
 
     // --- POST Method: Upload, Edit, Like, Download, Delete ---
