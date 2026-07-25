@@ -83,7 +83,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
   onEndReached,
   isFetchingNextPage
 }) => {
-  console.log('ExplorePage received onEndReached:', typeof onEndReached);
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchTerm);
 

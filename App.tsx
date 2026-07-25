@@ -454,7 +454,7 @@ const App: React.FC = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, user?.uid],
+    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, exploreSearchTerm, user?.uid],
     queryFn: async ({ pageParam = 0 }) => {
       isFetchingRef.current = true;
       try {
@@ -476,6 +476,17 @@ const App: React.FC = () => {
             img.title?.toLowerCase().includes(lowerTopic) ||
             img.description?.toLowerCase().includes(lowerTopic) ||
             img.aiConcepts?.some(c => c.toLowerCase() === lowerTopic)
+          );
+        }
+        if (exploreSearchTerm) {
+          const lowerSearch = exploreSearchTerm.toLowerCase();
+          filtered = filtered.filter(img => 
+            img.title?.toLowerCase().includes(lowerSearch) ||
+            img.description?.toLowerCase().includes(lowerSearch) ||
+            img.flags?.some(f => f.toLowerCase().includes(lowerSearch)) ||
+            img.uploaderName?.toLowerCase().includes(lowerSearch) ||
+            img.location?.toLowerCase().includes(lowerSearch) ||
+            img.aiConcepts?.some(c => c.toLowerCase().includes(lowerSearch))
           );
         }
 
