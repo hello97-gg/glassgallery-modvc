@@ -1539,7 +1539,7 @@ const App: React.FC = () => {
                     favicon={EXPLORE_FAVICON}
                 />
                 <ExplorePage 
-                    images={allImages} 
+                    images={feedImages.length > 0 ? feedImages : allImages} 
                     user={user} 
                     onImageClick={handleImageClick} 
                     onViewProfile={handleViewProfile} 
@@ -1552,6 +1552,7 @@ const App: React.FC = () => {
                         window.scrollTo(0, 0);
                     }}
                     onEndReached={() => {
+                        console.log('[Explore View] Sentinel triggered onEndReached!');
                         if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
                             fetchNextPage();
                         }
@@ -1562,7 +1563,7 @@ const App: React.FC = () => {
         );
     }
 
-    // DISCOVER (Old Home Grid)
+    // DISCOVER (Masonry Grid Feed)
     if (activeView === 'discover') {
         return (
             <>
@@ -1572,7 +1573,20 @@ const App: React.FC = () => {
                     url={window.location.href}
                     favicon={DEFAULT_FAVICON}
                 />
-                <ImageGrid images={displayedImages} user={user} onImageClick={handleImageClick} onViewProfile={handleViewProfile} onLikeToggle={handleLikeToggle} />
+                <ImageGrid 
+                    images={feedImages.length > 0 ? feedImages : displayedImages} 
+                    user={user} 
+                    onImageClick={handleImageClick} 
+                    onViewProfile={handleViewProfile} 
+                    onLikeToggle={handleLikeToggle} 
+                    onEndReached={() => {
+                        console.log('[Discover View] Sentinel triggered onEndReached!');
+                        if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
+                            fetchNextPage();
+                        }
+                    }}
+                    isFetchingMore={isFetchingNextPage}
+                />
             </>
         );
     }
