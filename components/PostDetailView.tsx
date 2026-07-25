@@ -52,7 +52,25 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [showEmbed, setShowEmbed] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isMainLoaded, setIsMainLoaded] = useState(false);
+  const [renderRelated, setRenderRelated] = useState(false);
+  const mainImgRef = useRef<HTMLImageElement>(null);
   const watchLoggedRef = useRef(false);
+
+  useEffect(() => {
+    setIsMainLoaded(false);
+    if (mainImgRef.current && mainImgRef.current.complete && mainImgRef.current.naturalWidth > 0) {
+      setIsMainLoaded(true);
+    }
+  }, [currentImage.imageUrl]);
+
+  useEffect(() => {
+    setRenderRelated(false);
+    const timer = setTimeout(() => {
+      setRenderRelated(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [currentImage.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -613,7 +631,12 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             </div>
 
             {/* Image/Video */}
-            <div className="rounded-2xl border border-border overflow-hidden max-h-[500px] mx-4 mt-4 bg-black/5">
+            <div className="relative rounded-2xl border border-border overflow-hidden max-h-[500px] min-h-[200px] mx-4 mt-4 bg-black/40 flex items-center justify-center">
+              {!isMainLoaded && !isVideoUrl(currentImage.imageUrl) && (
+                <div className="absolute inset-0 bg-surface/50 animate-pulse flex items-center justify-center">
+                  <Spinner />
+                </div>
+              )}
               {isVideoUrl(currentImage.imageUrl) ? (
                   <VideoPlayer 
                     src={currentImage.imageUrl} 
@@ -625,9 +648,12 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                   />
               ) : (
                   <img
+                    ref={mainImgRef}
                     src={currentImage.imageUrl}
                     alt={currentImage.title || 'Image Detail'}
-                    className="w-full h-full object-contain max-h-[500px] bg-black/40"
+                    decoding="async"
+                    className={`w-full h-full object-contain max-h-[500px] bg-black/40 transition-opacity duration-200 ${isMainLoaded ? 'opacity-100' : 'opacity-0'}`}
+                    onLoad={() => setIsMainLoaded(true)}
                   />
               )}
             </div>
@@ -749,21 +775,28 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                   <h2 className="text-xl font-bold text-primary">Discover more</h2>
                </div>
                <div className="flex flex-col">
-                  {relatedImages.map(suggestedImg => (
-                      <FeedItem 
-                          key={suggestedImg.id}
-                          image={suggestedImg}
-                          user={user}
-                          onImageClick={(img) => {
-                              navigateToPost(img);
-                          }}
-                          onViewProfile={onViewProfile}
-                          onLikeToggle={onLikeToggle}
-                          onLoginClick={onLoginClick}
-                          savedImages={savedImages}
-                          onSaveToggle={onSaveToggle}
-                      />
-                  ))}
+                  {renderRelated ? (
+                    relatedImages.map(suggestedImg => (
+                        <FeedItem 
+                            key={suggestedImg.id}
+                            image={suggestedImg}
+                            user={user}
+                            onImageClick={(img) => {
+                                navigateToPost(img);
+                            }}
+                            onViewProfile={onViewProfile}
+                            onLikeToggle={onLikeToggle}
+                            onLoginClick={onLoginClick}
+                            savedImages={savedImages}
+                            onSaveToggle={onSaveToggle}
+                        />
+                    ))
+                  ) : (
+                    <div className="p-4 space-y-4">
+                      <div className="h-48 bg-surface/50 rounded-2xl animate-pulse" />
+                      <div className="h-48 bg-surface/50 rounded-2xl animate-pulse" />
+                    </div>
+                  )}
                </div>
             </div>
           </div>
