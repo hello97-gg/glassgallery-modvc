@@ -26,7 +26,7 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
     console.log('[ImageGrid Observer] Attaching IntersectionObserver to sentinel', { imagesCount: images.length });
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
+        if (entries[0].isIntersecting && !isFetchingMore) {
           console.log('[ImageGrid Observer] Sentinel visible in viewport, triggering onEndReached()');
           onEndReached();
         }

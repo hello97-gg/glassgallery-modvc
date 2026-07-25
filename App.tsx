@@ -454,7 +454,7 @@ const App: React.FC = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['feedData', feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, user?.uid],
+    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, user?.uid],
     queryFn: async ({ pageParam = 0 }) => {
       isFetchingRef.current = true;
       try {
@@ -499,7 +499,18 @@ const App: React.FC = () => {
   const feedImages = useMemo(() => {
     if (!feedQueryData) return activeAllImages.slice(0, FEED_BATCH_SIZE);
     const flattened = feedQueryData.pages.flatMap(page => page.items);
-    return flattened.length > 0 ? flattened : activeAllImages.slice(0, FEED_BATCH_SIZE);
+    if (flattened.length === 0) return activeAllImages.slice(0, FEED_BATCH_SIZE);
+
+    const seen = new Set<string>();
+    const deduped: ImageMeta[] = [];
+    for (const img of flattened) {
+      const baseId = img.id.split('_loop_')[0];
+      if (!seen.has(baseId)) {
+        seen.add(baseId);
+        deduped.push(img);
+      }
+    }
+    return deduped;
   }, [feedQueryData, activeAllImages, FEED_BATCH_SIZE]);
 
   const lastFilterState = useRef({ feedTab, homeTopicFilter, loaded: false });
