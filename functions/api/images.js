@@ -628,14 +628,30 @@ export async function onRequest(context) {
         const images = scoredImages.map(item => item.image);
 
         return Response.json({ success: true, images, personalized: true }, { status: 200, headers: cacheHeaders });
-      }
+           const cursor = url.searchParams.get('cursor');
+      const limitParam = parseInt(url.searchParams.get('limit') || '50');
 
-      let imagesQuery = "SELECT * FROM images ORDER BY uploadedAt DESC";
+      let imagesQuery = "SELECT * FROM images";
       let imagesArgs = [];
+      let conditions = [];
 
       if (uploaderUid) {
-        imagesQuery = "SELECT * FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC";
-        imagesArgs = [uploaderUid];
+        conditions.push("uploaderUid = ?");
+        imagesArgs.push(uploaderUid);
+      }
+      if (cursor) {
+        conditions.push("uploadedAt < ?");
+        imagesArgs.push(cursor);
+      }
+
+      if (conditions.length > 0) {
+        imagesQuery += " WHERE " + conditions.join(" AND ");
+      }
+      imagesQuery += " ORDER BY uploadedAt DESC";
+
+      if (url.searchParams.has('limit') || cursor) {
+        imagesQuery += " LIMIT ?";
+        imagesArgs.push(limitParam);
       }
 
       const imagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
@@ -675,11 +691,12 @@ export async function onRequest(context) {
           viewCount: parseInt(row.viewCount || 0),
           flags: parsedFlags,
           aiConcepts: parsedConcepts,
-          likedBy: likesMap[id] || [],
+          likedBy: likesMap[id] || []
         };
       });
 
-      return Response.json({ success: true, images }, { status: 200, headers: cacheHeaders });
+      const nextCursor = images.length > 0 ? images[images.length - 1].uploadedAt : null;
+      return Response.json({ success: true, images, nextCursor }, { status: 200, headers: cacheHeaders }); });
     }
 
     // --- POST Method: Upload, Edit, Like, Download, Delete ---

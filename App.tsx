@@ -304,8 +304,7 @@ const App: React.FC = () => {
   // Fetch-in-flight guard ref
   const isFetchingRef = useRef(false);
 
-  const profileRef = useRef(currentUserProfile);
-  profileRef.current = currentUserProfile;
+
 
   useEffect(() => {
     try {
@@ -554,6 +553,8 @@ const App: React.FC = () => {
   const scrollPositions = useRef<Record<string, number>>({});
 
   const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
+  const profileRef = useRef(currentUserProfile);
+  profileRef.current = currentUserProfile;
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   // derivation of tags with at least 5 images along with up to 3 previews each
