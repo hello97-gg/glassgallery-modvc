@@ -71,6 +71,27 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
   );
 };
 
+const DEFAULT_CATEGORIES = [
+  'Anime', 'Aesthetic', 'Lofi', 'Classic Scenic Landscapes', 
+  'Clouds', 'Day', '1Girl', 'Cloudy Sky', 'Nature', 'Space', 
+  'Architecture', 'Abstract', 'Cyberpunk', 'Minimalist', 'Neon', 'Portrait'
+];
+
+const CategorySkeleton: React.FC<{ flag: string; onClick: () => void }> = ({ flag, onClick }) => {
+  return (
+    <div 
+      onClick={onClick}
+      className="relative aspect-1 cursor-pointer group bg-surface/40 border border-border/40 rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:scale-[1.02] flex items-end justify-start p-4"
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-neutral-800/60 to-neutral-900/80 animate-pulse" />
+      <div className="relative z-10">
+        <h2 className="text-primary font-bold text-base md:text-xl tracking-tight truncate">{flag}</h2>
+        <span className="text-[11px] text-secondary">Explore collection</span>
+      </div>
+    </div>
+  );
+};
+
 const ExplorePage: React.FC<ExplorePageProps> = ({ 
   images, 
   user, 
@@ -92,7 +113,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     }
   }, [initialSearchTerm]);
 
-  // Track search intent with debounce (saves to localStorage for personalization)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -104,7 +124,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
   }, [searchQuery]);
 
-  // Aggregate images by tags (flags)
   const imagesByFlag = useMemo(() => {
     return images.reduce((acc, image) => {
       if (Array.isArray(image.flags)) {
@@ -119,9 +138,12 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     }, {} as Record<string, ImageMeta[]>);
   }, [images]);
 
-  const sortedFlags = useMemo(() => Object.keys(imagesByFlag).sort(), [imagesByFlag]);
+  const sortedFlags = useMemo(() => {
+    const flagsFromImages = Object.keys(imagesByFlag);
+    const combined = Array.from(new Set([...DEFAULT_CATEGORIES, ...flagsFromImages]));
+    return combined.sort();
+  }, [imagesByFlag]);
 
-  // Pre-calculate deterministic static representative images for category cards to prevent video stream overload & RAM leaks
   const representativeImages = useMemo(() => {
     const map: Record<string, ImageMeta> = {};
     Object.entries(imagesByFlag).forEach(([flag, categoryImages]: [string, ImageMeta[]]) => {
@@ -133,7 +155,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     return map;
   }, [imagesByFlag]);
 
-  // Search Logic
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     
@@ -149,10 +170,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     });
   }, [images, searchQuery]);
 
-
-  // --- RENDER HELPERS ---
-
-  // 1. Search Results View
   if (searchQuery.trim()) {
       return (
         <div className="animate-fade-in">
