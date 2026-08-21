@@ -42,14 +42,14 @@ export const recordLikeInterest = (image: ImageMeta): void => {
   const interests = getInterests();
   const tags = image.flags || [];
   const concepts = (image as any).aiConcepts || [];
-  // Likes are a stronger signal (2x)
+  // Likes are the strongest explicit signal (3x tags, 1.5x concepts)
   tags.forEach((tag: string) => {
     const key = tag.toLowerCase();
-    interests[key] = (interests[key] || 0) + 2;
+    interests[key] = (interests[key] || 0) + 3;
   });
   concepts.forEach((concept: string) => {
     const key = concept.toLowerCase();
-    interests[key] = (interests[key] || 0) + 1;
+    interests[key] = (interests[key] || 0) + 1.5;
   });
   saveInterests(interests);
 };
@@ -60,8 +60,8 @@ export const recordWatchInterest = (image: ImageMeta, ratio: number): void => {
   const tags = image.flags || [];
   const concepts = (image as any).aiConcepts || [];
   
-  // Strong signal if watched > 50% (+2 weight), medium signal otherwise (+1 weight)
-  const weightMultiplier = ratio >= 0.5 ? 2.0 : 1.0;
+  // Strong signal if watched > 50% (+2.5 weight), medium signal otherwise (+1 weight)
+  const weightMultiplier = ratio >= 0.5 ? 2.5 : 1.0;
 
   tags.forEach((tag: string) => {
     const key = tag.toLowerCase();
@@ -90,14 +90,21 @@ export const getInterestBoost = (image: ImageMeta): number => {
   if (Object.keys(interests).length === 0) return 0;
 
   let score = 0;
+  // Exact tag/concept matches are the highest-confidence signal — weight them above raw text hits.
+  const tagSet = new Set((image.flags || []).map(t => t.toLowerCase()));
+  const conceptSet = new Set(((image as any).aiConcepts || []).map((c: string) => c.toLowerCase()));
   const allText = `${image.title || ''} ${image.description || ''} ${(image.flags || []).join(' ')} ${((image as any).aiConcepts || []).join(' ')} ${image.location || ''}`.toLowerCase();
 
   for (const [term, weight] of Object.entries(interests)) {
-    if (allText.includes(term)) {
-      score += Math.min(weight * 150, 800); // Cap per-term boost
+    if (tagSet.has(term) || conceptSet.has(term)) {
+      // Direct tag/concept match — aggressive boost
+      score += Math.min(weight * 300, 1600);
+    } else if (allText.includes(term)) {
+      // Softer text/metadata match
+      score += Math.min(weight * 150, 800);
     }
   }
-  return Math.min(score, 2000); // Cap total boost
+  return Math.min(score, 4000); // Cap total boost
 };
 
 // --- Cache Management (Cost Optimization) ---

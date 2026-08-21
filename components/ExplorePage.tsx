@@ -11,16 +11,22 @@ import { getAuth } from 'firebase/auth';
 
 interface ExplorePageProps {
   images: ImageMeta[];
+  /** Full image database used for search so matches aren't limited to the paginated feed. */
+  searchPool?: ImageMeta[];
   user: User | null;
   onImageClick: (image: ImageMeta) => void;
   onViewProfile: (user: ProfileUser) => void;
   onLikeToggle: (image: ImageMeta) => void;
   initialSearchTerm?: string;
+  onSearchChange?: (term: string) => void;
   onNavigateToApi?: () => void;
   onTrendingTopicClick?: (topic: string) => void;
   onEndReached?: () => void;
   isFetchingNextPage?: boolean;
 }
+
+// How many search matches to reveal per scroll batch (smooth progressive loading).
+const SEARCH_REVEAL_BATCH = 24;
 
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -92,21 +98,24 @@ const CategorySkeleton: React.FC<{ flag: string; onClick: () => void }> = ({ fla
   );
 };
 
-const ExplorePage: React.FC<ExplorePageProps> = ({ 
-  images, 
-  user, 
-  onImageClick, 
-  onViewProfile, 
-  onLikeToggle, 
-  initialSearchTerm = '', 
+const ExplorePage: React.FC<ExplorePageProps> = ({
+  images,
+  searchPool,
+  user,
+  onImageClick,
+  onViewProfile,
+  onLikeToggle,
+  initialSearchTerm = '',
   onSearchChange,
-  onNavigateToApi, 
+  onNavigateToApi,
   onTrendingTopicClick,
   onEndReached,
   isFetchingNextPage
 }) => {
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchTerm);
+  // Progressive reveal counter — search matches stream in a batch at a time as the user scrolls.
+  const [visibleSearchCount, setVisibleSearchCount] = useState(SEARCH_REVEAL_BATCH);
 
   const handleSearchInputChange = (term: string) => {
     setSearchQuery(term);
@@ -163,26 +172,61 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     return map;
   }, [imagesByFlag]);
 
+  // Search scans the ENTIRE database (searchPool = full allImages), falling back to the
+  // paginated `images` only if no pool was supplied. This is why every matching image is
+  // found — not just the ones already loaded into the feed.
+  const searchSource = (searchPool && searchPool.length > 0) ? searchPool : images;
+
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    
+
     const lowerQuery = searchQuery.toLowerCase();
-    return images.filter(img => {
+    return searchSource.filter(img => {
         const titleMatch = img.title?.toLowerCase().includes(lowerQuery);
         const descMatch = img.description?.toLowerCase().includes(lowerQuery);
         const flagMatch = img.flags?.some(f => f.toLowerCase().includes(lowerQuery));
-        const uploaderMatch = img.uploaderName.toLowerCase().includes(lowerQuery);
+        const tagMatch = img.tags?.some(t => t.toLowerCase().includes(lowerQuery));
+        const conceptMatch = (img as any).aiConcepts?.some((c: string) => c.toLowerCase().includes(lowerQuery));
+        const uploaderMatch = img.uploaderName?.toLowerCase().includes(lowerQuery);
         const locationMatch = img.location?.toLowerCase().includes(lowerQuery);
-        
-        return titleMatch || descMatch || flagMatch || uploaderMatch || locationMatch;
+
+        return titleMatch || descMatch || flagMatch || tagMatch || conceptMatch || uploaderMatch || locationMatch;
     });
-  }, [images, searchQuery]);
+  }, [searchSource, searchQuery]);
+
+  // Restart the progressive reveal whenever the query changes so each new search
+  // streams in from the top rather than jumping to a previous scroll depth.
+  useEffect(() => {
+    setVisibleSearchCount(SEARCH_REVEAL_BATCH);
+  }, [searchQuery]);
+
+  const visibleSearchResults = useMemo(
+    () => searchResults.slice(0, visibleSearchCount),
+    [searchResults, visibleSearchCount]
+  );
+  const hasMoreSearchResults = visibleSearchCount < searchResults.length;
+
+  // Reveal the next batch as the user scrolls (ImageGrid fires this near the bottom).
+  const handleSearchEndReached = () => {
+    if (hasMoreSearchResults) {
+      setVisibleSearchCount((c) => c + SEARCH_REVEAL_BATCH);
+    } else if (onEndReached) {
+      onEndReached();
+    }
+  };
 
   if (searchQuery.trim()) {
       return (
         <div className="animate-fade-in">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <h1 className="text-3xl font-bold text-primary">Search Results</h1>
+                <h1 className="text-3xl font-bold text-primary">
+                    Search Results
+                    {searchResults.length > 0 && (
+                        <span className="ml-3 text-base font-normal text-secondary align-middle">
+                            {searchResults.length} {searchResults.length === 1 ? 'match' : 'matches'}
+                        </span>
+                    )}
+                </h1>
                 <div className="relative w-full md:w-96">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -211,14 +255,14 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
             </div>
             
             {searchResults.length > 0 ? (
-                <ImageGrid 
-                  images={searchResults} 
-                  user={user} 
-                  onImageClick={onImageClick} 
-                  onViewProfile={onViewProfile} 
-                  onLikeToggle={onLikeToggle} 
-                  onEndReached={onEndReached}
-                  isFetchingMore={isFetchingNextPage}
+                <ImageGrid
+                  images={visibleSearchResults}
+                  user={user}
+                  onImageClick={onImageClick}
+                  onViewProfile={onViewProfile}
+                  onLikeToggle={onLikeToggle}
+                  onEndReached={handleSearchEndReached}
+                  isFetchingMore={hasMoreSearchResults}
                 />
             ) : (
                 <div className="text-center py-16 bg-surface/30 rounded-2xl border border-border border-dashed">

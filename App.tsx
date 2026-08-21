@@ -9,7 +9,7 @@ import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile, getFollowingList } from './services/firestoreService';
-import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
+import { getInterestBoost, recordClickInterest, recordLikeInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import { isVideoUrl } from './utils/mediaUtils';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 import { getCachedData, setCachedData } from './utils/idbCache';
@@ -168,9 +168,34 @@ const seededRandom = (id: string): number => {
   return Math.abs(hash % 1000) / 1000;
 };
 
-// Smart "Addictive" sorting algorithm — Twitter-inspired with content diversity
-const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): ImageMeta[] => {
+// Ranking weights for the Home feed — tuned "aggressive": demonstrated taste + follows dominate,
+// while velocity / video / novelty stay strong as engagement hooks. Tweak here to re-tune.
+const FEED_WEIGHTS = {
+  followedCreator: 1400,        // uploader is someone you follow (strongest social signal)
+  socialProof: 550,             // image liked by someone you follow
+  followedTagPerOverlap: 700,   // each followed-tag match
+  likedConceptPerOverlap: 450,  // each tag/concept you've engaged with (likes/views)
+  likedConceptCap: 1800,
+  velocityCap: 900,             // engagement velocity ceiling
+  surpriseBase: 500,            // "in case you missed it" older-popular resurfacing
+  surpriseLikeCap: 300,
+  randomRange: 350,             // session-seeded jitter for freshness
+};
+
+const EMPTY_STRING_SET: Set<string> = new Set();
+
+// Smart "Addictive" sorting algorithm — Twitter-inspired with content diversity.
+// followingUids / likedConceptSet are optional taste signals; when empty (cold start / logged out)
+// the feed gracefully falls back to recency + velocity + video + surprise.
+const smartSortImages = (
+  images: ImageMeta[],
+  profile?: ProfileUser | null,
+  followingUids: Set<string> = EMPTY_STRING_SET,
+  likedConceptSet: Set<string> = EMPTY_STRING_SET,
+): ImageMeta[] => {
   const now = Date.now();
+  const hasFollows = followingUids.size > 0;
+  const hasLikedConcepts = likedConceptSet.size > 0;
 
   type ImageWithScore = ImageMeta & { sortScore?: number; isVideo?: boolean };
 
@@ -179,20 +204,21 @@ const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): Ima
       const uploadedAt = image.uploadedAt?.toDate ? image.uploadedAt.toDate().getTime() : now;
       const ageInHours = (now - uploadedAt) / (1000 * 60 * 60);
 
-      // 1. Recency Score — Twitter-style time decay (smoother curve)
+      // 1. Recency Score — Twitter-style time decay (top tiers lowered so a strong personal
+      //    match can outrank a brand-new random post, while the feed still feels fresh)
       let recencyScore = 0;
       if (ageInHours < 1) {
-          recencyScore = 1800;
+          recencyScore = 900;
       } else if (ageInHours < 6) {
-          recencyScore = 1000;
+          recencyScore = 550;
       } else if (ageInHours < 24) {
-          recencyScore = 500;
+          recencyScore = 320;
       } else if (ageInHours < 72) {
-          recencyScore = 200;
+          recencyScore = 140;
       } else if (ageInHours < 168) {
-          recencyScore = 80;
+          recencyScore = 60;
       } else {
-          recencyScore = 40 / (Math.max(1, ageInHours / 168));
+          recencyScore = 30 / (Math.max(1, ageInHours / 168));
       }
 
       // 2. Engagement velocity — reward content getting interaction relative to age
@@ -200,37 +226,61 @@ const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): Ima
       const downloadCount = image.downloadCount || 0;
       const ageHoursFloor = Math.max(1, ageInHours);
       const velocityScore = ((likeCount * 10) + (downloadCount * 3)) / Math.sqrt(ageHoursFloor);
-      const popularityScore = Math.min(velocityScore, 600);
+      const popularityScore = Math.min(velocityScore, FEED_WEIGHTS.velocityCap);
 
-      // 3. Personalized affinity boost
+      // 3. Personalized affinity boost — followed tags (explicit taste)
       let personalizationBoost = 0;
       if (profile && profile.followedTags && profile.followedTags.length > 0) {
           const imgTags = image.flags || [];
           const overlap = imgTags.filter(t => profile.followedTags?.includes(t));
-          personalizationBoost += overlap.length * 400;
+          personalizationBoost += overlap.length * FEED_WEIGHTS.followedTagPerOverlap;
       }
 
-      // 4. Client-side interest boost
-      const interestBoost = Math.min(getInterestBoost(image), 400);
+      // 4. Client-side interest boost (localStorage: search/click/like/watch). Uncapped here —
+      //    getInterestBoost is already bounded internally; strong matches SHOULD top the feed.
+      const interestBoost = getInterestBoost(image);
 
-      // 5. Moderate video boost
+      // 5. Liked-concept affinity — tags/concepts from content this user has liked/viewed
+      //    (server-derived via likedBy; complements localStorage on fresh devices)
+      let likedConceptBoost = 0;
+      if (hasLikedConcepts) {
+          let overlap = 0;
+          (image.flags || []).forEach(f => { if (likedConceptSet.has(f.toLowerCase())) overlap++; });
+          ((image as any).aiConcepts || []).forEach((c: string) => { if (likedConceptSet.has(c.toLowerCase())) overlap++; });
+          likedConceptBoost = Math.min(overlap * FEED_WEIGHTS.likedConceptPerOverlap, FEED_WEIGHTS.likedConceptCap);
+      }
+
+      // 6. Follow boost — content from creators you follow (strongest social signal)
+      let followBoost = 0;
+      if (hasFollows && followingUids.has(image.uploaderUid)) {
+          followBoost = FEED_WEIGHTS.followedCreator;
+      }
+
+      // 7. Social proof — image liked by someone you follow
+      let socialProof = 0;
+      if (hasFollows && (image.likedBy || []).some(uid => followingUids.has(uid))) {
+          socialProof = FEED_WEIGHTS.socialProof;
+      }
+
+      // 8. Moderate video boost
       const isVideo = isVideoUrl(image.imageUrl);
       const videoBoost = isVideo && ageInHours < 48 ? 200 : (isVideo ? 50 : 0);
 
-      // 6. "In case you missed it" — occasionally boost older popular content (Twitter-like discovery)
+      // 9. "In case you missed it" — occasionally resurface older popular content (bounded so it
+      //    can't outrank a strong personal/follow match)
       let surpriseBoost = 0;
       if (ageInHours > 24 && likeCount >= 3) {
           // ~20% chance to boost older popular content into the top section
           const surprise = seededRandom(image.id + '_surprise');
           if (surprise < 0.2) {
-              surpriseBoost = 800 + (likeCount * 20);
+              surpriseBoost = FEED_WEIGHTS.surpriseBase + Math.min(likeCount * 15, FEED_WEIGHTS.surpriseLikeCap);
           }
       }
 
-      // 7. Large randomness factor — makes every Home click feel fresh and interesting
-      const randomFactor = seededRandom(image.id) * 600;
+      // 10. Session-seeded jitter — keeps every Home refresh feeling fresh (deterministic per session)
+      const randomFactor = seededRandom(image.id) * FEED_WEIGHTS.randomRange;
 
-      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + videoBoost + surpriseBoost + randomFactor;
+      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + likedConceptBoost + followBoost + socialProof + videoBoost + surpriseBoost + randomFactor;
 
       return { ...image, sortScore: finalScore, isVideo };
     })
@@ -505,7 +555,7 @@ const App: React.FC = () => {
           );
         }
 
-        const sorted = smartSortImages(filtered, profileRef.current);
+        const sorted = smartSortImages(filtered, profileRef.current, followingUidsRef.current, likedConceptSetRef.current);
         const pageSize = FEED_BATCH_SIZE;
         const pageItems = sorted.slice(pageParam, pageParam + pageSize);
         return {
@@ -604,6 +654,26 @@ const App: React.FC = () => {
   const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
   const profileRef = useRef(currentUserProfile);
   profileRef.current = currentUserProfile;
+
+  // Taste signals for the feed ranker, mirrored into refs so the long-lived feed subscription
+  // and query closures always read fresh values (same pattern as profileRef above).
+  // likedConceptSet = tags/concepts of images THIS user has liked (server-derived via likedBy),
+  // which complements the localStorage interest tracker on fresh devices.
+  const likedConceptSet = useMemo(() => {
+    const set = new Set<string>();
+    if (!user) return set;
+    for (const img of allImages) {
+      if ((img.likedBy || []).includes(user.uid)) {
+        (img.flags || []).forEach((f: string) => set.add(f.toLowerCase()));
+        ((img as any).aiConcepts || []).forEach((c: string) => set.add(c.toLowerCase()));
+      }
+    }
+    return set;
+  }, [allImages, user]);
+  const followingUidsRef = useRef(followingUids);
+  followingUidsRef.current = followingUids;
+  const likedConceptSetRef = useRef(likedConceptSet);
+  likedConceptSetRef.current = likedConceptSet;
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   // derivation of tags with at least 5 images along with up to 3 previews each
@@ -952,7 +1022,7 @@ const App: React.FC = () => {
             setAllImages((prevImages) => {
                  // If this is the very first load, sort once and display
                   if (prevImages.length === 0) {
-                      const sorted = smartSortImages(fetchedImages, profileRef.current);
+                      const sorted = smartSortImages(fetchedImages, profileRef.current, followingUidsRef.current, likedConceptSetRef.current);
                       setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
                       setCurrentIndex(FEED_BATCH_SIZE);
                       setImagesLoading(false);
@@ -1266,7 +1336,7 @@ const App: React.FC = () => {
     
     fetchFn.then((images) => {
          // For personalized feed, images are already sorted by the server
-         const sorted = user ? images : smartSortImages(images, currentUserProfile);
+         const sorted = user ? images : smartSortImages(images, currentUserProfile, followingUids, likedConceptSet);
          setAllImages(sorted);
          setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
          setCurrentIndex(FEED_BATCH_SIZE);
@@ -1275,7 +1345,7 @@ const App: React.FC = () => {
         console.error("Refetch failed", err);
         // Fallback to generic fetch
         getImagesFromFirestore().then(({ images }) => {
-          const sorted = smartSortImages(images, currentUserProfile);
+          const sorted = smartSortImages(images, currentUserProfile, followingUids, likedConceptSet);
           setAllImages(sorted);
           setDisplayedImages(sorted.slice(0, FEED_BATCH_SIZE));
           setCurrentIndex(FEED_BATCH_SIZE);
@@ -1360,10 +1430,13 @@ const App: React.FC = () => {
             setHomeTopicFilter('');
             // Refresh feed with new sort order (like Twitter pull-to-refresh)
             refreshSessionSeed();
-            const freshSorted = smartSortImages(allImages, profileRef.current);
+            const freshSorted = smartSortImages(allImages, profileRef.current, followingUidsRef.current, likedConceptSetRef.current);
             setAllImages(freshSorted);
             setDisplayedImages(freshSorted.slice(0, FEED_BATCH_SIZE));
             setCurrentIndex(FEED_BATCH_SIZE);
+            // The rendered feed comes from useInfiniteQuery (feedImages), which isn't keyed on
+            // the session seed — reset it so page 0 re-sorts with the new seed and shows fresh content.
+            queryClient.resetQueries({ queryKey: ['feedData'] });
         }
     } else {
         saveScrollPosition();
@@ -1375,10 +1448,13 @@ const App: React.FC = () => {
             setHomeTopicFilter('');
             // Refresh feed with new sort order when navigating to Home
             refreshSessionSeed();
-            const freshSorted = smartSortImages(allImages, profileRef.current);
+            const freshSorted = smartSortImages(allImages, profileRef.current, followingUidsRef.current, likedConceptSetRef.current);
             setAllImages(freshSorted);
             setDisplayedImages(freshSorted.slice(0, FEED_BATCH_SIZE));
             setCurrentIndex(FEED_BATCH_SIZE);
+            // feedImages (what Home actually renders) is driven by useInfiniteQuery and isn't keyed
+            // on the session seed — reset it so returning to Home surfaces freshly-sorted content.
+            queryClient.resetQueries({ queryKey: ['feedData'] });
         }
         
         if (view === 'api') {
@@ -1474,7 +1550,12 @@ const App: React.FC = () => {
     });
 
     const updatedImage = { ...originalImage, likedBy: newLikedBy, likeCount: newLikedBy.length };
-    handleImageUpdate(updatedImage); 
+    handleImageUpdate(updatedImage);
+
+    // Liking is the strongest taste signal — record it for personalization (only on like, not unlike)
+    if (!hasLiked) {
+        recordLikeInterest(originalImage);
+    }
 
     try {
         await toggleImageLike({ ...originalImage, id: baseId }, user);
@@ -1581,9 +1662,10 @@ const App: React.FC = () => {
                     url={window.location.href}
                     favicon={EXPLORE_FAVICON}
                 />
-                <ExplorePage 
-                    images={feedImages.length > 0 ? feedImages : allImages} 
-                    user={user} 
+                <ExplorePage
+                    images={feedImages.length > 0 ? feedImages : allImages}
+                    searchPool={allImages}
+                    user={user}
                     onImageClick={handleImageClick} 
                     onViewProfile={handleViewProfile} 
                     onLikeToggle={handleLikeToggle}

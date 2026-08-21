@@ -120,14 +120,14 @@ export const getRelatedImages = (currentImage: ImageMeta, pool: ImageMeta[], lim
       let score = 0;
       const candidateBaseId = img.id.split('_loop_')[0];
 
-      // 1. Tag matching (+10)
+      // 1. Tag matching (+15) — strongest on-topic signal
       const imgTags = (img.tags || []).map(t => t.toLowerCase());
       const tagMatches = imgTags.filter(t => currentTags.includes(t)).length;
-      score += tagMatches * 10;
+      score += tagMatches * 15;
 
-      // 2. Author matching (+5)
+      // 2. Author matching (+12) — "more from this creator"
       if (img.uploaderUid && img.uploaderUid === currentImage.uploaderUid) {
-          score += 5;
+          score += 12;
       }
 
       // 3. Title/description word matching
@@ -148,9 +148,10 @@ export const getRelatedImages = (currentImage: ImageMeta, pool: ImageMeta[], lim
       const popularity = (img.likeCount || 0) * 0.2 + (img.viewCount || 0) * 0.05;
       score += Math.min(popularity, 10);
 
-      // 6. Post-specific deterministic hash variation (0-40 pts) to ensure distinct lists
+      // 6. Post-specific deterministic hash variation (0-16 pts) — enough to vary lists across
+      //    posts without overpowering on-topic tag/author/keyword relevance
       const candidateHash = getHash(candidateBaseId);
-      const hashVariation = ((imageHash ^ candidateHash) % 1000) / 25;
+      const hashVariation = ((imageHash ^ candidateHash) % 1000) / 62;
       score += hashVariation;
 
       return { img, score };

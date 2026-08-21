@@ -392,7 +392,7 @@ export async function onRequest(context) {
           let tasteScore = 0;
           fl.forEach(f => { if (tasteProfile[f]) tasteScore += tasteProfile[f]; });
           co.forEach(c => { if (tasteProfile[c]) tasteScore += tasteProfile[c]; });
-          tasteScore = Math.min(tasteScore, 2.0);
+          tasteScore = Math.min(tasteScore, 3.0);
 
           let followBoostScore = 0;
           const candidateUploader = row.uploaderUid;
@@ -408,9 +408,13 @@ export async function onRequest(context) {
           }
 
           const uploaderFollowers = followerCountMap[candidateUploader] || 0;
-          const globalFollowerBoost = Math.min(uploaderFollowers * 0.2, 3.0);
+          const globalFollowerBoost = Math.min(uploaderFollowers * 0.2, 2.0);
 
-          const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.2;
+          // "More from this creator" — surface the same author's other work in the related panel
+          const sameCreatorBoost = (candidateUploader && candidateUploader === target.uploaderUid) ? 4.0 : 0;
+
+          // Generic popularity, capped so an off-topic viral item can't crowd out on-topic matches
+          const popularity = Math.min((row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.2, 3.0);
 
           const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl);
           let videoBoost = 0;
@@ -419,7 +423,9 @@ export async function onRequest(context) {
             videoBoost = ageInHours < 168 ? 5.0 : 1.5;
           }
 
-          const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
+          // Related-panel score: on-topic relevance (concepts/tags/metadata) + same-creator lead,
+          // personalized to the viewer's taste; generic popularity is a minor tiebreaker.
+          const totalScore = (conceptOverlap * 5.0) + (tagOverlap * 4.5) + (metadataMatch * 3.0) + (tasteScore * 3.0) + sameCreatorBoost + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
 
           return {
             image: {
@@ -557,14 +563,14 @@ export async function onRequest(context) {
           if (hasProfile) {
             fl.forEach(f => { if (tasteProfile[f]) tasteScore += tasteProfile[f]; });
             co.forEach(c => { if (tasteProfile[c]) tasteScore += tasteProfile[c]; });
-            tasteScore = Math.min(tasteScore, 3.0);
+            tasteScore = Math.min(tasteScore, 4.0);
           }
 
-          // 2. Follow boost (direct follow)
-          let followBoost = followingUids.has(row.uploaderUid) ? 2.0 : 0;
+          // 2. Follow boost (direct follow) — strong signal
+          let followBoost = followingUids.has(row.uploaderUid) ? 3.0 : 0;
 
           // 3. Social proof: images liked by people you follow
-          let socialProof = followLikedImageIds.has(row.id) ? 1.5 : 0;
+          let socialProof = followLikedImageIds.has(row.id) ? 2.0 : 0;
 
           // 4. Search intent: match search history against image metadata
           let searchBoost = 0;
@@ -589,14 +595,16 @@ export async function onRequest(context) {
           // 6. Popularity
           const popularity = Math.min(((row.likeCount || 0) * 0.15 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.25), 2.0);
 
-          // 7. Discovery randomness
-          const randomFactor = Math.random() * 1.5;
+          // 7. Discovery randomness — reduced so demonstrated taste leads
+          const randomFactor = Math.random() * 0.8;
 
           // 8. Video format boost (push newly uploaded videos)
           const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl);
           const videoBoost = isVideo && ageInHours < 168 ? 4.0 : (isVideo ? 1.0 : 0);
 
-          const totalScore = (tasteScore * 4.0) + (followBoost * 2.0) + (socialProof * 2.0) + (searchBoost * 3.0) + (recencyScore * 2.0) + popularity + videoBoost + randomFactor;
+          // Aggressive personalization: taste + follow + social + search dominate; recency/popularity
+          // stay as freshness/quality signals; randomness is a light tiebreaker.
+          const totalScore = (tasteScore * 5.0) + (followBoost * 3.0) + (socialProof * 2.5) + (searchBoost * 3.0) + (recencyScore * 1.5) + popularity + videoBoost + randomFactor;
 
           return {
             image: {
