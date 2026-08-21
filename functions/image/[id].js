@@ -22,7 +22,7 @@ function escapeHtml(unsafe) {
 
 export async function onRequest(context) {
   const id = context.params.id;
-  const cleanId = id ? id.split('_loop_')[0] : "";
+  const cleanId = id ? id.split('_loop_')[0].split('?')[0] : "";
   const baseUrl = "https://gg.modvc.org";
   const url = new URL(context.request.url);
 

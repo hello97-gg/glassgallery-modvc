@@ -20,8 +20,7 @@ export async function onRequest(context) {
   // Static routes
   const staticUrls = [
     { loc: baseUrl, changefreq: "daily", priority: "1.0" },
-    { loc: `${baseUrl}/?view=explore`, changefreq: "daily", priority: "0.8" },
-    { loc: `${baseUrl}/?view=api`, changefreq: "monthly", priority: "0.5" },
+    { loc: `${baseUrl}/legal`, changefreq: "monthly", priority: "0.5" },
   ];
 
   let dynamicUrls = [];
@@ -29,7 +28,7 @@ export async function onRequest(context) {
   try {
     const db = getDb(context.env);
     // Fetch all images from SQLite
-    const result = await db.execute("SELECT id, imageUrl, title, description, uploadedAt, license, uploaderUid FROM images ORDER BY uploadedAt DESC LIMIT 1000");
+    const result = await db.execute("SELECT id, imageUrl, title, description, uploadedAt, license, uploaderUid FROM images ORDER BY uploadedAt DESC LIMIT 5000");
     
     dynamicUrls = result.rows.map(row => {
       const timestamp = row.uploadedAt;
@@ -47,7 +46,7 @@ export async function onRequest(context) {
         loc: `${baseUrl}/image/${row.id}`,
         lastmod: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString(),
         changefreq: "weekly",
-        priority: "0.7",
+        priority: "0.8",
         imageLoc: row.imageUrl,
         imageTitle: row.title || "",
         imageCaption: row.description || "",
