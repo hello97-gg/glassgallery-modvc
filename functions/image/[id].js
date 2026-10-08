@@ -185,6 +185,34 @@ export async function onRequest(context) {
     indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']WebSite["'][\s\S]*?<\/script>/gi, '');
     indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']Organization["'][\s\S]*?<\/script>/gi, '');
 
+    // Fetch other recent images to provide internal crawl links for Googlebot
+    let moreImagesHtml = "";
+    try {
+      const moreResult = await db.execute({
+        sql: "SELECT id, title, imageUrl FROM images WHERE id != ? ORDER BY uploadedAt DESC LIMIT 6",
+        args: [cleanId]
+      });
+      if (moreResult.rows && moreResult.rows.length > 0) {
+        moreImagesHtml = `
+        <div style="width: 100%; max-width: 1100px; margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid #2e2e2e;">
+          <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 1.5rem; text-align: center; color: #ffffff;">More Images on Glass Gallery</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem;">
+            ${moreResult.rows.map(img => `
+              <a href="/image/${escapeHtml(img.id)}" style="display: block; text-decoration: none; color: inherit; background: #222222; border-radius: 12px; overflow: hidden; border: 1px solid #333333;">
+                <img src="${escapeHtml(img.imageUrl)}" alt="${escapeHtml(img.title || 'Glass Gallery Image')}" loading="lazy" style="width: 100%; height: 180px; object-fit: cover; display: block;" />
+                <div style="padding: 0.75rem 1rem;">
+                  <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(img.title || 'Untitled Image')}</h3>
+                </div>
+              </a>
+            `).join('')}
+          </div>
+        </div>
+        `;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch more images for SSR:", e);
+    }
+
     // Inject server-rendered HTML for Googlebot (Dynamic Rendering)
     // This prevents the "Crawled - currently not indexed" issue caused by empty initial DOM
     const mediaHtml = isVideo 
@@ -192,15 +220,35 @@ export async function onRequest(context) {
       : `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);" />`;
 
     const serverRenderedHtml = `
-      <div style="display: flex; flex-direction: column; align-items: center; padding: 2rem; background: #181818; color: #e5e5e5; min-height: 100vh; font-family: system-ui, sans-serif;">
-        <h1 style="font-size: 2rem; margin-bottom: 1rem;">${title}</h1>
+      <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; background: #181818; color: #e5e5e5; min-height: 100vh; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <header style="width: 100%; max-width: 1100px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #282828;">
+          <a href="/" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: #ffffff; font-size: 1.25rem; font-weight: 700;">
+            <img src="/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="36" height="36" style="border-radius: 8px; display: block;" />
+            <span>Glass Gallery</span>
+          </a>
+          <a href="/" style="color: #f5c3b8; text-decoration: none; font-size: 0.95rem; font-weight: 600;">← Back to Gallery</a>
+        </header>
+
+        <nav style="width: 100%; max-width: 1100px; margin-bottom: 1.5rem; font-size: 0.875rem; color: #888;">
+          <a href="/" style="color: #a0a0a0; text-decoration: none;">Home</a>
+          <span style="margin: 0 0.5rem;">/</span>
+          <span style="color: #ffffff;">${title}</span>
+        </nav>
+
+        <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 1.25rem; text-align: center; color: #ffffff;">${title}</h1>
         ${mediaHtml}
-        <p style="margin-top: 1.5rem; max-width: 600px; text-align: center; line-height: 1.6;">${description}</p>
-        <div style="margin-top: 2rem; color: #a0a0a0;">
-          <p>By ${uploaderName}</p>
+        <p style="margin-top: 1.5rem; max-width: 700px; text-align: center; line-height: 1.6; font-size: 1.05rem; color: #d0d0d0;">${description}</p>
+        <div style="margin-top: 1.5rem; color: #a0a0a0; text-align: center; line-height: 1.6;">
+          <p>Shared by <strong style="color: #ffffff;">${uploaderName}</strong> on Glass Gallery</p>
           ${location ? `<p>Location: ${location}</p>` : ''}
-          ${tags.length > 0 ? `<p>Tags: ${tags.map(t => escapeHtml(t)).join(', ')}</p>` : ''}
+          ${tags.length > 0 ? `<p style="margin-top: 0.5rem;">Tags: ${tags.map(t => `<span style="display: inline-block; background: #282828; padding: 0.2rem 0.6rem; border-radius: 6px; margin: 0.2rem; font-size: 0.85rem; color: #ccc;">#${escapeHtml(t)}</span>`).join(' ')}</p>` : ''}
         </div>
+
+        ${moreImagesHtml}
+
+        <footer style="width: 100%; max-width: 1100px; margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid #282828; text-align: center; color: #777; font-size: 0.85rem;">
+          <p>&copy; 2026 Glass Gallery. Free high-definition image platform. <a href="/legal?tab=terms" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Terms</a> &bull; <a href="/legal?tab=privacy" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Privacy</a></p>
+        </footer>
       </div>
     `;
     

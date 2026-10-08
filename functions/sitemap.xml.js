@@ -19,7 +19,7 @@ export async function onRequest(context) {
 
   // Static routes
   const staticUrls = [
-    { loc: baseUrl, changefreq: "daily", priority: "1.0" },
+    { loc: `${baseUrl}/`, changefreq: "daily", priority: "1.0" },
     { loc: `${baseUrl}/legal`, changefreq: "monthly", priority: "0.5" },
   ];
 
@@ -42,12 +42,13 @@ export async function onRequest(context) {
         'CC-BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
         'CC BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
       };
+      const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl || "");
       return {
         loc: `${baseUrl}/image/${row.id}`,
         lastmod: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString(),
         changefreq: "weekly",
         priority: "0.8",
-        imageLoc: row.imageUrl,
+        imageLoc: isVideo ? null : row.imageUrl,
         imageTitle: row.title || "",
         imageCaption: row.description || "",
         imageLicense: licenseUrls[license] || license
