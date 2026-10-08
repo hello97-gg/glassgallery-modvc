@@ -523,7 +523,7 @@ const App: React.FC = () => {
     queryFn: async ({ pageParam = 0 }) => {
       isFetchingRef.current = true;
       try {
-        let baseImages = allImages;
+        let baseImages = allImagesRef.current.length > 0 ? allImagesRef.current : allImages;
         if (baseImages.length === 0) {
           const res = await getImagesFromFirestore();
           baseImages = res.images;
@@ -556,7 +556,8 @@ const App: React.FC = () => {
         }
 
         const sorted = smartSortImages(filtered, profileRef.current, followingUidsRef.current, likedConceptSetRef.current);
-        const pageSize = FEED_BATCH_SIZE;
+        const isGridView = activeView === 'discover' || activeView === 'explore';
+        const pageSize = isGridView ? 30 : FEED_BATCH_SIZE;
         const pageItems = sorted.slice(pageParam, pageParam + pageSize);
         return {
           items: pageItems,
@@ -573,9 +574,11 @@ const App: React.FC = () => {
   });
 
   const feedImages = useMemo(() => {
-    if (!feedQueryData) return activeAllImages.slice(0, FEED_BATCH_SIZE);
+    const isGridView = activeView === 'discover' || activeView === 'explore';
+    const batchSize = isGridView ? 30 : FEED_BATCH_SIZE;
+    if (!feedQueryData) return activeAllImages.slice(0, batchSize);
     const flattened = feedQueryData.pages.flatMap(page => page.items);
-    if (flattened.length === 0) return activeAllImages.slice(0, FEED_BATCH_SIZE);
+    if (flattened.length === 0) return activeAllImages.slice(0, batchSize);
 
     const seen = new Set<string>();
     const deduped: ImageMeta[] = [];
@@ -587,10 +590,10 @@ const App: React.FC = () => {
       }
     }
     return deduped;
-  }, [feedQueryData, activeAllImages, FEED_BATCH_SIZE]);
+  }, [feedQueryData, activeAllImages, FEED_BATCH_SIZE, activeView]);
 
   const handleLoadMore = useCallback(() => {
-    if (!isFetchingNextPage && !isFetchingRef.current && hasNextPage) {
+    if (!isFetchingNextPage && hasNextPage) {
       fetchNextPage();
     }
   }, [isFetchingNextPage, hasNextPage, fetchNextPage]);
@@ -895,6 +898,9 @@ const App: React.FC = () => {
       } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
+      } else if (viewParam === 'discover' || window.location.pathname === '/discover') {
+          setActiveView('discover');
+          setProfileUser(null);
       } else if (searchTerm) {
           setExploreSearchTerm(searchTerm);
           setActiveView('explore');
@@ -997,7 +1003,7 @@ const App: React.FC = () => {
   useEffect(() => {
     let unsubscribe: () => void;
 
-    if (activeView === 'home' || activeView === 'explore') {
+    if (activeView === 'home' || activeView === 'explore' || activeView === 'discover') {
         if (allImages.length === 0) {
             setImagesLoading(true);
         }
@@ -1459,6 +1465,8 @@ const App: React.FC = () => {
         
         if (view === 'api') {
           updateURL({ view: 'api' });
+        } else if (view === 'discover') {
+          updateURL({ view: 'discover' });
         } else {
           updateURL(null);
         }
@@ -1686,6 +1694,7 @@ const App: React.FC = () => {
 
     // DISCOVER (Masonry Grid Feed)
     if (activeView === 'discover') {
+        const discoverImages = feedImages.length > 0 ? feedImages : (allImages.length > 0 ? allImages : displayedImages);
         return (
             <>
                 <SEOHead 
@@ -1695,13 +1704,14 @@ const App: React.FC = () => {
                     favicon={DEFAULT_FAVICON}
                 />
                 <ImageGrid 
-                    images={feedImages.length > 0 ? feedImages : displayedImages} 
+                    images={discoverImages} 
                     user={user} 
                     onImageClick={handleImageClick} 
                     onViewProfile={handleViewProfile} 
                     onLikeToggle={handleLikeToggle} 
                     onEndReached={handleLoadMore}
                     isFetchingMore={isFetchingNextPage}
+                    isLoading={imagesLoading && discoverImages.length === 0}
                 />
             </>
         );

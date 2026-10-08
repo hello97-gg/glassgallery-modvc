@@ -171,19 +171,21 @@ export async function onRequest(context) {
     ${jsonLdScripts}
     `;
 
-    indexHtml = indexHtml.replace(
-      /<title>Glass Gallery<\/title>[\s\S]*?<meta name="twitter:image" content="[^"]*" \/>/,
-      seoMetaTags
-    );
+    if (indexHtml.includes('<!-- SEO_META_START -->')) {
+      indexHtml = indexHtml.replace(/<!-- SEO_META_START -->[\s\S]*?<!-- SEO_META_END -->/, seoMetaTags);
+    } else {
+      indexHtml = indexHtml.replace(
+        /<title>[\s\S]*?<\/title>[\s\S]*?<meta name="twitter:image" content="[^"]*" \/>\s*(?:<!-- Canonical URL -->\s*)?(?:<link rel="canonical"[^>]*>)?/i,
+        seoMetaTags
+      );
+    }
 
-    // Clean up leftover default tags that conflict with our injected SEO tags
-    // 1. Remove the default canonical (we inject our own with the correct /image/xxx path)
-    indexHtml = indexHtml.replace(/\s*<!-- Canonical URL -->\s*\r?\n?\s*<link\s+rel=["']canonical["']\s+href=["']https:\/\/gg\.modvc\.org\/?["']\s*\/?>/i, '');
-    
-    // 2. Remove ALL default JSON-LD scripts from the static index.html (we inject image-specific ones)
-    indexHtml = indexHtml.replace(/\s*<!-- Static JSON-LD Structured Data[^>]*-->\s*/gi, '');
-    indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']WebSite["'][\s\S]*?<\/script>/gi, '');
-    indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?["']@type["']:\s*["']Organization["'][\s\S]*?<\/script>/gi, '');
+    if (indexHtml.includes('<!-- JSON_LD_START -->')) {
+      indexHtml = indexHtml.replace(/<!-- JSON_LD_START -->[\s\S]*?<!-- JSON_LD_END -->/, '');
+    } else {
+      indexHtml = indexHtml.replace(/\s*<!-- Static JSON-LD Structured Data[^>]*-->\s*/gi, '');
+      indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?<\/script>/gi, '');
+    }
 
     // Fetch other recent images to provide internal crawl links for Googlebot
     let moreImagesHtml = "";

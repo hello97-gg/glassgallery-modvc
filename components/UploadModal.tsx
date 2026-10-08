@@ -67,7 +67,17 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
       
       video.onloadedmetadata = () => {
         const duration = video.duration || 10;
-        const timestamps = [duration * 0.1, duration * 0.5, duration * 0.9];
+        // YouTube-style multi-frame sampling:
+        // Captures early opening scenes (2s, 8s) where quick scenes occur, plus across the full duration
+        const rawPoints = [
+          Math.min(2.0, duration * 0.1),
+          Math.min(8.0, duration * 0.2),
+          duration * 0.25,
+          duration * 0.50,
+          duration * 0.75,
+          duration * 0.90
+        ];
+        const timestamps = [...new Set(rawPoints.map(t => Math.max(0.5, Math.min(Math.max(duration - 0.5, 0.5), t))))].sort((a, b) => a - b);
         const frames: string[] = [];
         let currentIdx = 0;
         
@@ -88,8 +98,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 360;
             
-            // Downscale to max 800px to conserve bandwidth and API tokens
-            const maxDim = 800;
+            // Downscale to max 640px to ensure ultra-fast processing and efficient bandwidth
+            const maxDim = 640;
             if (canvas.width > maxDim || canvas.height > maxDim) {
               const scale = maxDim / Math.max(canvas.width, canvas.height);
               canvas.width = Math.round(canvas.width * scale);
@@ -256,6 +266,13 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     const isVideo = selectedFile && (selectedFile.type.startsWith('video/') || selectedFile.name.match(/\.(mp4|webm|ogg|mkv|mov|avi)$/i));
 
     if (selectedFile && (isImage || isVideo)) {
+        const FIFTY_MB = 50 * 1024 * 1024;
+        if (isVideo && selectedFile.size > FIFTY_MB) {
+            const sizeMB = (selectedFile.size / (1024 * 1024)).toFixed(1);
+            setError(`Video file size (${sizeMB}MB) exceeds the maximum allowed limit of 50MB. Please trim or compress the video before uploading.`);
+            return;
+        }
+
         setIsLoading(true);
         setLoadingMessage('Processing file...');
         setError(null);
@@ -369,12 +386,30 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     if (!user) return;
 
     const isVideoUpload = file.type.startsWith('video/') || isVideoFile(file.name);
+    const FIFTY_MB = 50 * 1024 * 1024;
+    if (isVideoUpload && file.size > FIFTY_MB) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      setError(`Video file size (${sizeMB}MB) exceeds the maximum allowed limit of 50MB. Please select a shorter or compressed clip.`);
+      return;
+    }
+
     setIsLoading(true);
     setLoadingMessage(isVideoUpload ? 'Uploading video...' : 'Uploading image...');
     setError(null);
     try {
       const { url: imageUrl } = await uploadImage(file);
-      await addImageToFirestore(user, imageUrl, title, description, license, selectedFlags, originalWorkUrl, license === 'Other' ? licenseUrl : '', location);
+      await addImageToFirestore(
+        user,
+        imageUrl,
+        title,
+        description,
+        license,
+        selectedFlags,
+        originalWorkUrl,
+        license === 'Other' ? licenseUrl : '',
+        location,
+        isVideoUpload ? videoKeyframes : undefined
+      );
       onUploadSuccess();
     } catch (err: any) {
       setError(err.message || 'Upload failed. Please check your connection.');

@@ -12,16 +12,19 @@ interface ImageGridProps {
   onLikeToggle: (image: ImageMeta) => void;
   onEndReached?: () => void;
   isFetchingMore?: boolean;
+  isLoading?: boolean;
 }
 
-const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, onEndReached, isFetchingMore }) => {
+const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, onEndReached, isFetchingMore, isLoading }) => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const onEndReachedRef = useRef(onEndReached);
+  const isTriggeringRef = useRef(false);
 
   useEffect(() => {
     onEndReachedRef.current = onEndReached;
   }, [onEndReached]);
 
+  // 1. IntersectionObserver for sentinel at bottom
   useEffect(() => {
     const el = sentinelRef.current;
     if (!onEndReachedRef.current || !el) {
@@ -29,11 +32,15 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
     }
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !isFetchingMore) {
+        if (entries[0].isIntersecting && !isFetchingMore && !isTriggeringRef.current) {
+          isTriggeringRef.current = true;
           onEndReachedRef.current?.();
+          setTimeout(() => {
+            isTriggeringRef.current = false;
+          }, 300);
         }
       },
-      { rootMargin: '400px' }
+      { rootMargin: '1000px' }
     );
     observer.observe(el);
     return () => {
@@ -41,7 +48,65 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
     };
   }, [isFetchingMore, images.length]);
 
+  // 2. Window scroll listener as rock-solid backup
+  useEffect(() => {
+    const handleScroll = () => {
+      if (isFetchingMore || isTriggeringRef.current || !onEndReachedRef.current) return;
+      const scrollY = window.scrollY || window.pageYOffset;
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+
+      if (scrollY + windowHeight >= documentHeight - 800) {
+        isTriggeringRef.current = true;
+        onEndReachedRef.current();
+        setTimeout(() => {
+          isTriggeringRef.current = false;
+        }, 300);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isFetchingMore, images.length]);
+
+  // 3. Auto-fill check: if content doesn't even fill the screen height, auto-request next batch
+  useEffect(() => {
+    const checkFill = () => {
+      if (isFetchingMore || isTriggeringRef.current || !onEndReachedRef.current) return;
+      const scrollHeight = document.documentElement.scrollHeight;
+      const clientHeight = window.innerHeight;
+      if (images.length > 0 && scrollHeight <= clientHeight + 300) {
+        isTriggeringRef.current = true;
+        onEndReachedRef.current();
+        setTimeout(() => {
+          isTriggeringRef.current = false;
+        }, 300);
+      }
+    };
+
+    const timer = setTimeout(checkFill, 200);
+    return () => clearTimeout(timer);
+  }, [images.length, isFetchingMore]);
+
   if (images.length === 0) {
+    if (isLoading) {
+      return (
+        <div className="flex flex-col w-full">
+          <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-6 animate-pulse">
+            {[240, 320, 180, 280, 220, 360, 200, 300, 250, 190].map((h, idx) => (
+              <div 
+                key={idx} 
+                className="w-full bg-surface/70 rounded-xl mb-4 md:mb-6 border border-border/40"
+                style={{ height: `${h}px` }}
+              />
+            ))}
+          </div>
+          <div className="h-16 w-full flex items-center justify-center py-4 mt-4">
+            <Spinner />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="text-center py-16">
         <div className="inline-block bg-surface text-secondary p-4 rounded-full mb-4">

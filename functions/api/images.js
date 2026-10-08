@@ -1060,7 +1060,7 @@ Return the response strictly as a JSON object with this exact format:
       // Action: Add/Upload image
       if (action === 'upload') {
         const {
-          id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location,
+          id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location, keyframes
         } = body;
 
         if (!id || !imageUrl || !uploaderUid) {
@@ -1071,7 +1071,7 @@ Return the response strictly as a JSON object with this exact format:
         let isUnsafe = false;
         let aiConceptsArr = [];
         try {
-          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env);
+          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env, keyframes);
           isUnsafe = safetyRes.isUnsafe;
           aiConceptsArr = safetyRes.aiConcepts || [];
         } catch (err) {
@@ -1416,125 +1416,191 @@ Return the response strictly as a JSON object with this exact format:
   }
 }
 
-async function checkContentSafety(title, description, location, imageUrl, imageId, env) {
+async function checkContentSafety(title, description, location, imageUrl, imageId, env, keyframes = []) {
   try {
-    let mistralKey = env.MISTRAL_API_KEY;
+    const openaiKey = env.OPENAI_API_KEY;
+    const mistralKey = env.MISTRAL_API_KEY;
 
-    if (!mistralKey) {
-      console.warn("[Content Safety] MISTRAL_API_KEY is not defined. Skipping safety moderation.");
-      return { isUnsafe: false, aiConcepts: [] };
+    if (!openaiKey && !mistralKey) {
+      console.warn("[Content Safety] Neither OPENAI_API_KEY nor MISTRAL_API_KEY is configured. Skipping moderation.");
+      return { isUnsafe: false, aiConcepts: [], violatedCategories: [] };
     }
 
-    let propagated = false;
-    let urlAttempt = 0;
-    while (urlAttempt < 6) {
+    const isVideo = Boolean(imageUrl && imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i));
+    let isUnsafe = false;
+    let violatedCategories = [];
+    let aiConcepts = [];
+
+    // --- 1. PRIMARY ENGINE: OpenAI omni-moderation-latest ---
+    if (openaiKey) {
       try {
-        const checkRes = await fetch(imageUrl);
-        if (checkRes.ok) {
-          propagated = true;
-          break;
+        const textToModerate = [
+          title ? `Title: ${title}` : '',
+          description ? `Description: ${description}` : '',
+          location ? `Location: ${location}` : ''
+        ].filter(Boolean).join('\n') || 'Untitled artwork';
+
+        const moderationTasks = [];
+
+        // Check A: Text metadata (Title, Description, Location)
+        moderationTasks.push(
+          fetch('https://api.openai.com/v1/moderations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${openaiKey}`
+            },
+            body: JSON.stringify({
+              model: 'omni-moderation-latest',
+              input: [{ type: 'text', text: textToModerate }]
+            })
+          }).then(r => r.ok ? r.json() : null).catch(() => null)
+        );
+
+        // Check B: Visual content
+        if (isVideo) {
+          // YouTube-style multi-frame temporal video inspection across timeline
+          if (Array.isArray(keyframes) && keyframes.length > 0) {
+            // Check up to 5 sampled keyframes across video duration
+            const framesToCheck = keyframes.slice(0, 5);
+            for (const frame of framesToCheck) {
+              moderationTasks.push(
+                fetch('https://api.openai.com/v1/moderations', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${openaiKey}`
+                  },
+                  body: JSON.stringify({
+                    model: 'omni-moderation-latest',
+                    input: [{ type: 'image_url', image_url: { url: frame } }]
+                  })
+                }).then(r => r.ok ? r.json() : null).catch(() => null)
+              );
+            }
+          }
+        } else if (imageUrl) {
+          // Static image moderation
+          moderationTasks.push(
+            fetch('https://api.openai.com/v1/moderations', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${openaiKey}`
+              },
+              body: JSON.stringify({
+                model: 'omni-moderation-latest',
+                input: [{ type: 'image_url', image_url: { url: imageUrl } }]
+              })
+            }).then(r => r.ok ? r.json() : null).catch(() => null)
+          );
         }
-      } catch (e) { }
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      urlAttempt++;
-    }
 
-    const isVideo = imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i);
-    let messagesContent = [
-      {
-        type: "text",
-        text: `Task: Analyze the metadata details for the uploaded ${isVideo ? 'video' : 'image'} to:
-1. Evaluate safety: Check if there is unsafe content based on the Safety Policy Categories (S1-S6). Intimate anatomy or medical/disease raw graphics of intimate areas MUST be rated as 'unsafe'. Provide a rating of either 'safe' or 'unsafe'.
-2. Generate concepts: If safe, generate 5 descriptive, high-quality aesthetic keyword/concept tags.
+        const results = await Promise.all(moderationTasks);
 
-Metadata:
-Title: ${title || "Untitled"}
-Description: ${description || "No description"}
-Location: ${location || "No location"}
+        for (const res of results) {
+          if (res?.results?.[0]) {
+            const resultObj = res.results[0];
+            const cats = resultObj.categories || {};
+            const scores = resultObj.category_scores || {};
 
-Return the response strictly as a JSON object with this exact format:
-{
-  "safety": "safe" or "unsafe",
-  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
-}`
+            const isCategoryFlagged = resultObj.flagged;
+            const isHighRiskScore = (scores.sexual > 0.15) || 
+                                    (scores['sexual/minors'] > 0.05) || 
+                                    (scores['violence/graphic'] > 0.25) || 
+                                    (scores.violence > 0.40) || 
+                                    (scores['self-harm'] > 0.20) ||
+                                    (scores.harassment > 0.40);
+
+            if (isCategoryFlagged || isHighRiskScore) {
+              isUnsafe = true;
+              for (const [c, flagged] of Object.entries(cats)) {
+                if ((flagged || (scores[c] && scores[c] > 0.15)) && !violatedCategories.includes(c)) {
+                  violatedCategories.push(c);
+                }
+              }
+            }
+          }
+        }
+
+        console.log(`[OpenAI omni-moderation-latest] Scanned ${moderationTasks.length} elements. isUnsafe: ${isUnsafe}. Violations:`, violatedCategories);
+      } catch (openAiErr) {
+        console.error("[OpenAI Moderation] Failed with error:", openAiErr);
       }
-    ];
-
-    if (!isVideo) {
-      messagesContent.push({ type: "image_url", image_url: { url: imageUrl } });
     }
 
-    const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
-    const payload = {
-      model: "pixtral-12b-2409",
-      messages: [
-        {
-          role: "user",
-          content: messagesContent
-        }
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 512,
-      temperature: 0.20,
-      top_p: 0.70
-    };
-
-    let attempt = 0;
-    const maxAttempts = 3;
-    let delay = 2000;
-    let response;
-
-    while (attempt < maxAttempts) {
+    // --- 2. FALLBACK TO MISTRAL (If OpenAI key is absent or errored) ---
+    if (!openaiKey && mistralKey) {
       try {
-        response = await fetch(invokeUrl, {
+        let messagesContent = [
+          {
+            type: "text",
+            text: `Task: Analyze the metadata details for the uploaded ${isVideo ? 'video' : 'image'} to evaluate safety: Check if there is unsafe content based on Safety Policy Categories (S1-S6). Intimate anatomy, nudity, or graphic violence MUST be rated as 'unsafe'. Return strictly JSON: {"safety": "safe" or "unsafe"}\nTitle: ${title || "Untitled"}\nDescription: ${description || "No description"}`
+          }
+        ];
+        if (!isVideo && imageUrl) {
+          messagesContent.push({ type: "image_url", image_url: { url: imageUrl } });
+        }
+        const mistralRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${mistralKey}`,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            model: "pixtral-12b-2409",
+            messages: [{ role: "user", content: messagesContent }],
+            response_format: { type: "json_object" },
+            max_tokens: 256,
+            temperature: 0.2
+          })
         });
-
-        if (response.status === 429) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-          attempt++;
-          delay *= 2.5;
-          continue;
+        if (mistralRes.ok) {
+          const mData = await mistralRes.json();
+          const parsed = JSON.parse(mData.choices?.[0]?.message?.content || "{}");
+          if (parsed.safety === "unsafe") isUnsafe = true;
         }
-        break;
-      } catch (fetchErr) {
-        attempt++;
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2.5;
+      } catch (mErr) {
+        console.error("[Mistral Fallback Moderation] Error:", mErr);
       }
     }
 
-    if (!response || !response.ok) {
-      return { isUnsafe: false, aiConcepts: [] };
-    }
-
-    const data = await response.json();
-    const resultText = data.choices?.[0]?.message?.content || "{}";
-
-    let isUnsafe = false;
-    let aiConcepts = [];
-    try {
-      const parsed = JSON.parse(resultText);
-      isUnsafe = parsed.safety === "unsafe";
-      aiConcepts = parsed.keywords || [];
-    } catch (e) {
-      const normalizedText = resultText.toLowerCase();
-      isUnsafe = normalizedText.includes("unsafe");
-      const match = resultText.match(/\[.*?\]/s);
-      if (match) {
-        try { aiConcepts = JSON.parse(match[0]); } catch (je) { }
+    // --- 3. GENERATE AESTHETIC TAG CONCEPTS IF CONTENT IS SAFE ---
+    if (!isUnsafe && mistralKey) {
+      try {
+        const tagRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${mistralKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "pixtral-12b-2409",
+            messages: [{
+              role: "user",
+              content: [{
+                type: "text",
+                text: `Suggest 5 aesthetic, one-word concept tags for: Title: "${title || ''}", Description: "${description || ''}". Return JSON format: {"keywords": ["tag1", "tag2", "tag3", "tag4", "tag5"]}`
+              }]
+            }],
+            response_format: { type: "json_object" },
+            max_tokens: 150,
+            temperature: 0.2
+          })
+        });
+        if (tagRes.ok) {
+          const tData = await tagRes.json();
+          const tParsed = JSON.parse(tData.choices?.[0]?.message?.content || "{}");
+          aiConcepts = tParsed.keywords || tParsed.tags || [];
+        }
+      } catch (tErr) {
+        console.warn("[Content Safety] Concept tag generation error:", tErr);
       }
     }
 
-    return { isUnsafe, aiConcepts };
-
+    return { isUnsafe, aiConcepts, violatedCategories };
   } catch (error) {
     console.error("[Content Safety] Critical error:", error);
-    return { isUnsafe: false, aiConcepts: [] };
+    return { isUnsafe: false, aiConcepts: [], violatedCategories: [] };
   }
 }

@@ -76,7 +76,10 @@ export async function onRequest(context) {
     // Generate a clean, unique filename
     const timestamp = Date.now();
     const sanitizedName = name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 30);
-    const uniqueFileName = `${timestamp}-${sanitizedName}.${extension}`;
+    const FIFTY_MB = 50 * 1024 * 1024;
+    if (buffer.byteLength > FIFTY_MB) {
+      return Response.json({ error: "File exceeds maximum size of 50MB." }, { status: 413 });
+    }
 
     // Upload to R2
     await S3.send(new PutObjectCommand({
@@ -84,6 +87,7 @@ export async function onRequest(context) {
       Key: uniqueFileName,
       Body: buffer,
       ContentType: contentType,
+      ContentLength: buffer.byteLength,
     }));
 
     // Construct the public URL

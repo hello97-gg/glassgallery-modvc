@@ -46,9 +46,17 @@ export const fileToBase64 = (file: File): Promise<string> => {
   
       // 3. Handle the response
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Storage API error:", errorData);
-        throw new Error(errorData.error || `Upload failed: ${response.statusText}`);
+        let errorMsg = `Upload failed (${response.status}): ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch {
+          if (response.status === 411 || response.status === 413) {
+            errorMsg = "File is too large for upload. Video files must be under 50MB.";
+          }
+        }
+        console.error("Storage API error:", errorMsg);
+        throw new Error(errorMsg);
       }
   
       const data = await response.json();

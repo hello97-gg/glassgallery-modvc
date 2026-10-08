@@ -26,7 +26,7 @@ interface ExplorePageProps {
 }
 
 // How many search matches to reveal per scroll batch (smooth progressive loading).
-const SEARCH_REVEAL_BATCH = 24;
+const SEARCH_REVEAL_BATCH = 36;
 
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -141,8 +141,13 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
   }, [searchQuery]);
 
+  // Search & Categories scan the ENTIRE database (searchPool = full allImages), falling back to the
+  // paginated `images` only if no pool was supplied. This is why every matching image is
+  // found and categorized — not just the ones already loaded into the current batch.
+  const searchSource = (searchPool && searchPool.length > 0) ? searchPool : images;
+
   const imagesByFlag = useMemo(() => {
-    return images.reduce((acc, image) => {
+    return searchSource.reduce((acc, image) => {
       if (Array.isArray(image.flags)) {
         image.flags.forEach(flag => {
           if (!acc[flag]) {
@@ -153,7 +158,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
       }
       return acc;
     }, {} as Record<string, ImageMeta[]>);
-  }, [images]);
+  }, [searchSource]);
 
   const sortedFlags = useMemo(() => {
     const flagsFromImages = Object.keys(imagesByFlag);
@@ -171,11 +176,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     });
     return map;
   }, [imagesByFlag]);
-
-  // Search scans the ENTIRE database (searchPool = full allImages), falling back to the
-  // paginated `images` only if no pool was supplied. This is why every matching image is
-  // found — not just the ones already loaded into the feed.
-  const searchSource = (searchPool && searchPool.length > 0) ? searchPool : images;
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -262,7 +262,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
                   onViewProfile={onViewProfile}
                   onLikeToggle={onLikeToggle}
                   onEndReached={handleSearchEndReached}
-                  isFetchingMore={hasMoreSearchResults}
+                  isFetchingMore={isFetchingNextPage}
                 />
             ) : (
                 <div className="text-center py-16 bg-surface/30 rounded-2xl border border-border border-dashed">

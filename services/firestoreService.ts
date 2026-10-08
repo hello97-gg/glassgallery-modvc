@@ -29,7 +29,8 @@ export const addImageToFirestore = async (
     flags: string[], 
     originalWorkUrl?: string,
     licenseUrl?: string,
-    location?: string
+    location?: string,
+    keyframes?: string[]
 ) => {
     try {
         const id = generateImageId();
@@ -49,6 +50,7 @@ export const addImageToFirestore = async (
                 flags,
                 originalWorkUrl: originalWorkUrl || '',
                 location: location || '',
+                keyframes: keyframes || []
             })
         });
 
