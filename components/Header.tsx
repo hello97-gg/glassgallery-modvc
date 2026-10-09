@@ -49,15 +49,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
   return (
     <aside className="h-screen w-20 bg-background border-r border-border p-3 flex flex-col items-center fixed top-0 left-0 z-30">
       <div className="flex items-center justify-center p-2 mb-4 cursor-pointer" onClick={() => setView('home')} title="Glass Gallery">
-        <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden hover:scale-105 transition-transform p-1.5">
+        <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden hover:scale-105 transition-transform p-1">
           <img 
-            src="/favicon-96x96.png" 
-            srcSet="/favicon-96x96.png 1x, /web-app-manifest-512x512.png 2x"
-            className="w-full h-full object-contain" 
+            src="/web-app-manifest-512x512.png" 
+            className="w-full h-full object-contain rounded-lg" 
             alt="Glass Gallery Logo"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = '/web-app-manifest-512x512.png';
-            }}
+            width={36}
+            height={36}
           />
         </div>
       </div>
