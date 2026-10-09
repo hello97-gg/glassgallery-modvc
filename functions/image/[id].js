@@ -24,18 +24,37 @@ export async function onRequest(context) {
   const id = context.params.id;
   const cleanId = id ? id.split('_loop_')[0].split('?')[0] : "";
   const baseUrl = "https://gg.modvc.org";
-  const url = new URL(context.request.url);
 
   if (!id) {
-    return Response.redirect(baseUrl + '/', 302);
+    return Response.redirect(`${baseUrl}/gallery`, 302);
   }
 
   try {
     const db = getDb(context.env);
-    const result = await db.execute({
-      sql: "SELECT * FROM images WHERE id = ?",
+    let result = await db.execute({
+      sql: "SELECT * FROM images WHERE id = ? LIMIT 1",
       args: [cleanId]
     });
+
+    if (result.rows.length === 0) {
+      result = await db.execute({
+        sql: "SELECT * FROM images WHERE LOWER(id) = LOWER(?) LIMIT 1",
+        args: [cleanId]
+      });
+    }
+
+    // If image doesn't exist, return proper HTTP 404 (fixing soft-404)
+    if (result.rows.length === 0) {
+      return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>404 - Image Not Found | Glass Gallery</title><meta name="robots" content="noindex, follow" /></head><body style="background:#181818;color:#e5e5e5;font-family:system-ui,sans-serif;text-align:center;padding:4rem;"><h1>404 - Image Not Found</h1><p style="color:#a0a0a0;margin:1rem 0 2rem;">The requested image does not exist or may have been deleted.</p><a href="/gallery" style="display:inline-block;background:#f5c3b8;color:#181818;padding:0.75rem 1.5rem;border-radius:999px;text-decoration:none;font-weight:600;">Browse Gallery Archive</a></body></html>`, {
+        status: 404,
+        headers: {
+          'Content-Type': 'text/html; charset=UTF-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+    }
+
+    const image = result.rows[0];
 
     // Fetch the base index.html from Cloudflare Pages static assets
     let indexHtml = "";
@@ -51,27 +70,38 @@ export async function onRequest(context) {
     }
 
     if (!indexHtml) {
-      indexHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Glass Gallery</title></head><body><div id="root"></div><script>window.location.href="/?image=${escapeHtml(id)}";</script></body></html>`;
+      indexHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Glass Gallery</title></head><body><div id="root"></div></body></html>`;
     }
 
-    if (result.rows.length === 0) {
-      return new Response(indexHtml, {
-        headers: {
-          'Content-Type': 'text/html',
-          'Cache-Control': 's-maxage=60, stale-while-revalidate'
-        }
-      });
+    // Capitalize and format Title (guarantee 35 - 65 chars for SEO)
+    const rawTitle = (image.title || "Untitled Photograph").trim();
+    const title = rawTitle.charAt(0).toUpperCase() + rawTitle.slice(1);
+    let seoTitle = `${title} | Glass Gallery`;
+    if (seoTitle.length < 35) {
+      seoTitle = `${title} – Free HD Wallpaper | Glass Gallery`;
+    }
+    if (seoTitle.length > 65) {
+      seoTitle = seoTitle.length <= 65 ? seoTitle : seoTitle.slice(0, 62) + '...';
     }
 
-    const image = result.rows[0];
-    const title = escapeHtml(image.title || "Untitled Image");
-    const description = escapeHtml(image.description || `A beautiful image shared on Glass Gallery by ${image.uploaderName || 'a creator'}.`);
+    const uploaderName = escapeHtml((image.uploaderName || "Creator").trim());
+    
+    // Guarantee Description length 70 - 155 chars
+    let rawDesc = (image.description || "").trim();
+    let description = rawDesc;
+    if (!description || description.length < 70) {
+      description = `View and download high-resolution photograph ${title} by ${uploaderName} on Glass Gallery. Free to share and enjoy in full quality.`;
+    }
+    if (description.length > 155) {
+      description = description.slice(0, 152) + '...';
+    }
+
     const imageUrl = image.imageUrl || "";
-    const uploaderName = escapeHtml(image.uploaderName || "Glass Gallery User");
     const location = image.location || "";
     const license = image.license || "CC0";
     const licenseUrl = LICENSE_URLS[license] || license;
     const pageUrl = `${baseUrl}/image/${id}`;
+    const altText = `${title} photography by ${uploaderName} on Glass Gallery`;
 
     let tags = [];
     try {
@@ -85,8 +115,8 @@ export async function onRequest(context) {
       "@type": "ImageObject",
       "contentUrl": imageUrl,
       "url": pageUrl,
-      "name": image.title || "Untitled Image",
-      "description": image.description || `An image shared on Glass Gallery`,
+      "name": title,
+      "description": description,
       "thumbnail": imageUrl,
       "license": licenseUrl,
       "acquireLicensePage": pageUrl,
@@ -113,8 +143,8 @@ export async function onRequest(context) {
       "@type": "BreadcrumbList",
       "itemListElement": [
         { "@type": "ListItem", "position": 1, "name": "Glass Gallery", "item": baseUrl },
-        { "@type": "ListItem", "position": 2, "name": image.uploaderName || "Creator", "item": `${baseUrl}/?user=${image.uploaderUid || ''}` },
-        { "@type": "ListItem", "position": 3, "name": image.title || "Image" }
+        { "@type": "ListItem", "position": 2, "name": "Gallery Archive", "item": `${baseUrl}/gallery` },
+        { "@type": "ListItem", "position": 3, "name": title }
       ]
     });
 
@@ -134,15 +164,15 @@ export async function onRequest(context) {
     ).join('\n    ');
 
     const seoMetaTags = `
-    <title>${title} | Glass Gallery</title>
-    <meta name="description" content="${description}" />
+    <title>${escapeHtml(seoTitle)}</title>
+    <meta name="description" content="${escapeHtml(description)}" />
     <meta name="keywords" content="${tags.map(t => escapeHtml(t)).join(', ')}" />
     <link rel="canonical" href="${pageUrl}" />
     
     <meta property="og:site_name" content="Glass Gallery" />
     <meta property="og:type" content="${isVideo ? 'video.other' : 'article'}" />
-    <meta property="og:title" content="${title}" />
-    <meta property="og:description" content="${description}" />
+    <meta property="og:title" content="${escapeHtml(seoTitle)}" />
+    <meta property="og:description" content="${escapeHtml(description)}" />
     <meta property="og:url" content="${pageUrl}" />
     <meta property="article:author" content="${uploaderName}" />
     ${image.uploadedAt ? `<meta property="article:published_time" content="${escapeHtml(image.uploadedAt)}" />` : ''}
@@ -165,8 +195,8 @@ export async function onRequest(context) {
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="${imageUrl}" />
     `}
-    <meta name="twitter:title" content="${title}" />
-    <meta name="twitter:description" content="${description}" />
+    <meta name="twitter:title" content="${escapeHtml(seoTitle)}" />
+    <meta name="twitter:description" content="${escapeHtml(description)}" />
     
     ${jsonLdScripts}
     `;
@@ -187,39 +217,26 @@ export async function onRequest(context) {
       indexHtml = indexHtml.replace(/<script\s+type=["']application\/ld\+json["']>\s*\{\s*["']@context["']:\s*["']https:\/\/schema\.org["'][\s\S]*?<\/script>/gi, '');
     }
 
-    // Fetch other recent images to provide internal crawl links for Googlebot
-    let moreImagesHtml = "";
+    // Fetch previous, next, and 8 related images to form an unbroken internal backlink mesh
+    let prevImage = null;
+    let nextImage = null;
+    let moreImages = [];
     try {
-      const moreResult = await db.execute({
-        sql: "SELECT id, title, imageUrl FROM images WHERE id != ? ORDER BY uploadedAt DESC LIMIT 6",
-        args: [cleanId]
-      });
-      if (moreResult.rows && moreResult.rows.length > 0) {
-        moreImagesHtml = `
-        <div style="width: 100%; max-width: 1100px; margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid #2e2e2e;">
-          <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 1.5rem; text-align: center; color: #ffffff;">More Images on Glass Gallery</h2>
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem;">
-            ${moreResult.rows.map(img => `
-              <a href="/image/${escapeHtml(img.id)}" style="display: block; text-decoration: none; color: inherit; background: #222222; border-radius: 12px; overflow: hidden; border: 1px solid #333333;">
-                <img src="${escapeHtml(img.imageUrl)}" alt="${escapeHtml(img.title || 'Glass Gallery Image')}" loading="lazy" style="width: 100%; height: 180px; object-fit: cover; display: block;" />
-                <div style="padding: 0.75rem 1rem;">
-                  <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(img.title || 'Untitled Image')}</h3>
-                </div>
-              </a>
-            `).join('')}
-          </div>
-        </div>
-        `;
-      }
+      const [prevRes, nextRes, moreRes] = await Promise.all([
+        db.execute({ sql: "SELECT id, title FROM images WHERE id < ? ORDER BY id DESC LIMIT 1", args: [cleanId] }),
+        db.execute({ sql: "SELECT id, title FROM images WHERE id > ? ORDER BY id ASC LIMIT 1", args: [cleanId] }),
+        db.execute({ sql: "SELECT id, title, imageUrl, uploaderName FROM images WHERE id != ? ORDER BY uploadedAt DESC LIMIT 8", args: [cleanId] })
+      ]);
+      prevImage = prevRes.rows?.[0] || null;
+      nextImage = nextRes.rows?.[0] || null;
+      moreImages = moreRes.rows || [];
     } catch (e) {
-      console.warn("Failed to fetch more images for SSR:", e);
+      console.warn("Failed to fetch link mesh for SSR:", e);
     }
 
-    // Inject server-rendered HTML for Googlebot (Dynamic Rendering)
-    // This prevents the "Crawled - currently not indexed" issue caused by empty initial DOM
     const mediaHtml = isVideo 
-      ? `<video controls autoplay loop muted style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);"><source src="${imageUrl}" type="video/mp4">Your browser does not support the video tag.</video>`
-      : `<img src="${imageUrl}" alt="${title}" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);" />`;
+      ? `<video controls autoplay loop muted width="1200" height="700" style="max-width: 100%; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);"><source src="${imageUrl}" type="video/mp4">Your browser does not support the video tag.</video>`
+      : `<img src="${imageUrl}" alt="${escapeHtml(altText)}" width="1200" height="800" style="max-width: 100%; height: auto; max-height: 700px; object-fit: contain; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);" />`;
 
     const serverRenderedHtml = `
       <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; background: #181818; color: #e5e5e5; min-height: 100vh; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
@@ -228,28 +245,77 @@ export async function onRequest(context) {
             <img src="/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="36" height="36" style="border-radius: 8px; display: block;" />
             <span>Glass Gallery</span>
           </a>
-          <a href="/" style="color: #f5c3b8; text-decoration: none; font-size: 0.95rem; font-weight: 600;">← Back to Gallery</a>
+          <nav style="display: flex; gap: 1.25rem; align-items: center;">
+            <a href="/" style="color: #a0a0a0; text-decoration: none; font-size: 0.95rem;">Explore Gallery</a>
+            <a href="/gallery" style="color: #f5c3b8; text-decoration: none; font-size: 0.95rem; font-weight: 600;">Gallery Directory</a>
+            <a href="/api" style="color: #a0a0a0; text-decoration: none; font-size: 0.95rem;">API Reference</a>
+          </nav>
         </header>
 
-        <nav style="width: 100%; max-width: 1100px; margin-bottom: 1.5rem; font-size: 0.875rem; color: #888;">
-          <a href="/" style="color: #a0a0a0; text-decoration: none;">Home</a>
+        <nav aria-label="Breadcrumb navigation" style="width: 100%; max-width: 1100px; margin-bottom: 1rem; font-size: 0.875rem; color: #888;">
+          <a href="/" style="color: #a0a0a0; text-decoration: none;">Explore Home</a>
           <span style="margin: 0 0.5rem;">/</span>
-          <span style="color: #ffffff;">${title}</span>
+          <a href="/gallery" style="color: #a0a0a0; text-decoration: none;">Gallery Archive</a>
+          <span style="margin: 0 0.5rem;">/</span>
+          <span style="color: #ffffff;">${escapeHtml(title)}</span>
         </nav>
 
-        <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 1.25rem; text-align: center; color: #ffffff;">${title}</h1>
+        <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 1.25rem; text-align: center; color: #ffffff;">${escapeHtml(title)}</h1>
         ${mediaHtml}
-        <p style="margin-top: 1.5rem; max-width: 700px; text-align: center; line-height: 1.6; font-size: 1.05rem; color: #d0d0d0;">${description}</p>
-        <div style="margin-top: 1.5rem; color: #a0a0a0; text-align: center; line-height: 1.6;">
-          <p>Shared by <strong style="color: #ffffff;">${uploaderName}</strong> on Glass Gallery</p>
-          ${location ? `<p>Location: ${location}</p>` : ''}
-          ${tags.length > 0 ? `<p style="margin-top: 0.5rem;">Tags: ${tags.map(t => `<span style="display: inline-block; background: #282828; padding: 0.2rem 0.6rem; border-radius: 6px; margin: 0.2rem; font-size: 0.85rem; color: #ccc;">#${escapeHtml(t)}</span>`).join(' ')}</p>` : ''}
-        </div>
+        
+        <p style="margin-top: 1.5rem; max-width: 750px; text-align: center; line-height: 1.6; color: #b8b8b8; font-size: 1.05rem;">${escapeHtml(description)}</p>
+        
+        <!-- Semantic Image Details List -->
+        <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0 0; color: #a0a0a0; display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center; font-size: 0.9rem;">
+          <li><strong>Photographer:</strong> ${uploaderName}</li>
+          ${location ? `<li><strong>Location:</strong> ${escapeHtml(location)}</li>` : ''}
+          <li><strong>License:</strong> <a href="${escapeHtml(licenseUrl)}" target="_blank" rel="noopener noreferrer" style="color: #f5c3b8; text-decoration: underline;">${escapeHtml(license)} License</a></li>
+        </ul>
 
-        ${moreImagesHtml}
+        ${tags.length > 0 ? `
+          <!-- Semantic Tags List -->
+          <ul style="list-style: none; padding: 0; margin: 1rem 0 0 0; display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+            ${tags.map(t => `<li><span style="background: #252525; border: 1px solid #333; color: #bbb; padding: 0.25rem 0.65rem; border-radius: 999px; font-size: 0.8rem; display: inline-block;">#${escapeHtml(t)}</span></li>`).join('')}
+          </ul>
+        ` : ''}
+
+        <!-- Next / Previous Image Navigation Mesh -->
+        <nav aria-label="Adjacent image links" style="width: 100%; max-width: 1100px; margin-top: 2.5rem; padding: 1rem 0; border-top: 1px solid #282828; border-bottom: 1px solid #282828; display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 0.95rem; flex-wrap: wrap;">
+          ${prevImage ? `<a href="/image/${escapeHtml(prevImage.id)}" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">&larr; Previous Image: ${escapeHtml(prevImage.title || 'Showcase')}</a>` : '<span></span>'}
+          <a href="/gallery" style="color: #a0a0a0; text-decoration: none; font-weight: 500;">Browse All Images in Directory</a>
+          ${nextImage ? `<a href="/image/${escapeHtml(nextImage.id)}" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">Next Image: ${escapeHtml(nextImage.title || 'Showcase')} &rarr;</a>` : '<span></span>'}
+        </nav>
+
+        <!-- More Images on Glass Gallery with Descriptive Anchor Text -->
+        ${moreImages.length > 0 ? `
+          <section style="width: 100%; max-width: 1100px; margin-top: 2.5rem;">
+            <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 1.5rem; text-align: center; color: #ffffff;">More Showcases on Glass Gallery</h2>
+            <ul style="list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem;">
+              ${moreImages.map(img => `
+                <li>
+                  <a href="/image/${escapeHtml(img.id)}" style="display: block; text-decoration: none; color: inherit; background: #222222; border-radius: 12px; overflow: hidden; border: 1px solid #333333; height: 100%;">
+                    <img src="${escapeHtml(img.imageUrl)}" alt="${escapeHtml(img.title || 'Photograph')} by ${escapeHtml(img.uploaderName || 'Creator')}" width="280" height="180" loading="lazy" style="width: 100%; height: 180px; object-fit: cover; display: block;" />
+                    <div style="padding: 0.75rem 1rem;">
+                      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0 0 0.25rem 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(img.title || 'Untitled Image')}</h3>
+                      <span style="font-size: 0.8rem; color: #888;">By ${escapeHtml(img.uploaderName || 'Creator')}</span>
+                    </div>
+                  </a>
+                </li>
+              `).join('')}
+            </ul>
+          </section>
+        ` : ''}
 
         <footer style="width: 100%; max-width: 1100px; margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid #282828; text-align: center; color: #777; font-size: 0.85rem;">
-          <p>&copy; 2026 Glass Gallery. Free high-definition image platform. <a href="/legal?tab=terms" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Terms</a> &bull; <a href="/legal?tab=privacy" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Privacy</a></p>
+          <p>&copy; 2026 Glass Gallery. Free high-definition image platform.</p>
+          <p>
+            <a href="/" style="color: #aaa; text-decoration: none;">Explore Gallery</a> &bull;
+            <a href="/gallery" style="color: #aaa; text-decoration: none;">Gallery Directory</a> &bull;
+            <a href="/api" style="color: #aaa; text-decoration: none;">API Documentation</a> &bull;
+            <a href="/legal?tab=terms" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Terms of Service</a> &bull;
+            <a href="/legal?tab=privacy" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Privacy Policy</a> &bull;
+            <a href="/legal?tab=guidelines" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Content Guidelines</a>
+          </p>
         </footer>
       </div>
     `;
@@ -260,7 +326,6 @@ export async function onRequest(context) {
     );
 
     // Strip React for known search engine bots so they only index the server-rendered HTML
-    // and don't wipe the DOM when JS executes.
     const userAgent = context.request.headers.get('user-agent') || '';
     const isBot = /bot|googlebot|crawler|spider|robot|crawling|facebookexternalhit|twitterbot|inspectiontool/i.test(userAgent);
     
@@ -272,13 +337,13 @@ export async function onRequest(context) {
     return new Response(indexHtml, {
       status: 200,
       headers: {
-        'Content-Type': 'text/html',
+        'Content-Type': 'text/html; charset=UTF-8',
         'Cache-Control': 's-maxage=3600, stale-while-revalidate=86400'
       }
     });
 
   } catch (error) {
     console.error("[og-image] Error:", error);
-    return Response.redirect(`${baseUrl}/?image=${id}`, 302);
+    return Response.redirect(`${baseUrl}/gallery`, 302);
   }
 }

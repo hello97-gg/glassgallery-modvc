@@ -63,7 +63,7 @@ const LegalPage: React.FC<LegalPageProps> = ({ initialTab = 'terms', onBackToFee
       <div className="w-full max-w-6xl mt-4 mb-8 p-6 md:p-8 rounded-2xl bg-surface/50 border border-border backdrop-blur-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-            Legal Center
+            {getTitle()} – Legal Center
           </h1>
           <p className="text-secondary text-sm md:text-base mt-1 font-medium">
             By using Glass Gallery, you agree to these terms.

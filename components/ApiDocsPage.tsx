@@ -86,6 +86,7 @@ const ApiDocsPage: React.FC = () => {
                     <h4 className="text-sm font-bold text-primary mb-2">Query Parameters</h4>
                     <div className="overflow-x-auto border border-border rounded-lg w-full">
                         <table className="w-full text-left border-collapse min-w-[500px]">
+                            <caption className="sr-only">Query Parameters</caption>
                             <thead>
                                 <tr className="border-b border-border bg-surface/50 text-xs text-secondary font-medium">
                                     <th className="py-2 px-3">Param</th>
@@ -150,6 +151,7 @@ Content-Type: application/json`}
                     <h4 className="text-sm font-bold text-primary mb-2">JSON Body Parameters</h4>
                     <div className="overflow-x-auto border border-border rounded-lg w-full">
                         <table className="w-full text-left border-collapse min-w-[500px]">
+                            <caption className="sr-only">JSON Body Parameters</caption>
                             <thead>
                                 <tr className="border-b border-border bg-surface/50 text-xs text-secondary font-medium">
                                     <th className="py-2 px-3">Field</th>
@@ -254,6 +256,7 @@ X-Image-Tags: ["Urban", "Street"]`}
             <h2 className="text-2xl font-bold text-primary mb-6">Parameters</h2>
             <div className="overflow-x-auto border border-border rounded-lg w-full">
                 <table className="w-full text-left border-collapse min-w-[600px]">
+                    <caption className="sr-only">API Parameters</caption>
                     <thead>
                         <tr className="border-b border-border bg-surface/50">
                             <th className="py-3 px-4 text-secondary font-medium text-sm">Name</th>

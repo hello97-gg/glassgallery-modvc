@@ -31,12 +31,16 @@
     <meta property="og:site_name" content="Glass Gallery" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Glass Gallery – Discover, Share & Download High Quality Images" />
-    <meta property="og:description" content="An image sharing platform with a modern, glass-like interface. Discover, upload, and share beautiful images." />
+    <meta property="og:description" content="Discover, share, and download high-resolution photography, deep-space astrophotography from James Webb and Hubble, automotive wallpapers, anime art, and visual media." />
+    <meta property="og:url" content="https://gg.modvc.org/" />
     <meta property="og:image" content="https://gg.modvc.org/web-app-manifest-512x512.png" />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
     
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@GlassGallery" />
+    <meta name="twitter:title" content="Glass Gallery – Discover, Share & Download High Quality Images" />
+    <meta name="twitter:description" content="Discover, share, and download high-resolution photography, deep-space astrophotography from James Webb and Hubble, automotive wallpapers, anime art, and visual media." />
     <meta name="twitter:image" content="https://gg.modvc.org/web-app-manifest-512x512.png" />
 
     <!-- Canonical URL -->
@@ -172,11 +176,13 @@
             <img src="/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="40" height="40" style="border-radius: 10px; display: block;" />
             <span>Glass Gallery</span>
           </a>
-          <nav style="display: flex; gap: 1.25rem; align-items: center; font-size: 0.9rem;">
-            <a href="/" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">Explore</a>
-            <a href="/legal?tab=terms" style="color: #a0a0a0; text-decoration: none;">Terms</a>
-            <a href="/legal?tab=privacy" style="color: #a0a0a0; text-decoration: none;">Privacy</a>
-            <a href="/legal?tab=guidelines" style="color: #a0a0a0; text-decoration: none;">Guidelines</a>
+          <nav style="display: flex; gap: 1.25rem; align-items: center; font-size: 0.9rem; flex-wrap: wrap;">
+            <a href="/" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">Explore Gallery</a>
+            <a href="/gallery" style="color: #ffffff; text-decoration: none; font-weight: 600;">Gallery Directory</a>
+            <a href="/api" style="color: #a0a0a0; text-decoration: none;">API Reference</a>
+            <a href="/legal?tab=terms" style="color: #a0a0a0; text-decoration: none;">Terms of Service</a>
+            <a href="/legal?tab=privacy" style="color: #a0a0a0; text-decoration: none;">Privacy Policy</a>
+            <a href="/legal?tab=guidelines" style="color: #a0a0a0; text-decoration: none;">Content Guidelines</a>
           </nav>
         </header>
 
@@ -198,112 +204,139 @@
               <span style="background: #282828; color: #d0d0d0; padding: 0.4rem 0.85rem; border-radius: 999px; font-size: 0.85rem; font-weight: 500;">Anime Artwork</span>
               <span style="background: #282828; color: #d0d0d0; padding: 0.4rem 0.85rem; border-radius: 999px; font-size: 0.85rem; font-weight: 500;">HD Wallpapers</span>
             </div>
+            <div style="margin-top: 1.5rem;">
+              <a href="/gallery" style="display: inline-block; background: #f5c3b8; color: #181818; padding: 0.65rem 1.4rem; border-radius: 999px; font-weight: 700; text-decoration: none; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(245, 195, 184, 0.25);">Browse Complete Gallery Directory &rarr;</a>
+            </div>
           </section>
 
           <!-- Featured Gallery Grid with Real Crawlable Links -->
           <section>
-            <h2 style="font-size: 1.5rem; font-weight: 700; color: #ffffff; margin-bottom: 1.5rem;">Featured Images &amp; Wallpapers</h2>
-            
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
-              
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_6vhfr7p38eddwth1bif7he" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805155067-6hjwps.jpg" alt="Planetary Nebula NGC 1514 (WISE and Webb Images)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Planetary Nebula NGC 1514</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Infrared views of NGC 1514 from NASA's James Webb Space Telescope and WISE.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_4uvixqw141jut55076eftp" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805183535-nmn4fl.jpg" alt="Horsehead Nebula (Euclid, Hubble and Webb images)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Horsehead Nebula</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Three distinctive views of the Horsehead Nebula residing in constellation Orion.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_uqyifsbdfasfcf33brbv9" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805168690-0jhwd7.jpg" alt="Tarantula Nebula (MIRI Image)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Tarantula Nebula</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Captured by Webb's Mid-Infrared Instrument (MIRI), revealing young stars and glowing dust.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_otve2cl63h0w66h2kwxem" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805162909-73dre5.jpg" alt="Serpens Nebula North aligned outflows (NIRCam image)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Serpens Nebula North</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Aligned protostellar outflows captured by NASA/ESA/CSA James Webb Space Telescope.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_nbn9m544lg8rm0dy729gf" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805149032-1s4062.jpg" alt="Cats Paw Nebula (annotated)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Cats Paw Nebula</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">NGC 6334 massive local star-forming region captured in deep infrared.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_s3bv07drdbg45wtz280c" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805141647-hfbl14.jpg" alt="Butterfly Nebula NGC 6302" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Butterfly Nebula NGC 6302</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Planetary nebula 3400 light-years away in constellation Scorpius by Webb and ALMA.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_19rrglnw6ufobded10lmbh" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805135476-r523wk.jpg" alt="Pismis 24 (NIRCam image)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Pismis 24 Star Birth</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Sparkling scene of star birth amidst cosmic dustscapes by James Webb Telescope.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_a4mdjigzh7c9irzigs7hlw" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805006067-q155lf.jpg" alt="The Crab Nebula (MIRI &amp; NIRCam)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">The Crab Nebula</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Supernova remnant origins revealed in crisp near- and mid-infrared light.</p>
-                  </div>
-                </a>
-              </article>
-
-              <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden;">
-                <a href="/image/img_r58vtwdsljenjtycd34ry" style="text-decoration: none; color: inherit; display: block;">
-                  <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784804997306-1d9cte.jpg" alt="Sagittarius C (NIRCam Image)" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
-                  <div style="padding: 1rem;">
-                    <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Sagittarius C (Milky Way Core)</h3>
-                    <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">50 light-years-wide view of over 500,000 stars in the Milky Way's dense center.</p>
-                  </div>
-                </a>
-              </article>
-
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;">
+              <h2 style="font-size: 1.5rem; font-weight: 700; color: #ffffff; margin: 0;">Featured Images &amp; Wallpapers</h2>
+              <a href="/gallery" style="color: #f5c3b8; text-decoration: none; font-size: 0.9rem; font-weight: 600;">View all images &rarr;</a>
             </div>
+            
+            <ul style="list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
+              
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_6vhfr7p38eddwth1bif7he" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805155067-6hjwps.jpg" alt="Planetary Nebula NGC 1514 (WISE and Webb Images)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Planetary Nebula NGC 1514</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Infrared views of NGC 1514 from NASA's James Webb Space Telescope and WISE.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_4uvixqw141jut55076eftp" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805183535-nmn4fl.jpg" alt="Horsehead Nebula (Euclid, Hubble and Webb images)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Horsehead Nebula</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Three distinctive views of the Horsehead Nebula residing in constellation Orion.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_uqyifsbdfasfcf33brbv9" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805168690-0jhwd7.jpg" alt="Tarantula Nebula (MIRI Image)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Tarantula Nebula</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Captured by Webb's Mid-Infrared Instrument (MIRI), revealing young stars and glowing dust.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_otve2cl63h0w66h2kwxem" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805162909-73dre5.jpg" alt="Serpens Nebula North aligned outflows (NIRCam image)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Serpens Nebula North</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Aligned protostellar outflows captured by NASA/ESA/CSA James Webb Space Telescope.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_nbn9m544lg8rm0dy729gf" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805149032-1s4062.jpg" alt="Cats Paw Nebula (annotated)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Cats Paw Nebula</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">NGC 6334 massive local star-forming region captured in deep infrared.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_s3bv07drdbg45wtz280c" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805141647-hfbl14.jpg" alt="Butterfly Nebula NGC 6302" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Butterfly Nebula NGC 6302</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Planetary nebula 3400 light-years away in constellation Scorpius by Webb and ALMA.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_19rrglnw6ufobded10lmbh" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805135476-r523wk.jpg" alt="Pismis 24 (NIRCam image)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Pismis 24 Star Birth</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Sparkling scene of star birth amidst cosmic dustscapes by James Webb Telescope.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_a4mdjigzh7c9irzigs7hlw" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784805006067-q155lf.jpg" alt="The Crab Nebula (MIRI &amp; NIRCam)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">The Crab Nebula</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">Supernova remnant origins revealed in crisp near- and mid-infrared light.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+              <li>
+                <article style="background: #222222; border: 1px solid #333333; border-radius: 12px; overflow: hidden; height: 100%;">
+                  <a href="/image/img_r58vtwdsljenjtycd34ry" style="text-decoration: none; color: inherit; display: block;">
+                    <img src="https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/1784804997306-1d9cte.jpg" alt="Sagittarius C (NIRCam Image)" width="300" height="200" loading="lazy" style="width: 100%; height: 200px; object-fit: cover; display: block;" />
+                    <div style="padding: 1rem;">
+                      <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem 0; color: #ffffff;">Sagittarius C (Milky Way Core)</h3>
+                      <p style="font-size: 0.875rem; color: #a0a0a0; margin: 0; line-height: 1.5;">50 light-years-wide view of over 500,000 stars in the Milky Way's dense center.</p>
+                    </div>
+                  </a>
+                </article>
+              </li>
+
+            </ul>
           </section>
         </main>
 
         <!-- Footer -->
-        <footer style="border-top: 1px solid #282828; padding: 2rem 1.5rem; text-align: center; color: #888888; font-size: 0.875rem;">
-          <p style="margin: 0 0 0.5rem 0;">&copy; 2026 Glass Gallery. Discover, upload, and share high-resolution visual art and photography.</p>
+        <footer style="border-top: 1px solid #282828; padding: 2.5rem 1.5rem; text-align: center; color: #888888; font-size: 0.875rem;">
+          <p style="margin: 0 0 0.75rem 0;">&copy; 2026 Glass Gallery. Discover, upload, and share high-resolution visual art and photography.</p>
           <p style="margin: 0;">
+            <a href="/" style="color: #a0a0a0; text-decoration: none;">Explore Gallery</a> &bull;
+            <a href="/gallery" style="color: #a0a0a0; text-decoration: none;">Gallery Directory</a> &bull;
+            <a href="/api" style="color: #a0a0a0; text-decoration: none;">API Documentation</a> &bull;
             <a href="/legal?tab=terms" style="color: #a0a0a0; text-decoration: none;">Terms of Service</a> &bull; 
             <a href="/legal?tab=privacy" style="color: #a0a0a0; text-decoration: none;">Privacy Policy</a> &bull; 
             <a href="/legal?tab=guidelines" style="color: #a0a0a0; text-decoration: none;">Content Guidelines</a>

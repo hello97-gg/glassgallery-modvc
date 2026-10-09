@@ -50,8 +50,8 @@ export async function onRequest(context) {
     description = "Review the community standards, mature content tagging rules, and acceptable use policies of Glass Gallery.";
     content = CONTENT_GUIDELINES;
   }
-
-  const pageUrl = `${baseUrl}/legal?tab=${activeTab}`;
+  const hasTabParam = url.searchParams.has('tab');
+  const pageUrl = hasTabParam ? `${baseUrl}/legal?tab=${activeTab}` : `${baseUrl}/legal`;
 
   const seoMetaTags = `
   <title>${title} | Legal Center | Glass Gallery</title>
@@ -147,8 +147,16 @@ export async function onRequest(context) {
       </div>
       
       <!-- Footer -->
-      <footer style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; text-align: center; color: #a0a0a0; font-size: 0.85rem;">
-        &copy; 2026 Glass Gallery. All legal protections reserved.
+      <footer style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.05); padding: 2rem 1.5rem; text-align: center; color: #a0a0a0; font-size: 0.85rem;">
+        <p style="margin: 0 0 0.5rem 0;">&copy; 2026 Glass Gallery. All legal protections reserved.</p>
+        <p style="margin: 0;">
+          <a href="/" style="color: #a0a0a0; text-decoration: none;">Explore Gallery</a> &bull;
+          <a href="/gallery" style="color: #a0a0a0; text-decoration: none;">Gallery Directory</a> &bull;
+          <a href="/api" style="color: #a0a0a0; text-decoration: none;">API Reference</a> &bull;
+          <a href="/legal?tab=terms" style="color: #a0a0a0; text-decoration: none;">Terms of Service</a> &bull;
+          <a href="/legal?tab=privacy" style="color: #a0a0a0; text-decoration: none;">Privacy Policy</a> &bull;
+          <a href="/legal?tab=guidelines" style="color: #a0a0a0; text-decoration: none;">Content Guidelines</a>
+        </p>
       </footer>
     </div>
 

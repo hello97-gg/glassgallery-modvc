@@ -1777,11 +1777,13 @@ const App: React.FC = () => {
     return (
         <>
             <SEOHead 
-                title="Home - Infinite Feed"
+                title="Glass Gallery – Discover, Share & Download High Quality Images"
                 description="Experience the latest images in a high-fidelity scrollable feed."
                 url={window.location.href}
                 favicon={DEFAULT_FAVICON}
             />
+            <h1 className="sr-only">Glass Gallery – Discover, Share & Download High Quality Images</h1>
+            <h2 className="sr-only">Latest Community Photos, Astrophotography & Wallpapers</h2>
             <InfiniteFeed 
                 images={feedImages.length > 0 ? feedImages : displayedImages} 
                 user={user} 

@@ -20,6 +20,8 @@ export async function onRequest(context) {
   // Static routes
   const staticUrls = [
     { loc: `${baseUrl}/`, changefreq: "daily", priority: "1.0" },
+    { loc: `${baseUrl}/gallery`, changefreq: "daily", priority: "0.9" },
+    { loc: `${baseUrl}/api`, changefreq: "weekly", priority: "0.7" },
     { loc: `${baseUrl}/legal`, changefreq: "monthly", priority: "0.5" },
   ];
 
