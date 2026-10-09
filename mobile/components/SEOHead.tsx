@@ -71,9 +71,10 @@ const SEOHead: React.FC<SEOHeadProps> = ({
         link.rel = 'icon';
         document.head.appendChild(link);
     }
-    // Only update if changed to avoid flickering
-    if (link.href !== activeFavicon) {
-        link.href = activeFavicon;
+    // Only update if actually different to prevent endless re-fetching
+    const currentAttr = link.getAttribute('href');
+    if (currentAttr !== activeFavicon && !link.href.endsWith(activeFavicon)) {
+        link.setAttribute('href', activeFavicon);
     }
 
     // 7. Structured Data (JSON-LD) - Critical for Google Images & SEO
