@@ -66,7 +66,7 @@ const MobileAppPromo: React.FC = () => {
                 <div className="fixed top-0 left-0 w-full z-[80] bg-surface/90 backdrop-blur-md border-b border-border shadow-md py-2 px-4 flex items-center justify-between animate-fade-in">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-surface border border-border/50 rounded-xl flex items-center justify-center overflow-hidden shadow-sm">
-                            <img src="/favicon.svg" className="w-5 h-5 object-contain" alt="Glass Gallery Logo" />
+                            <img src="/favicon-96x96.png?v=2" className="w-5 h-5 object-contain" alt="Glass Gallery Logo" />
                         </div>
                         <div>
                             <p className="text-xs font-bold text-primary">Glass Gallery</p>
@@ -108,7 +108,7 @@ const MobileAppPromo: React.FC = () => {
                             </button>
                             
                             <div className="w-20 h-20 bg-surface border border-border/50 rounded-3xl mx-auto flex items-center justify-center shadow-lg shadow-black/5 mb-6 overflow-hidden">
-                                <img src="/favicon.svg" className="w-12 h-12 object-contain" alt="Glass Gallery Logo" />
+                                <img src="/favicon-96x96.png?v=2" className="w-12 h-12 object-contain" alt="Glass Gallery Logo" />
                             </div>
                             
                             <h2 className="text-2xl font-bold text-primary mb-2">Glass Gallery is better on the app</h2>

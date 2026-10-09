@@ -32,20 +32,17 @@ const NavItem: React.FC<{ children: React.ReactNode, label: string, onClick?: ()
   </button>
 );
 
-// High-performance embedded Glass Gallery Logo (zero network requests, immune to cache issues)
-const GLASS_GALLERY_ICON = "data:image/png;base64,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";
-
 const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, activeView, setView, onViewProfile, notifications, onImageClick, onOpenLegal }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleMyProfileClick = () => {
     if (user) {
-        onViewProfile({
-            uploaderUid: user.uid,
-            uploaderName: user.displayName || 'User',
-            uploaderPhotoURL: user.photoURL || ''
-        });
-        setDropdownOpen(false);
+      onViewProfile({
+        uploaderUid: user.uid,
+        uploaderName: user.displayName || 'User',
+        uploaderPhotoURL: user.photoURL || ''
+      });
+      setDropdownOpen(false);
     }
   }
 
@@ -53,12 +50,12 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
     <aside className="h-screen w-20 bg-background border-r border-border p-3 flex flex-col items-center fixed top-0 left-0 z-30">
       <div className="flex items-center justify-center p-2 mb-4 cursor-pointer" onClick={() => setView('home')} title="Glass Gallery">
         <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden hover:scale-105 transition-transform p-1">
-          <img 
-            src={GLASS_GALLERY_ICON} 
-            className="w-full h-full object-contain rounded-lg" 
+          <img
+            src="/favicon-96x96.png?v=2"
+            className="w-6 h-6 object-contain"
             alt="Glass Gallery Logo"
-            width={36}
-            height={36}
+            width={24}
+            height={24}
           />
         </div>
       </div>
@@ -75,25 +72,25 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
           </svg>
         </NavItem>
-         <NavItem label="Explore" active={activeView === 'explore'} onClick={() => setView('explore')}>
+        <NavItem label="Explore" active={activeView === 'explore'} onClick={() => setView('explore')}>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
           </svg>
         </NavItem>
         <NavItem label="API" active={activeView === 'api'} onClick={() => setView('api')}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
         </NavItem>
         {user && (
-            <NotificationBell 
-                notifications={notifications} 
-                onImageClick={onImageClick} 
-                isSidebar={true}
-                onViewProfile={onViewProfile}
-                onClick={() => setView('notifications')}
-            />
+          <NotificationBell
+            notifications={notifications}
+            onImageClick={onImageClick}
+            isSidebar={true}
+            onViewProfile={onViewProfile}
+            onClick={() => setView('notifications')}
+          />
         )}
         <NavItem label="Create" onClick={onCreateClick} isProminent>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
@@ -102,25 +99,25 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
         </NavItem>
 
         <div className="mt-2 pt-2 border-t border-border flex flex-col items-center w-full">
-            <NavItem label="Legal & Terms" onClick={onOpenLegal}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-            </NavItem>
-             
-            {/* Open Source Link */}
-            <a 
-              href="https://github.com/hello97-gg/glassgallery-modvc" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              title="GitHub Open Source"
-              className="flex items-center justify-center w-12 h-12 my-1.5 rounded-xl text-secondary hover:text-primary hover:bg-surface/80 transition-colors"
-              aria-label="GitHub"
-            >
-              <div className="w-6 h-6 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-              </div>
-            </a>
+          <NavItem label="Legal & Terms" onClick={onOpenLegal}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </NavItem>
+
+          {/* Open Source Link */}
+          <a
+            href="https://github.com/hello97-gg/glassgallery-modvc"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub Open Source"
+            className="flex items-center justify-center w-12 h-12 my-1.5 rounded-xl text-secondary hover:text-primary hover:bg-surface/80 transition-colors"
+            aria-label="GitHub"
+          >
+            <div className="w-6 h-6 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" /></svg>
+            </div>
+          </a>
         </div>
       </nav>
 

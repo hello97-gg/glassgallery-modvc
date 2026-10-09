@@ -2,7 +2,7 @@
 import React, { useEffect } from 'react';
 
 // Default Glass Gallery Logo - Uses the static file for better caching/performance
-export const DEFAULT_FAVICON = '/favicon.svg';
+export const DEFAULT_FAVICON = '/favicon-96x96.png?v=2';
 
 interface SEOHeadProps {
   title: string;
