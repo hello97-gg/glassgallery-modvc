@@ -4,7 +4,7 @@
  */
 
 const HOST = 'gg.modvc.org';
-const KEY = 'f8a614d9b23c4a8581e227d8846c9be1';
+const KEY = '0d32f54c5df04186b6b00004c92ae5df';
 const KEY_LOCATION = `https://${HOST}/${KEY}.txt`;
 
 async function fetchSitemapUrls() {

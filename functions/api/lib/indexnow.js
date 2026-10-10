@@ -1,4 +1,4 @@
-export const INDEXNOW_KEY = "f8a614d9b23c4a8581e227d8846c9be1";
+export const INDEXNOW_KEY = "0d32f54c5df04186b6b00004c92ae5df";
 export const INDEXNOW_HOST = "gg.modvc.org";
 export const INDEXNOW_KEY_LOCATION = `https://${INDEXNOW_HOST}/${INDEXNOW_KEY}.txt`;
 
