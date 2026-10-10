@@ -1,5 +1,12 @@
 export const onRequest = async (context) => {
   const { request, next } = context;
+  const url = new URL(request.url);
+
+  // Canonical domain redirect: ensure all *.pages.dev traffic redirects to gg.modvc.org
+  if (url.hostname.endsWith('.pages.dev')) {
+    url.hostname = 'gg.modvc.org';
+    return Response.redirect(url.toString(), 301);
+  }
 
   // Execute next middleware or route handler
   let response;

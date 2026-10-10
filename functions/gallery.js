@@ -238,22 +238,22 @@ export async function onRequest(context) {
 </head>
 <body>
   <header>
-    <a href="/" class="logo">
-      <img src="/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="36" height="36" style="border-radius: 8px;" />
+    <a href="${baseUrl}/" class="logo">
+      <img src="${baseUrl}/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="36" height="36" style="border-radius: 8px;" />
       <span>Glass Gallery</span>
     </a>
     <nav>
-      <a href="/">Explore Gallery</a>
-      <a href="/gallery" class="active">Gallery Directory</a>
-      <a href="/api">API Reference</a>
-      <a href="/legal?tab=terms">Terms of Service</a>
-      <a href="/legal?tab=privacy">Privacy Policy</a>
+      <a href="${baseUrl}/">Explore Gallery</a>
+      <a href="${baseUrl}/gallery" class="active">Gallery Directory</a>
+      <a href="${baseUrl}/api">API Reference</a>
+      <a href="${baseUrl}/legal?tab=terms">Terms of Service</a>
+      <a href="${baseUrl}/legal?tab=privacy">Privacy Policy</a>
     </nav>
   </header>
 
   <main>
     <nav aria-label="Breadcrumb navigation" class="breadcrumbs">
-      <a href="/">Explore Home</a> &rsaquo; <span>Gallery Archive</span> &rsaquo; <span>Page ${page}</span>
+      <a href="${baseUrl}/">Explore Home</a> &rsaquo; <span>Gallery Archive</span> &rsaquo; <span>Page ${page}</span>
     </nav>
 
     <h1>Gallery Archive – Page ${page} of ${totalPages}</h1>
@@ -265,7 +265,7 @@ export async function onRequest(context) {
         const uploader = escapeHtml(img.uploaderName || "Glass Gallery Creator");
         return `
           <li>
-            <a href="/image/${escapeHtml(img.id)}" class="card">
+            <a href="${baseUrl}/image/${escapeHtml(img.id)}" class="card">
               <img src="${escapeHtml(img.imageUrl)}" alt="${title} by ${uploader} on Glass Gallery" width="280" height="200" loading="lazy" />
               <div class="card-info">
                 <h3>${title}</h3>
@@ -287,11 +287,11 @@ export async function onRequest(context) {
   <footer>
     <p>&copy; 2026 Glass Gallery. Discover, share and download high-resolution visual art.</p>
     <p>
-      <a href="/">Explore Gallery</a> &bull;
-      <a href="/gallery">Gallery Directory</a> &bull;
-      <a href="/api">API Documentation</a> &bull;
-      <a href="/legal?tab=terms">Terms of Service</a> &bull;
-      <a href="/legal?tab=privacy">Privacy Policy</a>
+      <a href="${baseUrl}/">Explore Gallery</a> &bull;
+      <a href="${baseUrl}/gallery">Gallery Directory</a> &bull;
+      <a href="${baseUrl}/api">API Documentation</a> &bull;
+      <a href="${baseUrl}/legal?tab=terms">Terms of Service</a> &bull;
+      <a href="${baseUrl}/legal?tab=privacy">Privacy Policy</a>
     </p>
   </footer>
 </body>
