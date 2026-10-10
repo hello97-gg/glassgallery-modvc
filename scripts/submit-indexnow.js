@@ -23,39 +23,31 @@ async function fetchSitemapUrls() {
   }
 }
 
-async function submitToIndexNow(urlList) {
+async function submitBatch(batchUrls) {
   const payload = {
     host: HOST,
     key: KEY,
     keyLocation: KEY_LOCATION,
-    urlList: urlList
+    urlList: batchUrls
   };
 
-  const endpoints = [
-    { name: 'IndexNow Global (Bing, Yandex, Seznam, Naver)', url: 'https://api.indexnow.org/indexnow' },
-    { name: 'Microsoft Bing Direct', url: 'https://www.bing.com/indexnow' }
-  ];
+  try {
+    const res = await fetch('https://api.indexnow.org/indexnow', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify(payload)
+    });
 
-  for (const ep of endpoints) {
-    console.log(`\nSubmitting ${urlList.length} URLs to ${ep.name}...`);
-    try {
-      const res = await fetch(ep.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (res.status === 200 || res.status === 202) {
-        console.log(`✅ Success! [HTTP ${res.status}] URLs submitted and queued for immediate indexing.`);
-      } else {
-        const text = await res.text().catch(() => '');
-        console.log(`⚠️ Response [HTTP ${res.status}]: ${text || res.statusText}`);
-      }
-    } catch (err) {
-      console.error(`❌ Request error for ${ep.name}:`, err.message);
+    if (res.status === 200 || res.status === 202) {
+      return { success: true, status: res.status };
+    } else {
+      const text = await res.text().catch(() => '');
+      return { success: false, status: res.status, error: text };
     }
+  } catch (err) {
+    return { success: false, status: 500, error: err.message };
   }
 }
 
@@ -76,23 +68,38 @@ async function main() {
   ];
 
   const allUrls = Array.from(new Set([...coreUrls, ...sitemapUrls]));
-  console.log(`Discovered ${allUrls.length} total URLs to index.`);
+  console.log(`Discovered ${allUrls.length} total URLs to index.\n`);
 
   if (allUrls.length === 0) {
     console.log('No URLs to submit.');
     return;
   }
 
-  // Preview first 5
-  console.log('Sample URLs:');
-  allUrls.slice(0, 5).forEach(u => console.log(' - ' + u));
-  if (allUrls.length > 5) console.log(` ... and ${allUrls.length - 5} more`);
+  // Submit in batches of 250
+  const BATCH_SIZE = 250;
+  let totalSuccess = 0;
+  const totalBatches = Math.ceil(allUrls.length / BATCH_SIZE);
 
-  // Max 10,000 URLs per request according to IndexNow spec
-  const batch = allUrls.slice(0, 10000);
-  await submitToIndexNow(batch);
+  for (let i = 0; i < allUrls.length; i += BATCH_SIZE) {
+    const batch = allUrls.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    process.stdout.write(`Submitting Batch ${batchNum}/${totalBatches} (${batch.length} URLs)... `);
 
-  console.log('\n=== Done ===');
+    const result = await submitBatch(batch);
+    if (result.success) {
+      totalSuccess += batch.length;
+      console.log(`✅ [HTTP ${result.status}] OK`);
+    } else {
+      console.log(`⚠️ [HTTP ${result.status}]: ${result.error || 'Failed'}`);
+    }
+
+    // Small delay between batches
+    if (i + BATCH_SIZE < allUrls.length) {
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+
+  console.log(`\n=== Done: Successfully submitted ${totalSuccess} / ${allUrls.length} URLs to IndexNow ===`);
 }
 
 main();
