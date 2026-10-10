@@ -1,4 +1,5 @@
 import { getDb } from "./lib/turso.js";
+import { submitToIndexNow } from "./lib/indexnow.js";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon";
 
@@ -992,6 +993,18 @@ Return the response strictly as a JSON object with this exact format:
           ]
         });
 
+        // Trigger IndexNow notification for newly added image
+        const indexNowUrls = [
+          `https://gg.modvc.org/image/${id}`,
+          "https://gg.modvc.org/gallery",
+          "https://gg.modvc.org/"
+        ];
+        if (context.waitUntil) {
+          context.waitUntil(submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err)));
+        } else {
+          submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err));
+        }
+
         if (isUnsafe) {
           const notifId = 'notif_' + Math.random().toString(36).substring(2, 15);
           await db.execute({
@@ -1097,6 +1110,18 @@ Return the response strictly as a JSON object with this exact format:
             JSON.stringify(aiConceptsArr)
           ]
         });
+
+        // Trigger IndexNow notification for newly added image
+        const indexNowUrls = [
+          `https://gg.modvc.org/image/${id}`,
+          "https://gg.modvc.org/gallery",
+          "https://gg.modvc.org/"
+        ];
+        if (context.waitUntil) {
+          context.waitUntil(submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err)));
+        } else {
+          submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err));
+        }
 
         if (isUnsafe) {
           const notifId = 'notif_' + Math.random().toString(36).substring(2, 15);
