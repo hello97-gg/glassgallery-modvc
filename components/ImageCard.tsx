@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { isVideoUrl } from '../utils/mediaUtils';
+import { recordFeedImpression } from '../services/impressionTracker';
 import VideoPlayer from './VideoPlayer';
 
 interface ImageCardProps {
@@ -35,7 +36,42 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   const [revealed, setRevealed] = useState(false);
 
   const imgRef = React.useRef<HTMLImageElement>(null);
+  const cardContainerRef = React.useRef<HTMLDivElement>(null);
   const isVideo = isVideoUrl(image.imageUrl);
+
+  // Impression view tracking (MRC Standard: >=50% in viewport for >= 1s)
+  React.useEffect(() => {
+    const el = cardContainerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+
+    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            if (!dwellTimer) {
+              dwellTimer = setTimeout(() => {
+                recordFeedImpression(image.id);
+              }, 1000);
+            }
+          } else {
+            if (dwellTimer) {
+              clearTimeout(dwellTimer);
+              dwellTimer = null;
+            }
+          }
+        });
+      },
+      { threshold: 0.5 }
+    );
+
+    observer.observe(el);
+
+    return () => {
+      if (dwellTimer) clearTimeout(dwellTimer);
+      observer.disconnect();
+    };
+  }, [image.id]);
 
   React.useEffect(() => {
     setImageSrc(image.imageUrl);
@@ -108,6 +144,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
 
   return (
     <div
+      ref={cardContainerRef}
       className={combinedClassName}
       onClick={handleCardClick}
     >

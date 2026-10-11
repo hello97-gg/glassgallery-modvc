@@ -1,8 +1,9 @@
-import React, { useState, useRef, memo } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { recordWatchInterest } from '../services/interestTracker';
+import { recordFeedImpression } from '../services/impressionTracker';
 import { isVideoUrl } from '../utils/mediaUtils';
 import EmbedModal from './EmbedModal';
 import VideoPlayer from './VideoPlayer';
@@ -55,6 +56,50 @@ export const FeedItem: React.FC<{
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const itemArticleRef = useRef<HTMLElement>(null);
+  const [localViewCount, setLocalViewCount] = useState<number>(image.viewCount || 0);
+
+  useEffect(() => {
+    setLocalViewCount(image.viewCount || 0);
+  }, [image.viewCount]);
+
+  // Feed Impression View Tracking (MRC Standard: >=50% visible in viewport for >= 1s)
+  useEffect(() => {
+    const el = itemArticleRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+
+    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            if (!dwellTimer) {
+              dwellTimer = setTimeout(() => {
+                const isNew = recordFeedImpression(image.id);
+                if (isNew) {
+                  setLocalViewCount((prev) => prev + 1);
+                }
+              }, 1000);
+            }
+          } else {
+            if (dwellTimer) {
+              clearTimeout(dwellTimer);
+              dwellTimer = null;
+            }
+          }
+        });
+      },
+      { threshold: 0.5 }
+    );
+
+    observer.observe(el);
+
+    return () => {
+      if (dwellTimer) clearTimeout(dwellTimer);
+      observer.disconnect();
+    };
+  }, [image.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -101,6 +146,7 @@ export const FeedItem: React.FC<{
 
   return (
     <article
+      ref={itemArticleRef}
       className="flex gap-3 p-4 border-b border-border transition-colors hover:bg-surface/30 cursor-pointer"
       onClick={() => onImageClick(image)}
     >
@@ -302,7 +348,7 @@ export const FeedItem: React.FC<{
                 <g><path d="M8.75 21V3h2v18h-2zM18 21V8.5h2V21h-2zM4 21v-6h2v6H4zM13.25 21V11h2v10h-2z"></path></g>
               </svg>
             </div>
-            <span className="text-xs">{image.viewCount || 0}</span>
+            <span className="text-xs">{localViewCount}</span>
           </div>
 
           {/* Bookmark / Save */}
@@ -401,6 +447,7 @@ export const FeedItem: React.FC<{
     prevProps.image.likeCount === nextProps.image.likeCount &&
     prevProps.image.downloadCount === nextProps.image.downloadCount &&
     prevProps.image.commentCount === nextProps.image.commentCount &&
+    prevProps.image.viewCount === nextProps.image.viewCount &&
     prevProps.user?.uid === nextProps.user?.uid
   );
 });

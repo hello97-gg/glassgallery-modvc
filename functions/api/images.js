@@ -465,7 +465,7 @@ export async function onRequest(context) {
         const searchTerms = url.searchParams.get('searchTerms') || ''; // Client-side search history
 
         // Optimized: Combined taste profile query (uploads + likes + views in one UNION ALL) — reduces 7→5 DB calls
-        const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes] = await Promise.all([
+        const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes, viewsCountRes] = await Promise.all([
           db.execute("SELECT * FROM images ORDER BY uploadedAt DESC"),
           db.execute("SELECT * FROM likes"),
           db.execute({ sql: "SELECT followedTags FROM users WHERE uploaderUid = ?", args: [userUid] }),
@@ -481,6 +481,7 @@ export async function onRequest(context) {
             args: [userUid, userUid, userUid]
           }),
           db.execute({ sql: "SELECT followingUid FROM follows WHERE followerUid = ?", args: [userUid] }),
+          db.execute("SELECT imageId, COUNT(*) as count FROM views GROUP BY imageId")
         ]);
 
         // Build likes map
@@ -488,6 +489,12 @@ export async function onRequest(context) {
         likesRes.rows.forEach(like => {
           if (!likesMap[like.imageId]) likesMap[like.imageId] = [];
           likesMap[like.imageId].push(like.userUid);
+        });
+
+        // Build views map
+        const viewsMap = {};
+        viewsCountRes.rows.forEach(v => {
+          viewsMap[v.imageId] = parseInt(v.count || 0);
         });
 
         // Build follow set
@@ -624,7 +631,7 @@ export async function onRequest(context) {
               likeCount: parseInt(row.likeCount || 0),
               downloadCount: parseInt(row.downloadCount || 0),
               commentCount: parseInt(row.commentCount || 0),
-              viewCount: parseInt(row.viewCount || 0),
+              viewCount: viewsMap[row.id] || parseInt(row.viewCount || 0),
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[row.id] || [],
@@ -666,8 +673,11 @@ export async function onRequest(context) {
           imagesArgs.push(limitParam);
         }
 
-        const defaultImagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
-        const defaultLikesRes = await db.execute("SELECT * FROM likes");
+        const [defaultImagesRes, defaultLikesRes, defaultViewsRes] = await Promise.all([
+          db.execute({ sql: imagesQuery, args: imagesArgs }),
+          db.execute("SELECT * FROM likes"),
+          db.execute("SELECT imageId, COUNT(*) as count FROM views GROUP BY imageId")
+        ]);
 
         const defaultLikesMap = {};
         defaultLikesRes.rows.forEach(like => {
@@ -675,6 +685,11 @@ export async function onRequest(context) {
           const uUid = like.userUid;
           if (!defaultLikesMap[imgId]) defaultLikesMap[imgId] = [];
           defaultLikesMap[imgId].push(uUid);
+        });
+
+        const defaultViewsMap = {};
+        defaultViewsRes.rows.forEach(v => {
+          defaultViewsMap[v.imageId] = parseInt(v.count || 0);
         });
 
         const fetchedImages = defaultImagesRes.rows.map(row => {
@@ -700,7 +715,7 @@ export async function onRequest(context) {
             likeCount: parseInt(row.likeCount || 0),
             downloadCount: parseInt(row.downloadCount || 0),
             commentCount: parseInt(row.commentCount || 0),
-            viewCount: parseInt(row.viewCount || 0),
+            viewCount: defaultViewsMap[id] || parseInt(row.viewCount || 0),
             flags: parsedFlags,
             aiConcepts: parsedConcepts,
             likedBy: defaultLikesMap[id] || []
@@ -1299,19 +1314,36 @@ Return the response strictly as a JSON object with this exact format:
         return Response.json({ success: true, hasLiked: !hasLiked }, { status: 200, headers: corsHeaders });
       }
 
-      // Action: Register user view/click
-      if (action === 'view') {
-        const { imageId, userUid } = body;
-        if (!imageId || !userUid) return Response.json({ success: false, error: "Missing imageId or userUid." }, { status: 400, headers: corsHeaders });
+      // Action: Register user view/click or feed impression batch
+      if (action === 'view' || action === 'batch_views') {
+        const { imageId, imageIds, userUid } = body;
+        const rawIds = Array.isArray(imageIds)
+          ? imageIds
+          : (imageId ? [imageId] : []);
 
+        const targetIds = rawIds
+          .map(id => String(id || '').split('_loop_')[0].trim())
+          .filter(id => id.length > 0);
+
+        if (targetIds.length === 0) {
+          return Response.json({ success: false, error: "Missing imageId or imageIds." }, { status: 400, headers: corsHeaders });
+        }
+
+        const effectiveUid = userUid || ('anon_' + Math.random().toString(36).substring(2, 10));
         const viewedAt = new Date().toISOString();
 
-        await db.execute({
+        const statements = targetIds.slice(0, 50).map(id => ({
           sql: "INSERT OR REPLACE INTO views (userUid, imageId, viewedAt) VALUES (?, ?, ?)",
-          args: [userUid, imageId, viewedAt]
-        });
+          args: [effectiveUid, id, viewedAt]
+        }));
 
-        return Response.json({ success: true }, { status: 200, headers: corsHeaders });
+        try {
+          await db.batch(statements);
+        } catch (dbErr) {
+          console.error("[Views Batch] Error executing batch views:", dbErr);
+        }
+
+        return Response.json({ success: true, count: targetIds.length }, { status: 200, headers: corsHeaders });
       }
 
       return Response.json({ success: false, error: `Invalid action: ${action}` }, { status: 400, headers: corsHeaders });
