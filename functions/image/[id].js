@@ -180,6 +180,7 @@ export async function onRequest(context) {
     ).join('\n    ');
 
     const seoMetaTags = `
+    <base href="${baseUrl}/" />
     <title>${escapeHtml(seoTitle)}</title>
     <meta name="description" content="${escapeHtml(description)}" />
     <meta name="keywords" content="${tags.map(t => escapeHtml(t)).join(', ')}" />
@@ -261,21 +262,21 @@ export async function onRequest(context) {
     const serverRenderedHtml = `
       <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; background: #181818; color: #e5e5e5; min-height: 100vh; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
         <header style="width: 100%; max-width: 1100px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #282828;">
-          <a href="/" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: #ffffff; font-size: 1.25rem; font-weight: 700;">
-            <img src="/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="36" height="36" style="border-radius: 8px; display: block;" />
+          <a href="${baseUrl}/" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none; color: #ffffff; font-size: 1.25rem; font-weight: 700;">
+            <img src="${baseUrl}/web-app-manifest-512x512.png" alt="Glass Gallery Logo" width="36" height="36" style="border-radius: 8px; display: block;" />
             <span>Glass Gallery</span>
           </a>
           <nav style="display: flex; gap: 1.25rem; align-items: center;">
-            <a href="/" style="color: #a0a0a0; text-decoration: none; font-size: 0.95rem;">Explore Gallery</a>
-            <a href="/gallery" style="color: #f5c3b8; text-decoration: none; font-size: 0.95rem; font-weight: 600;">Gallery Directory</a>
-            <a href="/api" style="color: #a0a0a0; text-decoration: none; font-size: 0.95rem;">API Reference</a>
+            <a href="${baseUrl}/" style="color: #a0a0a0; text-decoration: none; font-size: 0.95rem;">Explore Gallery</a>
+            <a href="${baseUrl}/gallery" style="color: #f5c3b8; text-decoration: none; font-size: 0.95rem; font-weight: 600;">Gallery Directory</a>
+            <a href="${baseUrl}/api" style="color: #a0a0a0; text-decoration: none; font-size: 0.95rem;">API Reference</a>
           </nav>
         </header>
 
         <nav aria-label="Breadcrumb navigation" style="width: 100%; max-width: 1100px; margin-bottom: 1rem; font-size: 0.875rem; color: #888;">
-          <a href="/" style="color: #a0a0a0; text-decoration: none;">Explore Home</a>
+          <a href="${baseUrl}/" style="color: #a0a0a0; text-decoration: none;">Explore Home</a>
           <span style="margin: 0 0.5rem;">/</span>
-          <a href="/gallery" style="color: #a0a0a0; text-decoration: none;">Gallery Archive</a>
+          <a href="${baseUrl}/gallery" style="color: #a0a0a0; text-decoration: none;">Gallery Archive</a>
           <span style="margin: 0 0.5rem;">/</span>
           <span style="color: #ffffff;">${escapeHtml(title)}</span>
         </nav>
@@ -302,9 +303,9 @@ export async function onRequest(context) {
 
         <!-- Next / Previous Image Navigation Mesh -->
         <nav aria-label="Adjacent image links" style="width: 100%; max-width: 1100px; margin-top: 2.5rem; padding: 1rem 0; border-top: 1px solid #282828; border-bottom: 1px solid #282828; display: flex; justify-content: space-between; align-items: center; gap: 1rem; font-size: 0.95rem; flex-wrap: wrap;">
-          ${prevImage ? `<a href="/image/${escapeHtml(prevImage.id)}" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">&larr; Previous Image: ${escapeHtml(prevImage.title || 'Showcase')}</a>` : '<span></span>'}
-          <a href="/gallery" style="color: #a0a0a0; text-decoration: none; font-weight: 500;">Browse All Images in Directory</a>
-          ${nextImage ? `<a href="/image/${escapeHtml(nextImage.id)}" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">Next Image: ${escapeHtml(nextImage.title || 'Showcase')} &rarr;</a>` : '<span></span>'}
+          ${prevImage ? `<a href="${baseUrl}/image/${escapeHtml(prevImage.id)}" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">&larr; Previous Image: ${escapeHtml(prevImage.title || 'Showcase')}</a>` : '<span></span>'}
+          <a href="${baseUrl}/gallery" style="color: #a0a0a0; text-decoration: none; font-weight: 500;">Browse All Images in Directory</a>
+          ${nextImage ? `<a href="${baseUrl}/image/${escapeHtml(nextImage.id)}" style="color: #f5c3b8; text-decoration: none; font-weight: 600;">Next Image: ${escapeHtml(nextImage.title || 'Showcase')} &rarr;</a>` : '<span></span>'}
         </nav>
 
         <!-- More Images on Glass Gallery with Descriptive Anchor Text -->
@@ -314,7 +315,7 @@ export async function onRequest(context) {
             <ul style="list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem;">
               ${moreImages.map(img => `
                 <li>
-                  <a href="/image/${escapeHtml(img.id)}" style="display: block; text-decoration: none; color: inherit; background: #222222; border-radius: 12px; overflow: hidden; border: 1px solid #333333; height: 100%;">
+                  <a href="${baseUrl}/image/${escapeHtml(img.id)}" style="display: block; text-decoration: none; color: inherit; background: #222222; border-radius: 12px; overflow: hidden; border: 1px solid #333333; height: 100%;">
                     <img src="${escapeHtml(img.imageUrl)}" alt="${escapeHtml(img.title || 'Photograph')} by ${escapeHtml(img.uploaderName || 'Creator')}" width="280" height="180" loading="lazy" style="width: 100%; height: 180px; object-fit: cover; display: block;" />
                     <div style="padding: 0.75rem 1rem;">
                       <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0 0 0.25rem 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(img.title || 'Untitled Image')}</h3>
@@ -330,12 +331,12 @@ export async function onRequest(context) {
         <footer style="width: 100%; max-width: 1100px; margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid #282828; text-align: center; color: #777; font-size: 0.85rem;">
           <p>&copy; 2026 Glass Gallery. Free high-definition image platform.</p>
           <p>
-            <a href="/" style="color: #aaa; text-decoration: none;">Explore Gallery</a> &bull;
-            <a href="/gallery" style="color: #aaa; text-decoration: none;">Gallery Directory</a> &bull;
-            <a href="/api" style="color: #aaa; text-decoration: none;">API Documentation</a> &bull;
-            <a href="/legal?tab=terms" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Terms of Service</a> &bull;
-            <a href="/legal?tab=privacy" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Privacy Policy</a> &bull;
-            <a href="/legal?tab=guidelines" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Content Guidelines</a>
+            <a href="${baseUrl}/" style="color: #aaa; text-decoration: none;">Explore Gallery</a> &bull;
+            <a href="${baseUrl}/gallery" style="color: #aaa; text-decoration: none;">Gallery Directory</a> &bull;
+            <a href="${baseUrl}/api" style="color: #aaa; text-decoration: none;">API Documentation</a> &bull;
+            <a href="${baseUrl}/legal?tab=terms" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Terms of Service</a> &bull;
+            <a href="${baseUrl}/legal?tab=privacy" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Privacy Policy</a> &bull;
+            <a href="${baseUrl}/legal?tab=guidelines" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Content Guidelines</a>
           </p>
         </footer>
       </div>
@@ -346,14 +347,13 @@ export async function onRequest(context) {
       serverRenderedHtml
     );
 
-    // Strip React for known search engine bots so they only index the server-rendered HTML
-    const userAgent = context.request.headers.get('user-agent') || '';
-    const isBot = /bot|googlebot|crawler|spider|robot|crawling|facebookexternalhit|twitterbot|inspectiontool/i.test(userAgent);
-    
-    if (isBot) {
-      indexHtml = indexHtml.replace(/<script type="module"[^>]*><\/script>/gi, '');
-      indexHtml = indexHtml.replace(/<script type="importmap">[\s\S]*?<\/script>/gi, '');
-    }
+    // Ensure all relative asset links (scripts, styles, icons, manifest) resolve to baseUrl
+    // so nested environments (OneCompiler, CodePen, iframes) load bundles cleanly from CDN
+    indexHtml = indexHtml.replace(/(src|href)="\/assets\//gi, `$1="${baseUrl}/assets/`);
+    indexHtml = indexHtml.replace(/(src|href)="\/web-app-manifest/gi, `$1="${baseUrl}/web-app-manifest`);
+    indexHtml = indexHtml.replace(/(src|href)="\/favicon/gi, `$1="${baseUrl}/favicon`);
+    indexHtml = indexHtml.replace(/(src|href)="\/apple-touch-icon/gi, `$1="${baseUrl}/apple-touch-icon`);
+    indexHtml = indexHtml.replace(/href="\/site\.webmanifest"/gi, `href="${baseUrl}/site.webmanifest"`);
 
     return new Response(indexHtml, {
       status: 200,

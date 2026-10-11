@@ -34,8 +34,13 @@ import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './compon
 import MobileAppPromo from './components/MobileAppPromo';
 import TrendingSidebar from './components/TrendingSidebar';
 
-// Global Fetch Interceptor for Capacitor Native Platform to reroute relative paths to the production API
-if (Capacitor.isNativePlatform()) {
+// Global Fetch Interceptor for Capacitor Native Platform or External Sandbox/Embed Hosts to reroute relative paths to the production API
+const isExternalHost = typeof window !== 'undefined' && 
+  window.location.origin !== 'https://gg.modvc.org' && 
+  !window.location.hostname.includes('localhost') && 
+  !window.location.hostname.includes('127.0.0.1');
+
+if (Capacitor.isNativePlatform() || isExternalHost) {
   const originalFetch = window.fetch;
   window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
     let url = '';
@@ -869,7 +874,8 @@ const App: React.FC = () => {
       const RESERVED_PATHS = new Set([
         'image', 'gallery', 'api', 'legal', 'discover', 'explore',
         'login', 'notifications', 'feed', 'assets', 'favicon.ico',
-        'robots.txt', 'sitemap.xml', 'manifest.json'
+        'robots.txt', 'sitemap.xml', 'manifest.json', 'html', 'run',
+        'sandbox', 'embed', 'preview', 'index'
       ]);
       const atMatch = window.location.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
       const directMatch = !atMatch ? window.location.pathname.match(/^\/([a-zA-Z0-9_.-]+)$/) : null;
@@ -1041,25 +1047,29 @@ const App: React.FC = () => {
   }, []);
 
   const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string; tab?: string } | null) => {
-    const url = new URL(window.location.href);
-    url.search = ''; 
-    
-    if (params?.image) {
-      url.pathname = `/image/${params.image}`;
-    } else if (params?.view === 'legal') {
-      url.pathname = '/legal';
-      if (params?.tab) url.searchParams.set('tab', params.tab);
-    } else if (params?.username) {
-      url.pathname = `/@${params.username.replace(/^@/, '')}`;
-    } else {
-      url.pathname = '/';
+    try {
+      const url = new URL(window.location.href);
+      url.search = ''; 
+      
+      if (params?.image) {
+        url.pathname = `/image/${params.image}`;
+      } else if (params?.view === 'legal') {
+        url.pathname = '/legal';
+        if (params?.tab) url.searchParams.set('tab', params.tab);
+      } else if (params?.username) {
+        url.pathname = `/@${params.username.replace(/^@/, '')}`;
+      } else {
+        url.pathname = '/';
+      }
+      
+      if (params?.user && !params?.username) url.searchParams.set('user', params.user);
+      if (params?.search) url.searchParams.set('search', params.search);
+      if (params?.view && params.view !== 'legal') url.searchParams.set('view', params.view);
+      
+      window.history.pushState({}, '', url.toString());
+    } catch {
+      // Sandboxed iframes (e.g. OneCompiler, CodePen) may restrict pushState; fail silently to keep UI smooth
     }
-    
-    if (params?.user && !params?.username) url.searchParams.set('user', params.user);
-    if (params?.search) url.searchParams.set('search', params.search);
-    if (params?.view && params.view !== 'legal') url.searchParams.set('view', params.view);
-    
-    window.history.pushState({}, '', url.toString());
   };
 
   // --- Image Data Fetching Strategy ---
