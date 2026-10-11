@@ -21,11 +21,13 @@ function escapeHtml(unsafe) {
 }
 
 export async function onRequest(context) {
-  const id = context.params.id;
-  const cleanId = id ? id.split('_loop_')[0].split('?')[0] : "";
+  const url = new URL(context.request.url);
+  const pathMatch = url.pathname.match(/\/image\/([^/?#]+)/i);
+  const id = context.params?.id || (pathMatch ? pathMatch[1] : null);
+  const cleanId = id ? decodeURIComponent(id).split('_loop_')[0].split('?')[0] : "";
   const baseUrl = "https://gg.modvc.org";
 
-  if (!id) {
+  if (!cleanId) {
     return Response.redirect(`${baseUrl}/gallery`, 302);
   }
 
