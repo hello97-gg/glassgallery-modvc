@@ -24,12 +24,18 @@ export async function onRequest(context) {
   const url = new URL(context.request.url);
   const pathMatch = url.pathname.match(/\/image\/([^/?#]+)/i);
   const id = context.params?.id || (pathMatch ? pathMatch[1] : null);
-  const cleanId = id ? decodeURIComponent(id).split('_loop_')[0].split('?')[0] : "";
+  const cleanId = id ? decodeURIComponent(id).split('_loop_')[0].split('?')[0].replace(/\.html?$/i, '') : "";
   const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   const baseUrl = isLocal ? url.origin : "https://gg.modvc.org";
 
   if (!cleanId) {
-    return Response.redirect(`${baseUrl}/gallery`, 302);
+    return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>404 - Not Found | Glass Gallery</title><meta name="robots" content="noindex, follow" /><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" /><link rel="icon" type="image/x-icon" href="/favicon.ico" /></head><body style="background:#181818;color:#e5e5e5;font-family:system-ui,sans-serif;text-align:center;padding:4rem;"><h1>404 - Image Not Found</h1><p style="color:#a0a0a0;margin:1rem 0 2rem;">No image identifier was provided in the request.</p><a href="/gallery" style="display:inline-block;background:#f5c3b8;color:#181818;padding:0.75rem 1.5rem;border-radius:999px;text-decoration:none;font-weight:600;">Browse Gallery Archive</a></body></html>`, {
+      status: 404,
+      headers: {
+        'Content-Type': 'text/html; charset=UTF-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
+    });
   }
 
   try {
@@ -365,10 +371,27 @@ export async function onRequest(context) {
     });
 
   } catch (error) {
-    console.error("[og-image] Error:", error);
-    return new Response(`[og-image Error]: ${error.message}\nStack: ${error.stack}`, {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain' }
+    console.error("[og-image] SSR Error:", error);
+    // Graceful fallback to client-side shell (HTTP 200) instead of throwing HTTP 500 for crawlers
+    try {
+      const assetUrl = new URL(context.request.url);
+      assetUrl.pathname = '/index.html';
+      const assetResponse = await context.env.ASSETS.fetch(new Request(assetUrl));
+      if (assetResponse.ok) {
+        const fallbackHtml = await assetResponse.text();
+        return new Response(fallbackHtml, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=UTF-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          }
+        });
+      }
+    } catch {}
+
+    return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Glass Gallery</title></head><body><div id="root"></div></body></html>`, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=UTF-8' }
     });
   }
 }

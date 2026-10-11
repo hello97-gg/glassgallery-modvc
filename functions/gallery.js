@@ -318,6 +318,17 @@ export async function onRequest(context) {
 
   } catch (error) {
     console.error("[gallery-directory] Error:", error);
-    return Response.redirect(`${baseUrl}/`, 302);
+    try {
+      const assetUrl = new URL(context.request.url);
+      assetUrl.pathname = '/index.html';
+      const assetResponse = await context.env.ASSETS.fetch(new Request(assetUrl));
+      if (assetResponse.ok) {
+        return new Response(await assetResponse.text(), {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=UTF-8' }
+        });
+      }
+    } catch {}
+    return Response.redirect(`${baseUrl}/`, 301);
   }
 }

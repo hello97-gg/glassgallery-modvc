@@ -95,7 +95,8 @@ ${creatorUrls.join("\n")}
       return new Response(xml, { status: 200, headers: xmlHeaders });
     } catch (err) {
       console.error("[Sitemap Creators] Error:", err);
-      return new Response(`Error generating creators sitemap: ${err.message}`, { status: 500, headers: { "Content-Type": "text/plain" } });
+      const fallbackXml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
+      return new Response(fallbackXml, { status: 200, headers: xmlHeaders });
     }
   }
 
@@ -154,6 +155,7 @@ ${urlEntries.join("\n")}
     return new Response(xml, { status: 200, headers: xmlHeaders });
   } catch (err) {
     console.error(`[Sitemap Chunk ${pageNumber}] Error:`, err);
-    return new Response(`Error generating sitemap chunk: ${err.message}`, { status: 500, headers: { "Content-Type": "text/plain" } });
+    const fallbackXml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
+    return new Response(fallbackXml, { status: 200, headers: xmlHeaders });
   }
 }

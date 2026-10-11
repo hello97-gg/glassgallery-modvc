@@ -31,6 +31,15 @@ export const onRequest = async (context) => {
   try {
     response = await next();
   } catch (err) {
+    console.error("[Middleware Error]:", err);
+    if (!url.pathname.startsWith('/api')) {
+      try {
+        const assetUrl = new URL(request.url);
+        assetUrl.pathname = '/index.html';
+        const assetRes = await context.env.ASSETS.fetch(new Request(assetUrl));
+        if (assetRes.ok) return assetRes;
+      } catch {}
+    }
     return new Response(`Server Error: ${err.message}`, {
       status: 500,
       headers: {
