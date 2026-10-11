@@ -112,6 +112,11 @@ const SEOHead: React.FC<SEOHeadProps> = ({
 
     // Always generate schema if imageUrl is present for a post/article
     if (imageUrl && (type === 'article' || title !== 'Home - Infinite Feed')) {
+        const validLicenseUrl = (license && license.startsWith('http')) 
+            ? license 
+            : 'https://creativecommons.org/publicdomain/zero/1.0/';
+        const creditName = authorName || author || "Glass Gallery User";
+
         // ImageObject / VideoObject schema for media details
         const mediaSchema: any = {
             "@context": "https://schema.org",
@@ -122,16 +127,17 @@ const SEOHead: React.FC<SEOHeadProps> = ({
             "description": description,
             "thumbnailUrl": isVideo ? (favicon || DEFAULT_FAVICON) : imageUrl,
             "uploadDate": new Date().toISOString(),
-            "license": license || "https://creativecommons.org/licenses/by/4.0/",
+            "license": validLicenseUrl,
             "acquireLicensePage": url || baseUrl,
-            "creditText": authorName || author || "Glass Gallery User",
+            "creditText": creditName,
+            "copyrightNotice": `© ${new Date().getFullYear()} ${creditName}. All rights reserved.`,
             "creator": {
                  "@type": "Person",
-                 "name": authorName || author || "Glass Gallery User"
+                 "name": creditName
             },
             "copyrightHolder": {
                  "@type": "Person",
-                 "name": authorName || author || "Glass Gallery User"
+                 "name": creditName
             }
         };
         if (tags && tags.length > 0) {

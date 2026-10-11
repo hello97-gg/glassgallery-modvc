@@ -96,12 +96,24 @@ export async function onRequest(context) {
       description = description.slice(0, 152) + '...';
     }
 
+    const LICENSE_URLS = {
+      'CC0': 'https://creativecommons.org/publicdomain/zero/1.0/',
+      'CC-BY': 'https://creativecommons.org/licenses/by/4.0/',
+      'CC BY': 'https://creativecommons.org/licenses/by/4.0/',
+      'CC-BY-SA': 'https://creativecommons.org/licenses/by-sa/4.0/',
+      'CC BY-SA': 'https://creativecommons.org/licenses/by-sa/4.0/',
+      'CC-BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
+      'CC BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
+    };
+
     const imageUrl = image.imageUrl || "";
     const location = image.location || "";
-    const license = image.license || "CC0";
-    const licenseUrl = LICENSE_URLS[license] || license;
+    const rawLicense = (image.license || "CC0").trim();
+    const licenseUrl = LICENSE_URLS[rawLicense] || (rawLicense.startsWith('http') ? rawLicense : `${baseUrl}/legal#license`);
     const pageUrl = `${baseUrl}/image/${id}`;
     const altText = `${title} photography by ${uploaderName} on Glass Gallery`;
+    const creditName = (image.uploaderName || "Glass Gallery User").trim();
+    const copyrightYear = image.uploadedAt ? new Date(image.uploadedAt).getFullYear() : new Date().getFullYear();
 
     let tags = [];
     try {
@@ -120,14 +132,15 @@ export async function onRequest(context) {
       "thumbnail": imageUrl,
       "license": licenseUrl,
       "acquireLicensePage": pageUrl,
-      "creditText": image.uploaderName || "Glass Gallery User",
+      "creditText": creditName,
+      "copyrightNotice": `© ${copyrightYear} ${creditName}. All rights reserved.`,
       "creator": {
         "@type": "Person",
-        "name": image.uploaderName || "Glass Gallery User"
+        "name": creditName
       },
       "copyrightHolder": {
         "@type": "Person",
-        "name": image.uploaderName || "Glass Gallery User"
+        "name": creditName
       }
     };
     if (tags.length > 0) imageObjectSchema.keywords = tags.join(', ');
