@@ -15,8 +15,27 @@ async function fetchSitemapUrls() {
       return [];
     }
     const data = await res.text();
-    const matches = [...data.matchAll(/<loc>([^<]+)<\/loc>/g)];
-    return matches.map(m => m[1].trim());
+    const locMatches = [...data.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1].trim());
+
+    // If this is a sitemap index, fetch and aggregate each sub-sitemap
+    if (data.includes('<sitemapindex') || locMatches.some(u => u.endsWith('.xml'))) {
+      const allUrls = [];
+      for (const sitemapUrl of locMatches) {
+        try {
+          const subRes = await fetch(sitemapUrl);
+          if (subRes.ok) {
+            const subData = await subRes.text();
+            const childUrls = [...subData.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1].trim());
+            allUrls.push(...childUrls);
+          }
+        } catch (subErr) {
+          console.warn(`Could not fetch sub-sitemap ${sitemapUrl}:`, subErr.message);
+        }
+      }
+      return allUrls;
+    }
+
+    return locMatches;
   } catch (err) {
     console.warn('Could not fetch remote sitemap:', err.message);
     return [];
