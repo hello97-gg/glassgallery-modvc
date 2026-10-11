@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, Comment, ProfileUser } from '../types';
-import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, getFollowStats, toggleFollowUser, updateImageDetails } from '../services/firestoreService';
+import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, deleteComment, getFollowStats, toggleFollowUser, updateImageDetails } from '../services/firestoreService';
 import { LICENSES } from '../constants';
 import { recordWatchInterest } from '../services/interestTracker';
 import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
@@ -48,6 +48,7 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [replyText, setReplyText] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentText, setEditCommentText] = useState('');
+  const [isDeletingCommentId, setIsDeletingCommentId] = useState<string | null>(null);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
@@ -56,6 +57,10 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isMainLoaded, setIsMainLoaded] = useState(false);
   const [renderRelated, setRenderRelated] = useState(false);
+  const [isTitleExpanded, setIsTitleExpanded] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [collapsedComments, setCollapsedComments] = useState<Set<string>>(new Set());
+  const [visibleCommentCount, setVisibleCommentCount] = useState(15);
   const [isEditingAttribution, setIsEditingAttribution] = useState(false);
   const [editLicense, setEditLicense] = useState(currentImage.license || 'CC0');
   const [editOriginalWorkUrl, setEditOriginalWorkUrl] = useState(currentImage.originalWorkUrl || '');
@@ -330,6 +335,26 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
     }
   };
 
+  const handleDeleteComment = async (commentId: string) => {
+    if (!user) return;
+    if (!window.confirm("Are you sure you want to delete this comment?")) return;
+    setIsDeletingCommentId(commentId);
+    try {
+      await deleteComment(commentId, user.uid);
+      setFlatComments(prev => prev.filter(c => c.id !== commentId && c.parentId !== commentId));
+      const updatedImage = {
+        ...currentImage,
+        commentCount: Math.max(0, (currentImage.commentCount || 1) - 1)
+      };
+      setCurrentImage(updatedImage);
+      if (onImageUpdate) onImageUpdate(updatedImage);
+    } catch (err) {
+      console.error("Failed to delete comment:", err);
+    } finally {
+      setIsDeletingCommentId(null);
+    }
+  };
+
   const handleCommentLikeToggle = async (commentId: string) => {
     if (!user) {
       onLoginClick();
@@ -375,14 +400,38 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
 
   const renderCommentNode = (comment: Comment, depth = 0) => {
     const isReplying = replyToId === comment.id;
+    const isCollapsed = collapsedComments.has(comment.id);
+    const hasReplies = comment.replies && comment.replies.length > 0;
+    const isRepliesExpanded = expandedReplies.has(comment.id);
+    const isIndented = depth > 0 && depth <= 2;
+    const isOverDepth = depth > 2;
     const avatarUrl = comment.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${comment.userName}`;
+
+    if (isCollapsed) {
+      return (
+        <div 
+          key={comment.id}
+          onClick={() => setCollapsedComments(prev => {
+            const next = new Set(prev);
+            next.delete(comment.id);
+            return next;
+          })}
+          className="text-xs text-secondary py-1.5 px-4 cursor-pointer hover:bg-surface/40 rounded-lg flex items-center gap-2 transition-colors mx-4 border border-border/40 my-1 select-none"
+        >
+          <span className="font-mono text-accent text-xs font-bold">[+]</span>
+          <span>Thread by @{comment.userName.toLowerCase().replace(/\s+/g, '')} collapsed ({comment.replies?.length || 0} {comment.replies?.length === 1 ? 'reply' : 'replies'})</span>
+        </div>
+      );
+    }
 
     return (
       <div
         key={comment.id}
         className={`flex flex-col gap-2 ${
           depth > 0
-            ? `mt-3 pl-3 border-l border-border/50 ml-2.5`
+            ? (isIndented 
+                ? 'mt-2.5 pl-3 border-l-2 border-border/50 ml-2.5 sm:ml-4' 
+                : 'mt-2 pl-2 border-l border-accent/25 ml-0')
             : 'border-b border-border/40 pb-4 last:border-0 last:pb-0'
         }`}
       >
@@ -393,7 +442,7 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             className="w-9 h-9 rounded-full object-cover flex-shrink-0"
           />
           <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-sm text-primary">{comment.userName}</span>
               <span className="text-xs text-secondary">
                 @{comment.userName.toLowerCase().replace(/\s+/g, '')}
@@ -402,7 +451,21 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
               <span className="text-[11px] text-secondary">
                 {new Date(comment.createdAt).toLocaleDateString()}
               </span>
+              <button
+                onClick={() => setCollapsedComments(prev => new Set(prev).add(comment.id))}
+                title="Collapse thread"
+                className="text-secondary/50 hover:text-secondary text-[11px] px-1 font-mono transition-colors ml-auto"
+              >
+                [-]
+              </button>
             </div>
+
+            {isOverDepth && (
+              <span className="text-[11px] text-accent/80 font-medium block mt-0.5">
+                ↳ Replying in thread
+              </span>
+            )}
+
             {editingCommentId === comment.id ? (
               <div className="mt-2 flex flex-col gap-2 pr-4">
                 <textarea
@@ -433,7 +496,7 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                 </div>
               </div>
             ) : (
-              <p className="text-[14px] text-primary mt-1 leading-normal break-words whitespace-pre-wrap">{comment.content}</p>
+              <p className="text-[14px] text-primary mt-1 leading-normal break-words [overflow-wrap:anywhere] whitespace-pre-wrap">{comment.content}</p>
             )}
 
             <div className="flex items-center mt-2 gap-4">
@@ -480,9 +543,20 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                     setEditingCommentId(comment.id);
                     setEditCommentText(comment.content);
                   }}
-                  className="text-xs text-secondary hover:text-primary font-semibold transition-colors ml-2"
+                  className="text-xs text-secondary hover:text-primary font-semibold transition-colors ml-2 cursor-pointer"
                 >
                   Edit
+                </button>
+              )}
+
+              {(user?.uid === comment.userUid || user?.uid === currentImage.uploaderUid) && (
+                <button
+                  onClick={() => handleDeleteComment(comment.id)}
+                  disabled={isDeletingCommentId === comment.id}
+                  className="text-xs text-secondary hover:text-red-500 font-semibold transition-colors ml-auto cursor-pointer"
+                  title="Delete comment"
+                >
+                  {isDeletingCommentId === comment.id ? 'Deleting...' : 'Delete'}
                 </button>
               )}
             </div>
@@ -526,8 +600,35 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
           </div>
         )}
 
-        {comment.replies &&
-          comment.replies.map(reply => renderCommentNode(reply, depth + 1))}
+        {/* Progressive Disclosure for Nested Replies */}
+        {hasReplies && (
+          <div className="flex flex-col gap-1 mt-1">
+            {!isRepliesExpanded ? (
+              <button
+                onClick={() => setExpandedReplies(prev => new Set(prev).add(comment.id))}
+                className="flex items-center gap-2 text-xs text-secondary hover:text-accent font-semibold py-1 px-4 self-start rounded-full hover:bg-surface/40 transition-colors"
+              >
+                <span className="w-5 h-[1px] bg-secondary/50 inline-block"></span>
+                <span>View {comment.replies!.length} {comment.replies!.length === 1 ? 'reply' : 'replies'}</span>
+              </button>
+            ) : (
+              <>
+                {comment.replies!.map(reply => renderCommentNode(reply, depth + 1))}
+                <button
+                  onClick={() => setExpandedReplies(prev => {
+                    const next = new Set(prev);
+                    next.delete(comment.id);
+                    return next;
+                  })}
+                  className="flex items-center gap-1 text-[11px] text-secondary hover:text-primary py-1 px-4 self-start rounded hover:bg-surface/30 font-medium transition-colors"
+                >
+                  <svg className="w-3 h-3 rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  Hide replies
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -704,8 +805,33 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
 
             {/* Text content */}
             <div className="text-[17px] text-primary px-4 pt-4 leading-normal">
-              {currentImage.title && <h2 className="font-bold text-lg mb-1">{currentImage.title}</h2>}
-              {currentImage.description && <CrawlableContent content={currentImage.description} className="text-primary/95 text-[15px] sm:text-[16px] leading-relaxed" />}
+              {currentImage.title && (
+                <div className="mb-2">
+                  <h2
+                    className={`font-bold leading-snug break-words [overflow-wrap:anywhere] ${
+                      currentImage.title.length > 70
+                        ? 'text-base sm:text-lg text-primary/95'
+                        : 'text-lg sm:text-xl text-primary'
+                    } ${!isTitleExpanded && currentImage.title.length > 120 ? 'line-clamp-2' : ''}`}
+                  >
+                    {currentImage.title}
+                  </h2>
+                  {currentImage.title.length > 120 && (
+                    <button
+                      onClick={() => setIsTitleExpanded(!isTitleExpanded)}
+                      className="text-xs text-accent hover:underline font-semibold mt-0.5 inline-block"
+                    >
+                      {isTitleExpanded ? 'Show less' : '...more'}
+                    </button>
+                  )}
+                </div>
+              )}
+              {currentImage.description && (
+                <CrawlableContent 
+                  content={currentImage.description} 
+                  className="text-primary/90 text-[15px] sm:text-[16px] leading-relaxed break-words [overflow-wrap:anywhere]" 
+                />
+              )}
             </div>
 
             {/* Attribution Edit Modal/Panel (only if author chose to edit via 3-dots) */}
@@ -890,7 +1016,19 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
               ) : treeComments.length === 0 ? (
                 <p className="text-center text-secondary text-[15px] p-4">No replies yet. Be the first to reply!</p>
               ) : (
-                treeComments.map(comment => renderCommentNode(comment))
+                <>
+                  {treeComments.slice(0, visibleCommentCount).map(comment => renderCommentNode(comment))}
+                  {treeComments.length > visibleCommentCount && (
+                    <div className="flex justify-center pt-2 px-4">
+                      <button
+                        onClick={() => setVisibleCommentCount(prev => prev + 15)}
+                        className="w-full py-2.5 rounded-xl bg-surface/70 hover:bg-surface text-accent hover:text-accent-hover text-xs font-bold border border-border/50 transition-all shadow-sm active:scale-[0.99] flex items-center justify-center gap-1.5"
+                      >
+                        Show {Math.min(15, treeComments.length - visibleCommentCount)} more comments ({treeComments.length - visibleCommentCount} remaining)
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

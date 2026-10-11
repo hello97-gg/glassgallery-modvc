@@ -55,6 +55,7 @@ export const FeedItem: React.FC<{
   const [isDeleting, setIsDeleting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const [isTextExpanded, setIsTextExpanded] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const itemArticleRef = useRef<HTMLElement>(null);
   const [localViewCount, setLocalViewCount] = useState<number>(image.viewCount || 0);
@@ -261,9 +262,36 @@ export const FeedItem: React.FC<{
           </div>
         </div>
 
-        <div className="text-[15px] text-primary mb-3 leading-snug">
-          {image.title && <span className="font-semibold block mb-0.5">{image.title}</span>}
-          {image.description && <CrawlableContent content={image.description} className="block mt-1 text-primary/95 text-[14px] sm:text-[15px] leading-normal" />}
+        <div className="text-[15px] text-primary mb-3 leading-snug break-words [overflow-wrap:anywhere]">
+          {image.title && (
+            <span className={`block font-bold mb-1 leading-snug ${
+              image.title.length > 60 ? 'text-[14px] sm:text-[15px]' : 'text-[15px] sm:text-[16px]'
+            }`}>
+              {image.title}
+            </span>
+          )}
+          {image.description && (
+            <div>
+              <div className={!isTextExpanded && image.description.length > 200 ? 'line-clamp-3' : ''}>
+                <CrawlableContent 
+                  content={image.description} 
+                  className="block text-primary/90 text-[14px] sm:text-[15px] leading-relaxed break-words [overflow-wrap:anywhere]" 
+                />
+              </div>
+              {image.description.length > 200 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsTextExpanded(!isTextExpanded);
+                  }}
+                  className="text-xs text-accent hover:underline font-semibold mt-1 inline-block"
+                >
+                  {isTextExpanded ? 'Show less' : '...more'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-surface/30 relative min-h-[180px] flex items-center justify-center">

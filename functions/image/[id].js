@@ -25,7 +25,8 @@ export async function onRequest(context) {
   const pathMatch = url.pathname.match(/\/image\/([^/?#]+)/i);
   const id = context.params?.id || (pathMatch ? pathMatch[1] : null);
   const cleanId = id ? decodeURIComponent(id).split('_loop_')[0].split('?')[0] : "";
-  const baseUrl = "https://gg.modvc.org";
+  const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  const baseUrl = isLocal ? url.origin : "https://gg.modvc.org";
 
   if (!cleanId) {
     return Response.redirect(`${baseUrl}/gallery`, 302);
@@ -281,7 +282,7 @@ export async function onRequest(context) {
           <span style="color: #ffffff;">${escapeHtml(title)}</span>
         </nav>
 
-        <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 1.25rem; text-align: center; color: #ffffff;">${escapeHtml(title)}</h1>
+        <h1 style="font-size: clamp(1.35rem, 3.5vw, 2rem); font-weight: 800; margin-bottom: 1.25rem; text-align: center; color: #ffffff; word-break: break-word; overflow-wrap: anywhere; line-height: 1.3; max-width: 900px; padding: 0 0.5rem;">${escapeHtml(title)}</h1>
         ${mediaHtml}
         
         <p style="margin-top: 1.5rem; max-width: 750px; text-align: center; line-height: 1.6; color: #b8b8b8; font-size: 1.05rem;">${escapeHtml(description)}</p>

@@ -42,6 +42,7 @@ export interface ProfileUser {
   onboarded?: boolean;
   followedTags?: string[];
   isVerified?: boolean;
+  hideReplies?: boolean;
 }
 
 export interface Notification {
@@ -69,5 +70,6 @@ export interface Comment {
   likeCount?: number;
   likedBy?: string[];
   replies?: Comment[]; // Derived tree replies for frontend rendering
+  post?: ImageMeta;
 }
 

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser, Comment } from '../types';
 import { LICENSES, FLAGS } from '../constants';
-import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage, getCommentsForImage, addCommentToImage, toggleCommentLike } from '../services/firestoreService';
+import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage, getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, deleteComment } from '../services/firestoreService';
 import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
 import Button from './Button';
 import Spinner from './Spinner';
@@ -25,6 +25,7 @@ interface ImageDetailModalProps {
   onSelectImage?: (image: ImageMeta) => void;
   onLoginClick: () => void;
   initialEditMode?: boolean;
+  targetCommentId?: string | null;
 }
 
 const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -124,7 +125,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   onLocationClick,
   onSelectImage,
   onLoginClick,
-  initialEditMode
+  initialEditMode,
+  targetCommentId
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [isEditing, setIsEditing] = useState(initialEditMode || false);
@@ -136,6 +138,15 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [collapsedComments, setCollapsedComments] = useState<Set<string>>(new Set());
+
+  // Visibility, Edit & Delete states
+  const [isCommentsSectionHidden, setIsCommentsSectionHidden] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState('');
+  const [isDeletingCommentId, setIsDeletingCommentId] = useState<string | null>(null);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<string | null>(null);
 
   // Load comments
   const loadComments = async (idToLoad: string) => {
@@ -183,7 +194,58 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     setReplyToId(null);
     setReplyText('');
     setNewCommentText('');
+    setEditingCommentId(null);
   }, [currentImage.id]);
+
+  // Scroll and highlight target comment if requested
+  useEffect(() => {
+    if (!targetCommentId || isLoadingComments || flatComments.length === 0) return;
+
+    // 1. Ensure comments section is not hidden
+    setIsCommentsSectionHidden(false);
+
+    // 2. Expand all parent threads for targetCommentId
+    const commentMap: Record<string, string | null> = {};
+    flatComments.forEach(c => {
+      commentMap[c.id] = c.parentId || null;
+    });
+
+    let currParent = commentMap[targetCommentId];
+    const parentsToExpand: string[] = [];
+    while (currParent) {
+      parentsToExpand.push(currParent);
+      currParent = commentMap[currParent];
+    }
+
+    if (parentsToExpand.length > 0) {
+      setExpandedReplies(prev => {
+        const next = new Set(prev);
+        parentsToExpand.forEach(pid => next.add(pid));
+        return next;
+      });
+      setCollapsedComments(prev => {
+        const next = new Set(prev);
+        parentsToExpand.forEach(pid => next.delete(pid));
+        next.delete(targetCommentId);
+        return next;
+      });
+    }
+
+    // 3. Smooth scroll and highlight
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`comment-${targetCommentId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedCommentId(targetCommentId);
+        const clearTimer = setTimeout(() => {
+          setHighlightedCommentId(null);
+        }, 3500);
+        return () => clearTimeout(clearTimer);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [targetCommentId, isLoadingComments, flatComments]);
 
   const treeComments = React.useMemo(() => {
     const commentMap: Record<string, Comment & { replies: Comment[] }> = {};
@@ -260,16 +322,75 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     }
   };
 
+  const handleEditCommentSubmit = async (commentId: string) => {
+    if (!editCommentText.trim() || !user) return;
+    setIsSubmittingComment(true);
+    try {
+      await editComment(commentId, user.uid, editCommentText.trim());
+      setFlatComments(prev => prev.map(c => c.id === commentId ? { ...c, content: editCommentText.trim() } : c));
+      setEditingCommentId(null);
+      setEditCommentText('');
+    } catch (err) {
+      console.error("Failed to edit comment:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!user) return;
+    if (!window.confirm("Are you sure you want to delete this comment?")) return;
+    setIsDeletingCommentId(commentId);
+    try {
+      await deleteComment(commentId, user.uid);
+      setFlatComments(prev => prev.filter(c => c.id !== commentId && c.parentId !== commentId));
+      const updatedImage = {
+        ...currentImage,
+        commentCount: Math.max(0, (currentImage.commentCount || 1) - 1)
+      };
+      setCurrentImage(updatedImage);
+      if (onImageUpdate) onImageUpdate(updatedImage);
+    } catch (err) {
+      console.error("Failed to delete comment:", err);
+    } finally {
+      setIsDeletingCommentId(null);
+    }
+  };
+
   const renderCommentNode = (comment: Comment, depth = 0) => {
     const isReplying = replyToId === comment.id;
+    const isCollapsed = collapsedComments.has(comment.id);
     const hasReplies = comment.replies && comment.replies.length > 0;
+    const isRepliesExpanded = expandedReplies.has(comment.id);
+    const isIndented = depth > 0 && depth <= 2;
+    const isOverDepth = depth > 2;
     const avatarUrl = comment.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${comment.userName}`;
+
+    if (isCollapsed) {
+      return (
+        <div 
+          key={comment.id}
+          onClick={() => setCollapsedComments(prev => {
+            const next = new Set(prev);
+            next.delete(comment.id);
+            return next;
+          })}
+          className="text-[11px] text-secondary py-1 px-3 cursor-pointer hover:bg-surface/40 rounded-lg flex items-center gap-1.5 transition-colors border border-border/30 my-1 select-none"
+        >
+          <span className="font-mono text-accent text-[11px] font-bold">[+]</span>
+          <span>Thread by @{comment.userName.toLowerCase().replace(/\s+/g, '')} collapsed ({comment.replies?.length || 0} {comment.replies?.length === 1 ? 'reply' : 'replies'})</span>
+        </div>
+      );
+    }
 
     return (
       <div
+        id={`comment-${comment.id}`}
         key={comment.id}
-        className={`flex flex-col gap-1.5 ${depth > 0
-            ? `mt-2.5 pl-3 ${depth < 4 ? 'border-l border-border/40 ml-1.5' : 'ml-0'}`
+        className={`flex flex-col gap-1.5 transition-all duration-500 ${
+          highlightedCommentId === comment.id ? 'ring-2 ring-accent bg-accent/15 p-2.5 rounded-xl shadow-lg' : ''
+        } ${depth > 0
+            ? (isIndented ? 'mt-2 pl-2.5 border-l-2 border-border/40 ml-1.5 sm:ml-2.5' : 'mt-1.5 pl-1.5 border-l border-accent/20 ml-0')
             : 'border-b border-border/20 pb-3 last:border-0 last:pb-0'
           }`}
       >
@@ -280,18 +401,63 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             className="w-7 h-7 rounded-full object-cover flex-shrink-0"
           />
           <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-xs text-primary">{comment.userName}</span>
               <span className="text-[9px] text-secondary">
                 {new Date(comment.createdAt).toLocaleDateString()}
               </span>
+              <button
+                onClick={() => setCollapsedComments(prev => new Set(prev).add(comment.id))}
+                title="Collapse thread"
+                className="text-secondary/50 hover:text-secondary text-[10px] px-1 font-mono transition-colors ml-auto cursor-pointer"
+              >
+                [-]
+              </button>
             </div>
-            <p className="text-xs text-primary/90 mt-0.5 leading-relaxed break-words">{comment.content}</p>
+
+            {isOverDepth && (
+              <span className="text-[10px] text-accent/80 font-medium block mt-0.5">
+                ↳ Replying in thread
+              </span>
+            )}
+
+            {editingCommentId === comment.id ? (
+              <div className="mt-1.5 flex flex-col gap-1.5 pr-1">
+                <textarea
+                  value={editCommentText}
+                  onChange={(e) => setEditCommentText(e.target.value)}
+                  className="w-full bg-background border border-border focus:border-accent rounded-xl px-2.5 py-1.5 text-xs text-primary resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+                  rows={2}
+                  autoFocus
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => {
+                      setEditingCommentId(null);
+                      setEditCommentText('');
+                    }}
+                    className="text-[10px] text-secondary hover:text-primary px-2.5 py-1 font-medium transition-colors cursor-pointer"
+                    disabled={isSubmittingComment}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleEditCommentSubmit(comment.id)}
+                    disabled={!editCommentText.trim() || isSubmittingComment}
+                    className="bg-accent text-surface px-3 py-1 rounded-full text-[10px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingComment ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-primary/90 mt-0.5 leading-relaxed break-words [overflow-wrap:anywhere]">{comment.content}</p>
+            )}
 
             <div className="flex items-center mt-1 gap-3">
               <button
                 onClick={() => handleCommentLikeToggle(comment.id)}
-                className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${comment.likedBy?.includes(user?.uid || '') ? 'text-red-500 hover:text-red-600' : 'text-secondary hover:text-primary'}`}
+                className={`flex items-center gap-1 text-[10px] font-bold transition-colors cursor-pointer ${comment.likedBy?.includes(user?.uid || '') ? 'text-red-500 hover:text-red-600' : 'text-secondary hover:text-primary'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill={comment.likedBy?.includes(user?.uid || '') ? "currentColor" : "none"} stroke="currentColor">
                   <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
@@ -309,12 +475,49 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                       setReplyText('');
                     }
                   }}
-                  className="text-[10px] font-bold text-accent hover:underline flex items-center gap-1 transition-colors"
+                  className="text-[10px] font-bold text-accent hover:underline flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                   </svg>
                   Reply
+                </button>
+              )}
+
+              {/* Edit button */}
+              {user?.uid === comment.userUid && (
+                <button
+                  onClick={() => {
+                    setEditingCommentId(comment.id);
+                    setEditCommentText(comment.content);
+                  }}
+                  className="text-[10px] font-bold text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Edit
+                </button>
+              )}
+
+              {/* Delete button (Author or Image Owner) */}
+              {(user?.uid === comment.userUid || user?.uid === currentImage.uploaderUid) && (
+                <button
+                  onClick={() => handleDeleteComment(comment.id)}
+                  disabled={isDeletingCommentId === comment.id}
+                  className="text-[10px] font-bold text-secondary hover:text-red-500 flex items-center gap-1 transition-colors ml-auto cursor-pointer"
+                  title="Delete comment"
+                >
+                  {isDeletingCommentId === comment.id ? (
+                    <span className="text-[9px]">Deleting...</span>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -359,10 +562,32 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           </div>
         )}
 
-        {/* Nested child replies recursive rendering */}
+        {/* Nested child replies recursive rendering with progressive disclosure */}
         {hasReplies && (
-          <div className="flex flex-col gap-0.5">
-            {comment.replies!.map(reply => renderCommentNode(reply, depth + 1))}
+          <div className="flex flex-col gap-0.5 mt-0.5">
+            {!isRepliesExpanded ? (
+              <button
+                onClick={() => setExpandedReplies(prev => new Set(prev).add(comment.id))}
+                className="flex items-center gap-1.5 text-[11px] text-secondary hover:text-accent font-semibold py-1 ml-4 transition-colors self-start"
+              >
+                <span className="w-3.5 h-[1px] bg-border inline-block"></span>
+                <span>View {comment.replies!.length} {comment.replies!.length === 1 ? 'reply' : 'replies'}</span>
+              </button>
+            ) : (
+              <>
+                {comment.replies!.map(reply => renderCommentNode(reply, depth + 1))}
+                <button
+                  onClick={() => setExpandedReplies(prev => {
+                    const next = new Set(prev);
+                    next.delete(comment.id);
+                    return next;
+                  })}
+                  className="text-[10px] text-secondary hover:text-primary py-0.5 ml-4 font-medium transition-colors self-start"
+                >
+                  Hide replies
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -719,8 +944,17 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       <div className="space-y-4">
         {(currentImage.title || currentImage.description) && (
           <div className="mb-2">
-            {currentImage.title && <h1 className="text-2xl font-bold text-primary mb-2">{currentImage.title}</h1>}
-            {currentImage.description && <CrawlableContent content={currentImage.description} className="text-primary/80 text-sm leading-relaxed" />}
+            {currentImage.title && (
+              <h1 className="text-xl sm:text-2xl font-bold text-primary mb-2 break-words [overflow-wrap:anywhere] leading-snug">
+                {currentImage.title}
+              </h1>
+            )}
+            {currentImage.description && (
+              <CrawlableContent 
+                content={currentImage.description} 
+                className="text-primary/80 text-sm leading-relaxed break-words [overflow-wrap:anywhere]" 
+              />
+            )}
           </div>
         )}
 
@@ -976,12 +1210,38 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
             {/* Comments Section */}
             <div className="pt-6 border-t border-border/50 mt-6">
-              <h3 className="text-sm font-bold text-primary mb-4 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                {flatComments.length} Comments
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  {flatComments.length} Comments
+                </h3>
+
+                {flatComments.length > 0 && (
+                  <button
+                    onClick={() => setIsCommentsSectionHidden(prev => !prev)}
+                    className="text-xs font-semibold text-secondary hover:text-accent flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background border border-border/60 hover:border-accent/40 transition-all cursor-pointer"
+                  >
+                    {isCommentsSectionHidden ? (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <span>Show comments</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                        </svg>
+                        <span>Hide comments</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
 
               {/* Comment Input */}
               {user ? (
@@ -1024,7 +1284,17 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               )}
 
               {/* Comments Scrollable Feed */}
-              {isLoadingComments ? (
+              {isCommentsSectionHidden ? (
+                <div
+                  onClick={() => setIsCommentsSectionHidden(false)}
+                  className="py-4 px-4 bg-background/50 border border-dashed border-border rounded-xl text-center cursor-pointer hover:border-accent/40 transition-colors my-2"
+                >
+                  <p className="text-xs text-secondary flex items-center justify-center gap-1.5">
+                    <span>Comments are currently hidden</span>
+                    <span className="text-accent font-semibold underline">Click to expand ({flatComments.length})</span>
+                  </p>
+                </div>
+              ) : isLoadingComments ? (
                 <div className="flex justify-center py-6">
                   <Spinner />
                 </div>

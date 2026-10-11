@@ -455,6 +455,7 @@ const App: React.FC = () => {
   
   const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
   const [forceEditMode, setForceEditMode] = useState(false);
+  const [targetCommentId, setTargetCommentId] = useState<string | null>(null);
   const [selectedFeedPost, setSelectedFeedPost] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
@@ -865,6 +866,8 @@ const App: React.FC = () => {
       const params = new URLSearchParams(window.location.search);
       const pathMatch = window.location.pathname.match(/^\/image\/([a-zA-Z0-9_-]+)/);
       const imageId = params.get('image') || (pathMatch ? pathMatch[1] : null);
+      const commentIdParam = params.get('comment') || params.get('commentId');
+      if (commentIdParam) setTargetCommentId(commentIdParam);
       const userId = params.get('user');
       const searchTerm = params.get('search');
       const viewParam = params.get('view');
@@ -1331,7 +1334,8 @@ const App: React.FC = () => {
     };
   }, [handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
-  const handleImageClick = (image: ImageMeta) => {
+  const handleImageClick = (image: ImageMeta, commentId?: string) => {
+    setTargetCommentId(commentId || null);
     const doClick = () => {
       const baseId = image.id.split('_loop_')[0];
       const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
@@ -1986,10 +1990,12 @@ const App: React.FC = () => {
             allImages={allImages}
             onLoginClick={() => setLoginModalOpen(true)}
             initialEditMode={forceEditMode}
+            targetCommentId={targetCommentId}
             onClose={() => {
               const doClose = () => {
                 setSelectedImage(null);
                 setForceEditMode(false);
+                setTargetCommentId(null);
                 if (deepLinkUnsubscribeRef.current) {
                     deepLinkUnsubscribeRef.current();
                     deepLinkUnsubscribeRef.current = null;

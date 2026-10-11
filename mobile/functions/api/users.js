@@ -46,6 +46,8 @@ export async function onRequest(context) {
         email: row.email || '',
         bio: row.bio || '',
         onboarded: parseInt(row.onboarded || 0) === 1,
+        isVerified: parseInt(row.isVerified || 0) === 1,
+        hideReplies: parseInt(row.hideReplies || 0) === 1,
         followedTags: row.followedTags ? JSON.parse(row.followedTags) : [],
         ...(includeApiKey === 'true' ? { apiKey: row.apiKey || null } : {})
       };
@@ -93,31 +95,76 @@ export async function onRequest(context) {
 
       if (checkRes.rows.length === 0) {
         // Insert new user
-        await db.execute({
-          sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            uid,
-            data.uploaderName || 'Anonymous',
-            data.uploaderPhotoURL || '',
-            data.backgroundImageURL || '',
-            data.location || '',
-            data.email || '',
-            data.bio || '',
-            data.onboarded ? 1 : 0,
-            JSON.stringify(data.followedTags || [])
-          ]
-        });
+        try {
+          await db.execute({
+            sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags, isVerified, hideReplies)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+              uid,
+              data.uploaderName || 'Anonymous',
+              data.uploaderPhotoURL || '',
+              data.backgroundImageURL || '',
+              data.location || '',
+              data.email || '',
+              data.bio || '',
+              data.onboarded ? 1 : 0,
+              JSON.stringify(data.followedTags || []),
+              data.isVerified ? 1 : 0,
+              data.hideReplies ? 1 : 0
+            ]
+          });
+        } catch (insertErr) {
+          if (insertErr.message && (insertErr.message.includes('hideReplies') || insertErr.message.includes('no such column'))) {
+            try {
+              await db.execute("ALTER TABLE users ADD COLUMN hideReplies INTEGER DEFAULT 0");
+              await db.execute({
+                sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags, isVerified, hideReplies)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                  uid,
+                  data.uploaderName || 'Anonymous',
+                  data.uploaderPhotoURL || '',
+                  data.backgroundImageURL || '',
+                  data.location || '',
+                  data.email || '',
+                  data.bio || '',
+                  data.onboarded ? 1 : 0,
+                  JSON.stringify(data.followedTags || []),
+                  data.isVerified ? 1 : 0,
+                  data.hideReplies ? 1 : 0
+                ]
+              });
+            } catch {
+              await db.execute({
+                sql: `INSERT INTO users (uploaderUid, uploaderName, uploaderPhotoURL, backgroundImageURL, location, email, bio, onboarded, followedTags)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                  uid,
+                  data.uploaderName || 'Anonymous',
+                  data.uploaderPhotoURL || '',
+                  data.backgroundImageURL || '',
+                  data.location || '',
+                  data.email || '',
+                  data.bio || '',
+                  data.onboarded ? 1 : 0,
+                  JSON.stringify(data.followedTags || [])
+                ]
+              });
+            }
+          } else {
+            throw insertErr;
+          }
+        }
       } else {
         // Update user with dynamic fields
-        const fields = ['uploaderName', 'uploaderPhotoURL', 'backgroundImageURL', 'location', 'email', 'bio', 'onboarded', 'followedTags'];
+        const fields = ['uploaderName', 'uploaderPhotoURL', 'backgroundImageURL', 'location', 'email', 'bio', 'onboarded', 'followedTags', 'isVerified', 'hideReplies'];
         const keys = [];
         const args = [];
 
         fields.forEach(f => {
           if (data[f] !== undefined) {
             keys.push(`${f} = ?`);
-            if (f === 'onboarded') {
+            if (f === 'onboarded' || f === 'isVerified' || f === 'hideReplies') {
               args.push(data[f] ? 1 : 0);
             } else if (f === 'followedTags') {
               args.push(JSON.stringify(data[f] || []));
@@ -129,10 +176,26 @@ export async function onRequest(context) {
 
         if (keys.length > 0) {
           args.push(uid);
-          await db.execute({
-            sql: `UPDATE users SET ${keys.join(', ')} WHERE uploaderUid = ?`,
-            args
-          });
+          try {
+            await db.execute({
+              sql: `UPDATE users SET ${keys.join(', ')} WHERE uploaderUid = ?`,
+              args
+            });
+          } catch (updateErr) {
+            if (updateErr.message && (updateErr.message.includes('hideReplies') || updateErr.message.includes('no such column'))) {
+              try {
+                await db.execute("ALTER TABLE users ADD COLUMN hideReplies INTEGER DEFAULT 0");
+                await db.execute({
+                  sql: `UPDATE users SET ${keys.join(', ')} WHERE uploaderUid = ?`,
+                  args
+                });
+              } catch {
+                throw updateErr;
+              }
+            } else {
+              throw updateErr;
+            }
+          }
         }
       }
 

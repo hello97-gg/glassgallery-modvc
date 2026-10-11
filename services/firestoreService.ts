@@ -564,3 +564,44 @@ export const toggleCommentLike = async (commentId: string, userUid: string): Pro
         throw error;
     }
 };
+
+export const deleteComment = async (commentId: string, userUid: string): Promise<void> => {
+    try {
+        const response = await fetch('/api/comments?action=delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commentId, userUid })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to delete comment.");
+        }
+    } catch (error) {
+        console.error("Error deleting comment:", error);
+        throw error;
+    }
+};
+
+export const getUserComments = async (userUid: string, requesterUid?: string): Promise<Comment[]> => {
+    try {
+        const url = `/api/comments?userUid=${encodeURIComponent(userUid)}${requesterUid ? `&requesterUid=${encodeURIComponent(requesterUid)}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+        }
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to fetch user comments.");
+        }
+        return (data.comments || []).map((c: any) => ({
+            ...c,
+            post: c.post ? {
+                ...c.post,
+                uploadedAt: mapTimestamp(c.post.uploadedAt)
+            } : undefined
+        })) as Comment[];
+    } catch (error) {
+        console.error("Error getting comments for user: ", error);
+        return [];
+    }
+};

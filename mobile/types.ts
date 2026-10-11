@@ -42,6 +42,7 @@ export interface ProfileUser {
   onboarded?: boolean;
   followedTags?: string[];
   isVerified?: boolean;
+  hideReplies?: boolean;
 }
 
 export interface Notification {

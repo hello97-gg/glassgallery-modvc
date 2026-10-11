@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User } from 'firebase/auth';
-import type { ProfileUser, ImageMeta } from '../types';
-import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore, updateUserProfile } from '../services/firestoreService';
+import type { ProfileUser, ImageMeta, Comment } from '../types';
+import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore, updateUserProfile, getUserComments } from '../services/firestoreService';
 import ImageGrid from './ImageGrid';
 import Spinner from './Spinner';
 import Button from './Button';
@@ -35,11 +35,27 @@ const VerifiedBadge: React.FC<{ className?: string; onClick?: (e: React.MouseEve
   </svg>
 );
 
+const formatCommentDate = (dateString?: string) => {
+  if (!dateString) return 'Recently';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'Recently';
+  const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diffSec < 60) return 'Just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+  });
+};
+
 interface ProfilePageProps {
   user: ProfileUser;
   loggedInUser: User | null;
   onBack: () => void;
-  onImageClick: (image: ImageMeta) => void;
+  onImageClick: (image: ImageMeta, commentId?: string) => void;
   onViewProfile: (user: ProfileUser) => void;
   onLikeToggle: (image: ImageMeta) => void;
   onLocationClick?: (location: string) => void;
@@ -49,7 +65,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   const [profileData, setProfileData] = useState<ProfileUser>(user);
   
   // Tab Management
-  const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'dashboard'>('created');
+  const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'replies' | 'dashboard'>('created');
 
   // Created/Uploads Gallery State (preloads from SSR if available for instant Googlebot render)
   const preloadedImages = useMemo<ImageMeta[]>(() => {
@@ -83,6 +99,36 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
 
   // Secure check: ensure we only show edit controls if logged in user matches the currently displayed profile data
   const isOwner = loggedInUser?.uid === profileData.uploaderUid;
+
+  // Replies Gallery State
+  const [userReplies, setUserReplies] = useState<Comment[]>([]);
+  const [isLoadingReplies, setIsLoadingReplies] = useState(false);
+  const [hasLoadedReplies, setHasLoadedReplies] = useState(false);
+
+  // Synchronize hide replies preference with database profile + local fallback
+  const isRepliesHidden = useMemo(() => {
+    if (typeof profileData.hideReplies === 'boolean') {
+      return profileData.hideReplies;
+    }
+    try {
+      return localStorage.getItem(`gg_hide_replies_${user.uploaderUid}`) === 'true';
+    } catch {
+      return false;
+    }
+  }, [profileData.hideReplies, user.uploaderUid]);
+
+  const handleToggleRepliesVisibility = async () => {
+    const next = !isRepliesHidden;
+    setProfileData(prev => ({ ...prev, hideReplies: next }));
+    try {
+      localStorage.setItem(`gg_hide_replies_${user.uploaderUid}`, next ? 'true' : 'false');
+    } catch {}
+    try {
+      await updateUserProfile(profileData.uploaderUid, { hideReplies: next });
+    } catch (err) {
+      console.error("Failed to save hideReplies preference to database:", err);
+    }
+  };
 
   // Stats memoized selectors
   const totalLikes = useMemo(() => allImages.reduce((sum, img) => sum + (img.likeCount || 0), 0), [allImages]);
@@ -156,6 +202,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     }
     setLikedImages([]);
     setDisplayedLikedImages([]);
+    setUserReplies([]);
+    setHasLoadedReplies(false);
     setActiveTab('created');
 
     if (!user.uploaderUid) {
@@ -235,6 +283,27 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     }
   }, [activeTab, fetchLikedImages]);
 
+  // Fetch User Replies/Comments
+  const fetchUserReplies = useCallback(async () => {
+    if (!user.uploaderUid) return;
+    setIsLoadingReplies(true);
+    try {
+      const replies = await getUserComments(user.uploaderUid, loggedInUser?.uid);
+      setUserReplies(replies);
+      setHasLoadedReplies(true);
+    } catch (error) {
+      console.error("Failed to fetch user replies:", error);
+    } finally {
+      setIsLoadingReplies(false);
+    }
+  }, [user.uploaderUid, loggedInUser?.uid]);
+
+  useEffect(() => {
+    if (activeTab === 'replies' && !hasLoadedReplies) {
+      fetchUserReplies();
+    }
+  }, [activeTab, hasLoadedReplies, fetchUserReplies]);
+
   const loadMoreUserImages = useCallback(() => {
     if (isLoading || allImages.length === 0) return;
 
@@ -264,7 +333,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
         if (isAtBottom) {
             if (activeTab === 'created') {
                 loadMoreUserImages();
-            } else {
+            } else if (activeTab === 'saved') {
                 loadMoreLikedImages();
             }
         }
@@ -523,6 +592,28 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
           )}
         </button>
+        {(isOwner || !isRepliesHidden) && (
+          <button
+            onClick={() => setActiveTab('replies')}
+            className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'replies' ? 'text-primary' : 'text-secondary hover:text-primary'
+            }`}
+          >
+            Replies
+            {isRepliesHidden && isOwner ? (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-medium">
+                Hidden
+              </span>
+            ) : hasLoadedReplies && userReplies.length > 0 ? (
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-surface border border-border text-secondary font-normal">
+                {userReplies.length}
+              </span>
+            ) : null}
+            {activeTab === 'replies' && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
+            )}
+          </button>
+        )}
         {isOwner && (
           <button
             onClick={() => setActiveTab('dashboard')}
@@ -581,6 +672,180 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
         ) : (
           <div className="px-4 md:px-8">
             <ImageGrid user={loggedInUser} images={displayedLikedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} />
+          </div>
+        )
+      ) : activeTab === 'replies' ? (
+        !isOwner && isRepliesHidden ? (
+          <div className="text-center py-20 px-4 animate-fade-in">
+            <div className="w-16 h-16 bg-surface rounded-2xl flex items-center justify-center mx-auto mb-4 border border-border shadow-md">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-primary mb-1">Replies are private</h3>
+            <p className="text-sm text-secondary max-w-sm mx-auto">
+              This creator has chosen to keep their replies hidden from public visitors.
+            </p>
+          </div>
+        ) : isLoadingReplies ? (
+          <div className="flex flex-col justify-center items-center py-20 gap-3">
+            <Spinner />
+            <p className="text-xs text-secondary animate-pulse">Loading replies...</p>
+          </div>
+        ) : userReplies.length === 0 ? (
+          <div className="text-center py-20 px-4 animate-fade-in">
+            <div className="w-16 h-16 bg-surface rounded-2xl flex items-center justify-center mx-auto mb-4 border border-border shadow-md">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-primary mb-1">No replies yet</h3>
+            <p className="text-sm text-secondary max-w-sm mx-auto mb-5">
+              {isOwner 
+                ? "You haven't replied to any posts yet. Drop a comment on any image to join the conversation!" 
+                : "This user hasn't posted any replies or comments yet."}
+            </p>
+            {isOwner && (
+              <button
+                onClick={onBack}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-white font-medium text-sm hover:brightness-110 shadow-lg shadow-accent/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                Explore Community Posts
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="max-w-3xl mx-auto px-4 md:px-6 space-y-4 animate-fade-in">
+            {/* Owner Visibility Controls */}
+            {isOwner && (
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-surface/70 border border-border/70 text-xs mb-1">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isRepliesHidden ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span className="text-secondary font-medium">Replies tab visibility:</span>
+                  <span className={`font-semibold ${isRepliesHidden ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {isRepliesHidden ? 'Hidden from public visitors' : 'Visible on public profile'}
+                  </span>
+                </div>
+                <button
+                  onClick={handleToggleRepliesVisibility}
+                  className="px-3 py-1 rounded-full bg-background border border-border/80 hover:border-accent text-secondary hover:text-primary transition-all font-semibold text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  {isRepliesHidden ? 'Unhide replies' : 'Keep replies hidden'}
+                </button>
+              </div>
+            )}
+            {userReplies.map((reply) => {
+              const post = reply.post;
+              return (
+                <div
+                  key={reply.id}
+                  className="group bg-surface/80 hover:bg-surface border border-border/70 hover:border-accent/40 rounded-2xl p-4 md:p-5 transition-all duration-200 shadow-sm hover:shadow-lg backdrop-blur-md"
+                >
+                  {/* Post Context Header */}
+                  {post ? (
+                    <div
+                      onClick={() => onImageClick(post, reply.id)}
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-background/60 hover:bg-background border border-border/50 hover:border-accent/50 cursor-pointer transition-all duration-200 mb-3.5 group/post"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {post.imageUrl ? (
+                          <img
+                            src={post.imageUrl}
+                            alt={post.title || 'Post thumbnail'}
+                            className="w-12 h-12 md:w-14 md:h-14 rounded-lg object-cover border border-border/60 shrink-0 group-hover/post:scale-105 transition-transform"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 md:w-14 md:h-14 rounded-lg bg-surface flex items-center justify-center border border-border shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-xs text-secondary mb-0.5">
+                            <span className="font-semibold text-accent flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                              </svg>
+                              Replied to post
+                            </span>
+                            <span>&middot;</span>
+                            <span className="truncate">by @{post.uploaderName}</span>
+                          </div>
+                          <h4 className="text-sm font-semibold text-primary truncate group-hover/post:text-accent transition-colors">
+                            {post.title || 'Untitled Post'}
+                          </h4>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-1 text-xs font-semibold text-accent bg-accent/10 group-hover/post:bg-accent group-hover/post:text-white px-3 py-1.5 rounded-full transition-all duration-200">
+                        <span>View post</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 group-hover/post:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-secondary/80 mb-2 italic">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Replied to a post
+                    </div>
+                  )}
+
+                  {/* Comment Content */}
+                  <div className="flex items-start gap-3 pl-1">
+                    <img
+                      src={reply.userPhotoURL || profileData.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${reply.userName || profileData.uploaderName}`}
+                      alt={reply.userName || profileData.uploaderName}
+                      className="w-9 h-9 rounded-full object-cover border border-border shrink-0 mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <span className="text-sm font-bold text-primary flex items-center gap-1">
+                          {reply.userName || profileData.uploaderName}
+                          {profileData.isVerified && <VerifiedBadge className="h-3.5 w-3.5" />}
+                        </span>
+                        <span className="text-xs text-secondary">
+                          {formatCommentDate(reply.createdAt)}
+                        </span>
+                        {reply.parentId && (
+                          <span className="text-[10px] uppercase font-bold text-secondary bg-border/50 px-2 py-0.5 rounded-full">
+                            Thread Reply
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="bg-background/40 border border-border/40 rounded-xl p-3 text-sm text-primary/90 leading-relaxed whitespace-pre-wrap break-words">
+                        {reply.content}
+                      </div>
+
+                      {/* Footer Actions / Likes info */}
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-border/30 text-xs text-secondary">
+                        <div className="flex items-center gap-1.5">
+                          <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${reply.likeCount && reply.likeCount > 0 ? 'text-red-500 fill-current' : 'text-secondary'}`} viewBox="0 0 20 20" fill={reply.likeCount && reply.likeCount > 0 ? "currentColor" : "none"} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" />
+                          </svg>
+                          <span>{reply.likeCount || 0} {reply.likeCount === 1 ? 'like' : 'likes'}</span>
+                        </div>
+
+                        {post && (
+                          <button
+                            onClick={() => onImageClick(post, reply.id)}
+                            className="hover:text-primary transition-colors flex items-center gap-1 text-[11px] font-semibold text-accent cursor-pointer"
+                          >
+                            <span>Open in post view</span>
+                            <span>→</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )
       ) : (
