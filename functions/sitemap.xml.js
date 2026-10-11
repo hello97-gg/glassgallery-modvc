@@ -17,12 +17,13 @@ function escapeXml(unsafe) {
 export async function onRequest(context) {
   const baseUrl = "https://gg.modvc.org";
 
+  const nowIso = new Date().toISOString();
   // Static routes
   const staticUrls = [
-    { loc: `${baseUrl}/`, changefreq: "daily", priority: "1.0" },
-    { loc: `${baseUrl}/gallery`, changefreq: "daily", priority: "0.9" },
-    { loc: `${baseUrl}/api`, changefreq: "weekly", priority: "0.7" },
-    { loc: `${baseUrl}/legal`, changefreq: "monthly", priority: "0.5" },
+    { loc: `${baseUrl}/`, lastmod: nowIso, changefreq: "daily", priority: "1.0" },
+    { loc: `${baseUrl}/gallery`, lastmod: nowIso, changefreq: "daily", priority: "0.9" },
+    { loc: `${baseUrl}/api`, lastmod: nowIso, changefreq: "weekly", priority: "0.7" },
+    { loc: `${baseUrl}/legal`, lastmod: nowIso, changefreq: "monthly", priority: "0.5" },
   ];
 
   let dynamicUrls = [];
