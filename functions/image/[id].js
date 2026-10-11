@@ -110,7 +110,8 @@ export async function onRequest(context) {
 
     const imageUrl = image.imageUrl || "";
     const location = image.location || "";
-    const rawLicense = (image.license || "CC0").trim();
+    const license = (image.license || "CC0").trim();
+    const rawLicense = license;
     const licenseUrl = LICENSE_URLS[rawLicense] || (rawLicense.startsWith('http') ? rawLicense : `${baseUrl}/legal#license`);
     const pageUrl = `${baseUrl}/image/${id}`;
     const altText = `${title} photography by ${uploaderName} on Glass Gallery`;
