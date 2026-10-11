@@ -104,7 +104,7 @@ export async function onRequest(context) {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=43200' // Cache for 12 hours (43200 seconds)
+        'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
       }
     });
   } catch (error) {

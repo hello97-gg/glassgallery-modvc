@@ -9,7 +9,7 @@ import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, getUserProfileByUsername, updateUserProfile, getFollowingList } from './services/firestoreService';
-import { getInterestBoost, recordClickInterest, recordLikeInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
+import { getInterestBoost, recordClickInterest, recordLikeInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched, getSeenImpressions, recordSeenImpression } from './services/interestTracker';
 import { isVideoUrl } from './utils/mediaUtils';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 import { getCachedData, setCachedData } from './utils/idbCache';
@@ -196,6 +196,7 @@ const smartSortImages = (
   const now = Date.now();
   const hasFollows = followingUids.size > 0;
   const hasLikedConcepts = likedConceptSet.size > 0;
+  const seenMap = getSeenImpressions();
 
   type ImageWithScore = ImageMeta & { sortScore?: number; isVideo?: boolean };
 
@@ -204,21 +205,20 @@ const smartSortImages = (
       const uploadedAt = image.uploadedAt?.toDate ? image.uploadedAt.toDate().getTime() : now;
       const ageInHours = (now - uploadedAt) / (1000 * 60 * 60);
 
-      // 1. Recency Score — Twitter-style time decay (top tiers lowered so a strong personal
-      //    match can outrank a brand-new random post, while the feed still feels fresh)
+      // 1. Recency Score — Balanced time decay (avoids single-post monopoly at slot 0)
       let recencyScore = 0;
       if (ageInHours < 1) {
-          recencyScore = 900;
+          recencyScore = 450;
       } else if (ageInHours < 6) {
-          recencyScore = 550;
-      } else if (ageInHours < 24) {
           recencyScore = 320;
+      } else if (ageInHours < 24) {
+          recencyScore = 200;
       } else if (ageInHours < 72) {
-          recencyScore = 140;
+          recencyScore = 110;
       } else if (ageInHours < 168) {
-          recencyScore = 60;
+          recencyScore = 50;
       } else {
-          recencyScore = 30 / (Math.max(1, ageInHours / 168));
+          recencyScore = 25 / (Math.max(1, ageInHours / 168));
       }
 
       // 2. Engagement velocity — reward content getting interaction relative to age
@@ -280,11 +280,27 @@ const smartSortImages = (
       // 10. Session-seeded jitter — keeps every Home refresh feeling fresh (deterministic per session)
       const randomFactor = seededRandom(image.id) * FEED_WEIGHTS.randomRange;
 
-      const finalScore = recencyScore + popularityScore + personalizationBoost + interestBoost + likedConceptBoost + followBoost + socialProof + videoBoost + surpriseBoost + randomFactor;
+      // 11. Anti-monopoly Impression Decay — if user has already seen this post at the top in this session,
+      // decay its priority so other fresh/relevant posts rotate to slot 0!
+      const baseId = image.id.split('_loop_')[0];
+      const seenTimes = seenMap[baseId] || 0;
+      const seenPenalty = Math.min(seenTimes * 220, 600);
+
+      const finalScore = Math.max(0, recencyScore + popularityScore + personalizationBoost + interestBoost + likedConceptBoost + followBoost + socialProof + videoBoost + surpriseBoost + randomFactor - seenPenalty);
 
       return { ...image, sortScore: finalScore, isVideo };
     })
     .sort((a, b) => (b.sortScore ?? 0) - (a.sortScore ?? 0));
+
+  // Top-slot rotation: gently rotate among the top 4 candidates across sessions/refreshes
+  if (scored.length > 2) {
+    const topPool = Math.min(4, scored.length);
+    const rotateIndex = Math.floor(seededRandom('top_slot_' + sessionSeed) * topPool);
+    if (rotateIndex > 0 && rotateIndex < scored.length) {
+      const [promoted] = scored.splice(rotateIndex, 1);
+      scored.unshift(promoted);
+    }
+  }
 
   // Content diversity enforcement:
   // 1. Cap videos at ~30% of feed
@@ -519,7 +535,7 @@ const App: React.FC = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, exploreSearchTerm, user?.uid],
+    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, exploreSearchTerm, user?.uid, sessionSeed],
     queryFn: async ({ pageParam = 0 }) => {
       isFetchingRef.current = true;
       try {
@@ -591,6 +607,13 @@ const App: React.FC = () => {
     }
     return deduped;
   }, [feedQueryData, activeAllImages, FEED_BATCH_SIZE, activeView]);
+
+  // Record impression for slot 0 to apply anti-monopoly fatigue across session views
+  useEffect(() => {
+    if (activeView === 'home' && feedImages.length > 0 && feedImages[0]) {
+      recordSeenImpression(feedImages[0].id);
+    }
+  }, [activeView, feedImages]);
 
   const handleLoadMore = useCallback(() => {
     if (!isFetchingNextPage && hasNextPage) {

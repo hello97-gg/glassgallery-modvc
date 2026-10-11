@@ -125,6 +125,27 @@ export const markPersonalizedFeedFetched = (): void => {
   } catch {}
 };
 
+// --- Session Impression Fatigue Tracker (Anti-Repetition) ---
+const SEEN_IMPRESSIONS_KEY = 'gg_seen_impressions';
+
+export const getSeenImpressions = (): Record<string, number> => {
+  try {
+    return JSON.parse(sessionStorage.getItem(SEEN_IMPRESSIONS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+
+export const recordSeenImpression = (imageId: string): void => {
+  if (!imageId) return;
+  try {
+    const baseId = imageId.split('_loop_')[0];
+    const seen = getSeenImpressions();
+    seen[baseId] = (seen[baseId] || 0) + 1;
+    sessionStorage.setItem(SEEN_IMPRESSIONS_KEY, JSON.stringify(seen));
+  } catch {}
+};
+
 // --- Internal ---
 
 const saveInterests = (interests: InterestMap): void => {

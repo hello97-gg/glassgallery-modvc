@@ -18,7 +18,8 @@ export default function TrendingSidebar({ onTopicClick }: TrendingSidebarProps) 
     let isMounted = true;
     const fetchTrending = async () => {
       try {
-        const res = await fetch('/api/trending');
+        const minuteEpoch = Math.floor(Date.now() / 60000);
+        const res = await fetch(`/api/trending?_t=${minuteEpoch}`, { cache: 'no-cache' });
         if (res.ok) {
           const contentType = res.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
