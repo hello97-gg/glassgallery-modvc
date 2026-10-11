@@ -10,7 +10,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Share } from '@capacitor/share';
 import { SendIntent } from '@supernotes/capacitor-send-intent';
 import { Filesystem } from '@capacitor/filesystem';
-import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile, markNotificationsAsRead } from './services/firestoreService';
+import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, getUserProfileByUsername, updateUserProfile, markNotificationsAsRead } from './services/firestoreService';
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 import { calculateDynamicBatchSize } from './utils/performanceUtils';
@@ -543,6 +543,18 @@ const App: React.FC = () => {
       const searchTerm = params.get('search');
       const viewParam = params.get('view');
 
+      // Detect @username or direct /username routes (e.g. /@pixeletedthoughts or /pixeletedthoughts)
+      const RESERVED_PATHS = new Set([
+        'image', 'gallery', 'api', 'legal', 'discover', 'explore',
+        'login', 'notifications', 'feed', 'assets', 'favicon.ico',
+        'robots.txt', 'sitemap.xml', 'manifest.json'
+      ]);
+      const atMatch = window.location.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
+      const directMatch = !atMatch ? window.location.pathname.match(/^\/([a-zA-Z0-9_.-]+)$/) : null;
+      const usernameParam = atMatch
+        ? atMatch[1]
+        : (directMatch && !RESERVED_PATHS.has(directMatch[1].toLowerCase()) ? directMatch[1] : null);
+
       if (imageId) {
         if (deepLinkUnsubscribeRef.current) {
           deepLinkUnsubscribeRef.current();
@@ -570,6 +582,23 @@ const App: React.FC = () => {
          };
          setProfileUser(profile);
          setActiveView('profile');
+         getUserProfile(userId).then(u => {
+           if (u) setProfileUser(u);
+         }).catch(() => {});
+      } else if (usernameParam) {
+         const cleanTarget = usernameParam.toLowerCase().replace(/[@\s]/g, '');
+         getUserProfileByUsername(cleanTarget).then((fetchedUser) => {
+           if (fetchedUser) {
+             setProfileUser(fetchedUser);
+             setActiveView('profile');
+           } else {
+             console.warn(`User profile not found for @${cleanTarget}`);
+             setActiveView('home');
+             setProfileUser(null);
+           }
+         }).catch((err) => {
+           console.error("Failed to load user profile by username:", err);
+         });
       } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
@@ -678,17 +707,19 @@ const App: React.FC = () => {
     registerPush();
   }, []);
 
-  const updateURL = (params: { image?: string; user?: string; search?: string; view?: string } | null) => {
+  const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string } | null) => {
     const url = new URL(window.location.href);
     url.search = ''; 
     
     if (params?.image) {
       url.pathname = `/image/${params.image}`;
+    } else if (params?.username) {
+      url.pathname = `/@${params.username.replace(/^@/, '')}`;
     } else {
       url.pathname = '/';
     }
     
-    if (params?.user) url.searchParams.set('user', params.user);
+    if (params?.user && !params?.username) url.searchParams.set('user', params.user);
     if (params?.search) url.searchParams.set('search', params.search);
     if (params?.view) url.searchParams.set('view', params.view);
     
@@ -999,7 +1030,12 @@ const App: React.FC = () => {
     setProfileUser(userToView);
     setActiveView('profile');
     setSelectedImage(null);
-    updateURL({ user: userToView.uploaderUid });
+    const cleanUsername = userToView.uploaderName ? userToView.uploaderName.replace(/\s+/g, '').toLowerCase() : '';
+    if (cleanUsername && cleanUsername !== 'loading...') {
+      updateURL({ username: cleanUsername });
+    } else {
+      updateURL({ user: userToView.uploaderUid });
+    }
   };
 
   const handleBack = () => {

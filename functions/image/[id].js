@@ -45,7 +45,7 @@ export async function onRequest(context) {
 
     // If image doesn't exist, return proper HTTP 404 (fixing soft-404)
     if (result.rows.length === 0) {
-      return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>404 - Image Not Found | Glass Gallery</title><meta name="robots" content="noindex, follow" /></head><body style="background:#181818;color:#e5e5e5;font-family:system-ui,sans-serif;text-align:center;padding:4rem;"><h1>404 - Image Not Found</h1><p style="color:#a0a0a0;margin:1rem 0 2rem;">The requested image does not exist or may have been deleted.</p><a href="/gallery" style="display:inline-block;background:#f5c3b8;color:#181818;padding:0.75rem 1.5rem;border-radius:999px;text-decoration:none;font-weight:600;">Browse Gallery Archive</a></body></html>`, {
+      return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>404 - Image Not Found | Glass Gallery</title><meta name="robots" content="noindex, follow" /><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" /><link rel="icon" type="image/x-icon" href="/favicon.ico" /><link rel="shortcut icon" href="/favicon.ico" /><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" /></head><body style="background:#181818;color:#e5e5e5;font-family:system-ui,sans-serif;text-align:center;padding:4rem;"><h1>404 - Image Not Found</h1><p style="color:#a0a0a0;margin:1rem 0 2rem;">The requested image does not exist or may have been deleted.</p><a href="/gallery" style="display:inline-block;background:#f5c3b8;color:#181818;padding:0.75rem 1.5rem;border-radius:999px;text-decoration:none;font-weight:600;">Browse Gallery Archive</a></body></html>`, {
         status: 404,
         headers: {
           'Content-Type': 'text/html; charset=UTF-8',
@@ -168,6 +168,10 @@ export async function onRequest(context) {
     <meta name="description" content="${escapeHtml(description)}" />
     <meta name="keywords" content="${tags.map(t => escapeHtml(t)).join(', ')}" />
     <link rel="canonical" href="${pageUrl}" />
+    <link rel="icon" type="image/png" sizes="96x96" href="${baseUrl}/favicon-96x96.png" />
+    <link rel="icon" type="image/x-icon" href="${baseUrl}/favicon.ico" />
+    <link rel="shortcut icon" href="${baseUrl}/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="${baseUrl}/apple-touch-icon.png" />
     
     <meta property="og:site_name" content="Glass Gallery" />
     <meta property="og:type" content="${isVideo ? 'video.other' : 'article'}" />
@@ -270,6 +274,7 @@ export async function onRequest(context) {
           <li><strong>Photographer:</strong> ${uploaderName}</li>
           ${location ? `<li><strong>Location:</strong> ${escapeHtml(location)}</li>` : ''}
           <li><strong>License:</strong> <a href="${escapeHtml(licenseUrl)}" target="_blank" rel="noopener noreferrer" style="color: #f5c3b8; text-decoration: underline;">${escapeHtml(license)} License</a></li>
+          ${image.originalWorkUrl ? `<li><strong>Credit / Source:</strong> <a href="${escapeHtml(image.originalWorkUrl)}" target="_blank" rel="noopener noreferrer" style="color: #f5c3b8; text-decoration: underline;">View Source</a></li>` : ''}
         </ul>
 
         ${tags.length > 0 ? `

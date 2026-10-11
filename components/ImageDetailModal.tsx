@@ -10,6 +10,7 @@ import Spinner from './Spinner';
 import SEOHead from './SEOHead';
 import EmbedModal from './EmbedModal';
 import VideoPlayer from './VideoPlayer';
+import CrawlableContent from './CrawlableContent';
 
 interface ImageDetailModalProps {
   image: ImageMeta;
@@ -375,6 +376,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [editedLocation, setEditedLocation] = useState(image.location || '');
   const [editedLicense, setEditedLicense] = useState(image.license);
   const [editedLicenseUrl, setEditedLicenseUrl] = useState(image.licenseUrl || '');
+  const [editedOriginalWorkUrl, setEditedOriginalWorkUrl] = useState(image.originalWorkUrl || '');
   const [editedFlags, setEditedFlags] = useState<string[]>(image.flags || []);
 
   const dynamicTags = React.useMemo(() => {
@@ -558,6 +560,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         location: editedLocation,
         license: editedLicense,
         flags: editedFlags,
+        originalWorkUrl: editedOriginalWorkUrl,
         licenseUrl: editedLicense === 'Other' ? editedLicenseUrl : '',
       };
       await updateImageDetails(currentImage.id, updates);
@@ -690,6 +693,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             </div>
           )}
           <div>
+            <label htmlFor="orig-edit" className="font-semibold mb-2 text-secondary text-sm block">Credit / Original Source URL (Optional)</label>
+            <input type="url" id="orig-edit" value={editedOriginalWorkUrl} onChange={(e) => setEditedOriginalWorkUrl(e.target.value)} placeholder="https://..." className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent text-sm" />
+          </div>
+          <div>
             <label className="font-semibold mb-2 text-secondary text-sm block">Tags</label>
             <div className="mt-2 flex flex-wrap gap-2">
               {dynamicTags.map(flag => (
@@ -713,7 +720,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         {(currentImage.title || currentImage.description) && (
           <div className="mb-2">
             {currentImage.title && <h1 className="text-2xl font-bold text-primary mb-2">{currentImage.title}</h1>}
-            {currentImage.description && <p className="text-primary/80 text-sm whitespace-pre-wrap leading-relaxed">{currentImage.description}</p>}
+            {currentImage.description && <CrawlableContent content={currentImage.description} className="text-primary/80 text-sm leading-relaxed" />}
           </div>
         )}
 

@@ -1,0 +1,17 @@
+# Glass Gallery (MODVC)
+> Curated high-resolution visual repository, deep-space astrophotography, anime art, and community photo sharing.
+
+## Overview
+Glass Gallery (https://gg.modvc.org) is an open, high-performance web platform for discovering, sharing, and archiving high-resolution digital art, telescope astrophotography from James Webb (JWST) and Hubble (HST), anime digital creations, and 4K desktop wallpapers.
+
+## Key URL Directory
+- Homepage: https://gg.modvc.org/
+- Complete Gallery Directory: https://gg.modvc.org/gallery
+- Developer REST API: https://gg.modvc.org/api
+- Terms of Service: https://gg.modvc.org/legal?tab=terms
+- Privacy Policy: https://gg.modvc.org/legal?tab=privacy
+- Community Guidelines: https://gg.modvc.org/legal?tab=guidelines
+- Contact & Inquiries: contact@modvc.org
+
+## Media Licensing & Attribution
+Images on Glass Gallery support open Creative Commons (CC0, CC-BY, CC-BY-SA) and public observatory releases. Original source links and artist credits are attached to posts where available.

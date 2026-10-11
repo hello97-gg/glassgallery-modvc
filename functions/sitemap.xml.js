@@ -21,6 +21,10 @@ export async function onRequest(context) {
     `  <sitemap>
     <loc>${baseUrl}/sitemap/static.xml</loc>
     <lastmod>${nowIso}</lastmod>
+  </sitemap>`,
+    `  <sitemap>
+    <loc>${baseUrl}/sitemap/creators.xml</loc>
+    <lastmod>${nowIso}</lastmod>
   </sitemap>`
   ];
 

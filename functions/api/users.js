@@ -21,16 +21,34 @@ export async function onRequest(context) {
     if (request.method === 'GET') {
       const url = new URL(request.url);
       const uid = url.searchParams.get('uid');
+      const username = url.searchParams.get('username');
       const includeApiKey = url.searchParams.get('includeApiKey');
 
-      if (!uid) {
-        return Response.json({ success: false, error: "Missing uid parameter." }, { status: 400, headers: corsHeaders });
+      if (!uid && !username) {
+        return Response.json({ success: false, error: "Missing uid or username parameter." }, { status: 400, headers: corsHeaders });
       }
 
-      const result = await db.execute({
-        sql: "SELECT * FROM users WHERE uploaderUid = ?",
-        args: [uid]
-      });
+      let result;
+      if (uid) {
+        result = await db.execute({
+          sql: "SELECT * FROM users WHERE uploaderUid = ? LIMIT 1",
+          args: [uid]
+        });
+      } else {
+        const cleanUser = username.replace(/^@/, '').trim().toLowerCase();
+        result = await db.execute({
+          sql: "SELECT * FROM users WHERE LOWER(REPLACE(uploaderName, ' ', '')) = LOWER(?) OR LOWER(uploaderName) = LOWER(?) LIMIT 1",
+          args: [cleanUser, cleanUser]
+        });
+
+        // Fallback: If not found in users table, find matching uploader in images table
+        if (result.rows.length === 0) {
+          result = await db.execute({
+            sql: "SELECT uploaderUid, uploaderName, uploaderPhotoURL, location FROM images WHERE LOWER(REPLACE(uploaderName, ' ', '')) = LOWER(?) OR LOWER(uploaderName) = LOWER(?) LIMIT 1",
+            args: [cleanUser, cleanUser]
+          });
+        }
+      }
 
       if (result.rows.length === 0) {
         return Response.json({ success: true, user: null }, { status: 200, headers: corsHeaders });

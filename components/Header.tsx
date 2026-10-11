@@ -125,7 +125,12 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
       <div className="mt-auto flex justify-center w-full pb-2">
         {user ? (
           <div className="relative">
-            <button onClick={() => setDropdownOpen(!dropdownOpen)} className="p-1 rounded-full hover:ring-2 hover:ring-accent transition-all" title={user.displayName || 'User Profile'}>
+            <button 
+              onClick={() => setDropdownOpen(!dropdownOpen)} 
+              className="p-1 rounded-full hover:ring-2 hover:ring-accent transition-all" 
+              title={user.displayName || 'User Profile'}
+              aria-label={user.displayName ? `${user.displayName}'s profile menu` : 'User profile menu'}
+            >
               <img
                 src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`}
                 alt="User Avatar"

@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { VirtuosoHandle, State } from 'react-virtuoso';
+import { VirtuosoHandle } from 'react-virtuoso';
 // Fix: Use Firebase v8 compatibility User type.
 import type { User } from 'firebase/auth';
 import { auth } from './services/firebase';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, updateUserProfile, getFollowingList } from './services/firestoreService';
+import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, getUserProfileByUsername, updateUserProfile, getFollowingList } from './services/firestoreService';
 import { getInterestBoost, recordClickInterest, recordLikeInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import { isVideoUrl } from './utils/mediaUtils';
 import type { ImageMeta, ProfileUser, Notification } from './types';
@@ -358,7 +358,7 @@ const App: React.FC = () => {
 
   // Virtuoso scroll state refs keyed per route/tab
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
-  const savedVirtuosoStateRef = useRef<Record<string, State | undefined>>({});
+  const savedVirtuosoStateRef = useRef<Record<string, any>>({});
 
 
 
@@ -842,6 +842,18 @@ const App: React.FC = () => {
       const viewParam = params.get('view');
       const isLegal = window.location.pathname.startsWith('/legal') || viewParam === 'legal';
 
+      // Detect @username or direct /username routes (e.g. /@pixeletedthoughts or /pixeletedthoughts)
+      const RESERVED_PATHS = new Set([
+        'image', 'gallery', 'api', 'legal', 'discover', 'explore',
+        'login', 'notifications', 'feed', 'assets', 'favicon.ico',
+        'robots.txt', 'sitemap.xml', 'manifest.json'
+      ]);
+      const atMatch = window.location.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
+      const directMatch = !atMatch ? window.location.pathname.match(/^\/([a-zA-Z0-9_.-]+)$/) : null;
+      const usernameParam = atMatch
+        ? atMatch[1]
+        : (directMatch && !RESERVED_PATHS.has(directMatch[1].toLowerCase()) ? directMatch[1] : null);
+
       if (imageId) {
         if (deepLinkUnsubscribeRef.current) {
           deepLinkUnsubscribeRef.current();
@@ -852,7 +864,7 @@ const App: React.FC = () => {
         const baseId = imageId.split('_loop_')[0];
         const existing = allImagesRef.current.find(i => i.id.split('_loop_')[0] === baseId);
         if (existing) {
-          const isHome = !userId && !searchTerm && viewParam !== 'api' && !isLegal;
+          const isHome = !userId && !usernameParam && !searchTerm && viewParam !== 'api' && !isLegal;
           if (isHome) {
             setSelectedFeedPost(existing);
             setActiveView('post');
@@ -863,7 +875,7 @@ const App: React.FC = () => {
 
         const unsubscribe = subscribeToImage(baseId, (img) => {
           if (img) {
-            const isHome = !userId && !searchTerm && viewParam !== 'api' && !isLegal;
+            const isHome = !userId && !usernameParam && !searchTerm && viewParam !== 'api' && !isLegal;
             if (isHome) {
               setSelectedFeedPost(img);
               setActiveView('post');
@@ -883,13 +895,46 @@ const App: React.FC = () => {
       }
       
       if (userId) {
+         const existingImg = allImagesRef.current.find(i => i.uploaderUid === userId);
          const profile: ProfileUser = {
              uploaderUid: userId,
-             uploaderName: 'Loading...',
-             uploaderPhotoURL: ''
+             uploaderName: existingImg ? existingImg.uploaderName : 'Loading...',
+             uploaderPhotoURL: existingImg ? (existingImg.uploaderPhotoURL || '') : ''
          };
          setProfileUser(profile);
          setActiveView('profile');
+         getUserProfile(userId).then(u => {
+           if (u) setProfileUser(u);
+         }).catch(() => {});
+      } else if (usernameParam) {
+         const cleanTarget = usernameParam.toLowerCase().replace(/[@\s]/g, '');
+         const matchedImg = allImagesRef.current.find(img => {
+           const handle = (img.uploaderName || '').toLowerCase().replace(/[@\s]/g, '');
+           return handle === cleanTarget;
+         });
+
+         if (matchedImg) {
+           const profile: ProfileUser = {
+             uploaderUid: matchedImg.uploaderUid,
+             uploaderName: matchedImg.uploaderName,
+             uploaderPhotoURL: matchedImg.uploaderPhotoURL || ''
+           };
+           setProfileUser(profile);
+           setActiveView('profile');
+         }
+
+         getUserProfileByUsername(cleanTarget).then((fetchedUser) => {
+           if (fetchedUser) {
+             setProfileUser(fetchedUser);
+             setActiveView('profile');
+           } else if (!matchedImg) {
+             console.warn(`User profile not found for @${cleanTarget}`);
+             setActiveView('home');
+             setProfileUser(null);
+           }
+         }).catch((err) => {
+           console.error("Failed to load user profile by username:", err);
+         });
       } else if (isLegal) {
           const tab = params.get('tab') || 'terms';
           setLegalModalTab(tab as 'terms' | 'privacy' | 'guidelines');
@@ -972,7 +1017,7 @@ const App: React.FC = () => {
     registerPush();
   }, []);
 
-  const updateURL = (params: { image?: string; user?: string; search?: string; view?: string; tab?: string } | null) => {
+  const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string; tab?: string } | null) => {
     const url = new URL(window.location.href);
     url.search = ''; 
     
@@ -981,11 +1026,13 @@ const App: React.FC = () => {
     } else if (params?.view === 'legal') {
       url.pathname = '/legal';
       if (params?.tab) url.searchParams.set('tab', params.tab);
+    } else if (params?.username) {
+      url.pathname = `/@${params.username.replace(/^@/, '')}`;
     } else {
       url.pathname = '/';
     }
     
-    if (params?.user) url.searchParams.set('user', params.user);
+    if (params?.user && !params?.username) url.searchParams.set('user', params.user);
     if (params?.search) url.searchParams.set('search', params.search);
     if (params?.view && params.view !== 'legal') url.searchParams.set('view', params.view);
     
@@ -1402,7 +1449,12 @@ const App: React.FC = () => {
       setActiveView('profile');
       window.scrollTo({ top: 0, behavior: 'instant' });
       setSelectedImage(null);
-      updateURL({ user: userToView.uploaderUid });
+      const cleanUsername = userToView.uploaderName ? userToView.uploaderName.replace(/\s+/g, '').toLowerCase() : '';
+      if (cleanUsername && cleanUsername !== 'loading...') {
+        updateURL({ username: cleanUsername });
+      } else {
+        updateURL({ user: userToView.uploaderUid });
+      }
     };
 
     if (document.startViewTransition) {
@@ -1777,13 +1829,11 @@ const App: React.FC = () => {
     return (
         <>
             <SEOHead 
-                title="Glass Gallery – Discover, Share & Download High Quality Images"
+                title="Glass Gallery – Discover, Share & Download HD Images"
                 description="Experience the latest images in a high-fidelity scrollable feed."
                 url={window.location.href}
                 favicon={DEFAULT_FAVICON}
             />
-            <h1 className="sr-only">Glass Gallery – Discover, Share & Download High Quality Images</h1>
-            <h2 className="sr-only">Latest Community Photos, Astrophotography & Wallpapers</h2>
             <InfiniteFeed 
                 images={feedImages.length > 0 ? feedImages : displayedImages} 
                 user={user} 
@@ -1829,7 +1879,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Added min-w-0 to fix flex child overflow issues on mobile */}
-      <main className={`flex-1 min-w-0 ${activeView === 'home' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
+      <main id="main-content" className={`flex-1 min-w-0 ${activeView === 'home' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
         {renderContent()}
       </main>
 

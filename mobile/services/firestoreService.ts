@@ -228,7 +228,7 @@ export const getImagesByUploader = async (uploaderUid: string): Promise<{ images
     }
 };
 
-export const updateImageDetails = async (imageId: string, updates: { title?: string; description?: string; license?: string; flags?: string[]; licenseUrl?: string; location?: string }) => {
+export const updateImageDetails = async (imageId: string, updates: { title?: string; description?: string; license?: string; flags?: string[]; licenseUrl?: string; location?: string; originalWorkUrl?: string }) => {
     try {
         const response = await fetch('/api/images?action=update', {
             method: 'POST',
@@ -362,6 +362,21 @@ export const getUserProfile = async (uid: string): Promise<ProfileUser | null> =
         return null;
     } catch (error) {
         console.error("Error getting user profile:", error);
+        return null;
+    }
+};
+
+export const getUserProfileByUsername = async (username: string): Promise<ProfileUser | null> => {
+    try {
+        const clean = username.replace(/^@/, '').trim();
+        const response = await fetch(`/api/users?username=${encodeURIComponent(clean)}`);
+        const data = await response.json();
+        if (data.success && data.user) {
+            return data.user as ProfileUser;
+        }
+        return null;
+    } catch (error) {
+        console.error("Error getting user profile by username:", error);
         return null;
     }
 };

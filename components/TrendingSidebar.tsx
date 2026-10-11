@@ -75,11 +75,20 @@ export default function TrendingSidebar({ onTopicClick }: TrendingSidebarProps) 
         <p className="text-xs text-secondary py-2">No trending topics available.</p>
       )}
       
-      <div className="mt-4 pt-3 border-t border-border/40 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-secondary/70">
+      <div className="mt-4 pt-3 border-t border-border/40 text-xs text-secondary/80 leading-relaxed">
+        <p className="font-semibold text-primary/90 mb-1">About Glass Gallery</p>
+        <p className="text-[11px] leading-relaxed text-secondary/70 mb-2">
+          Curated visual discovery platform featuring deep-space astrophotography, anime art, and community wallpapers with open licensing and creator attribution.
+        </p>
+      </div>
+
+      <div className="pt-2 border-t border-border/30 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-secondary/70">
+        <a href="/gallery" onClick={(e) => navigate(e, '/gallery')} className="hover:underline">Gallery</a>
         <a href="/legal?tab=terms" onClick={(e) => navigate(e, '/legal?tab=terms')} className="hover:underline">Terms</a>
         <a href="/legal?tab=privacy" onClick={(e) => navigate(e, '/legal?tab=privacy')} className="hover:underline">Privacy</a>
         <a href="/legal?tab=guidelines" onClick={(e) => navigate(e, '/legal?tab=guidelines')} className="hover:underline">Guidelines</a>
         <a href="/api" onClick={(e) => navigate(e, '/api')} className="hover:underline">API</a>
+        <a href="mailto:contact@modvc.org" className="hover:underline">Contact</a>
       </div>
     </div>
   );

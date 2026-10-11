@@ -28,7 +28,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   const [location, setLocation] = useState('');
   const [license] = useState<string>(LICENSES[0].value); // Default to CC-BY-4.0 implicitly
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
-  const [originalWorkUrl] = useState(''); // Keep hidden/implicit
+  const [originalWorkUrl, setOriginalWorkUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Processing image...');
   const [error, setError] = useState<string | null>(null);
@@ -455,6 +455,18 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                             </button>
                           )}
                         </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="originalWorkUrl" className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1">Credit / Source URL (Optional)</label>
+                        <input 
+                          type="url" 
+                          id="originalWorkUrl" 
+                          value={originalWorkUrl} 
+                          onChange={(e) => setOriginalWorkUrl(e.target.value)} 
+                          className="block w-full bg-neutral-900 border border-white/10 rounded-2xl py-3 px-4 text-white focus:outline-none focus:border-red-500/50" 
+                          placeholder="https://... (creator source link)" 
+                        />
                       </div>
                     </div>
 

@@ -59,7 +59,47 @@ ${staticUrls.map(u => `  <url>
     return new Response(xml, { status: 200, headers: xmlHeaders });
   }
 
-  // Case 2: Chunked Image Sub-Sitemaps (/sitemap/1.xml, /sitemap/2.xml, ...)
+  // Case 2: Creators Sub-Sitemap (/sitemap/creators.xml)
+  if (chunkName === "creators") {
+    try {
+      const db = getDb(context.env);
+      const result = await db.execute(`
+        SELECT uploaderUid, uploaderName FROM users WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != ''
+        UNION
+        SELECT DISTINCT uploaderUid, uploaderName FROM images WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != ''
+      `);
+
+      const nowIso = new Date().toISOString();
+      const seenHandles = new Set();
+      const creatorUrls = [];
+
+      for (const row of (result.rows || [])) {
+        const rawName = (row.uploaderName || '').trim();
+        const handle = rawName.replace(/\s+/g, '').toLowerCase();
+        if (!handle || seenHandles.has(handle)) continue;
+        seenHandles.add(handle);
+
+        creatorUrls.push(`  <url>
+    <loc>${baseUrl}/@${escapeXml(handle)}</loc>
+    <lastmod>${nowIso}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>`);
+      }
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${creatorUrls.join("\n")}
+</urlset>`;
+
+      return new Response(xml, { status: 200, headers: xmlHeaders });
+    } catch (err) {
+      console.error("[Sitemap Creators] Error:", err);
+      return new Response(`Error generating creators sitemap: ${err.message}`, { status: 500, headers: { "Content-Type": "text/plain" } });
+    }
+  }
+
+  // Case 3: Chunked Image Sub-Sitemaps (/sitemap/1.xml, /sitemap/2.xml, ...)
   const pageNumber = parseInt(chunkName, 10);
   if (isNaN(pageNumber) || pageNumber < 1) {
     return new Response("Sitemap chunk not found", { status: 404, headers: { "Content-Type": "text/plain" } });

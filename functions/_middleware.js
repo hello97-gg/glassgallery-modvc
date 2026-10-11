@@ -1,3 +1,21 @@
+import { getDb } from "./api/lib/turso.js";
+
+function escapeHtml(unsafe) {
+  if (!unsafe) return "";
+  return unsafe.toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+const RESERVED_ROUTES = new Set([
+  'image', 'gallery', 'api', 'legal', 'discover', 'explore',
+  'login', 'notifications', 'feed', 'assets', 'favicon.ico',
+  'robots.txt', 'sitemap.xml', 'manifest.json'
+]);
+
 export const onRequest = async (context) => {
   const { request, next } = context;
   const url = new URL(request.url);
@@ -21,6 +39,117 @@ export const onRequest = async (context) => {
         'X-Frame-Options': 'SAMEORIGIN'
       }
     });
+  }
+
+  // SPA Route Fallback & Creator Profile SSR for direct URLs (/@username, /username, etc.)
+  if (response.status === 404 && !url.pathname.startsWith('/api') && !url.pathname.includes('.')) {
+    try {
+      const atMatch = url.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
+      const directMatch = !atMatch ? url.pathname.match(/^\/([a-zA-Z0-9_.-]+)$/) : null;
+      const usernameParam = atMatch
+        ? atMatch[1]
+        : (directMatch && !RESERVED_ROUTES.has(directMatch[1].toLowerCase()) ? directMatch[1] : null);
+
+      let handledWithProfileSsr = false;
+
+      if (usernameParam) {
+        try {
+          const db = getDb(context.env);
+          const cleanUser = usernameParam.replace(/^@/, '').trim().toLowerCase();
+          
+          let result = await db.execute({
+            sql: "SELECT * FROM users WHERE LOWER(REPLACE(uploaderName, ' ', '')) = LOWER(?) OR LOWER(uploaderName) = LOWER(?) LIMIT 1",
+            args: [cleanUser, cleanUser]
+          });
+
+          if (result.rows.length === 0) {
+            result = await db.execute({
+              sql: "SELECT uploaderUid, uploaderName, uploaderPhotoURL, location FROM images WHERE LOWER(REPLACE(uploaderName, ' ', '')) = LOWER(?) OR LOWER(uploaderName) = LOWER(?) LIMIT 1",
+              args: [cleanUser, cleanUser]
+            });
+          }
+
+          if (result.rows.length > 0) {
+            const creator = result.rows[0];
+            const name = escapeHtml(creator.uploaderName || cleanUser);
+            const handle = escapeHtml((creator.uploaderName || cleanUser).replace(/\s+/g, '').toLowerCase());
+            const rawBio = creator.bio ? creator.bio.trim() : `Explore creative visuals and HD wallpaper photography by ${name} on Glass Gallery.`;
+            const desc = escapeHtml(rawBio.slice(0, 160));
+            const photo = creator.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
+            const profileUrl = `https://gg.modvc.org/@${handle}`;
+
+            // Fetch index.html
+            const assetUrl = new URL(request.url);
+            assetUrl.pathname = '/index.html';
+            const indexRes = await context.env.ASSETS.fetch(new Request(assetUrl));
+            if (indexRes.ok) {
+              let html = await indexRes.text();
+
+              const metaTags = `<title>${name} (@${handle}) | Glass Gallery</title>
+    <meta name="description" content="${desc}" />
+    <link rel="canonical" href="${profileUrl}" />
+    <meta property="og:title" content="${name} (@${handle}) | Glass Gallery" />
+    <meta property="og:description" content="${desc}" />
+    <meta property="og:image" content="${photo}" />
+    <meta property="og:url" content="${profileUrl}" />
+    <meta property="og:type" content="profile" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="${name} (@${handle}) | Glass Gallery" />
+    <meta name="twitter:description" content="${desc}" />
+    <meta name="twitter:image" content="${photo}" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ProfilePage",
+      "mainEntity": {
+        "@type": "Person",
+        "name": "${name}",
+        "alternateName": "@${handle}",
+        "url": "${profileUrl}",
+        "image": "${photo}",
+        "description": "${desc}"
+      }
+    }
+    </script>`;
+
+              html = html.replace(/<title>.*?<\/title>/i, metaTags);
+
+              // Server-rendered crawlable HTML inside #root so web crawlers index creator data immediately
+              const ssrBody = `<div id="ssr-profile" style="position:absolute;left:-9999px;top:-9999px;opacity:0;pointer-events:none;" aria-hidden="true">
+                <h1>${name} (@${handle})</h1>
+                <p>${desc}</p>
+                <a href="${profileUrl}">View ${name}'s Profile on Glass Gallery</a>
+              </div>`;
+
+              html = html.replace('<div id="root">', `<div id="root">${ssrBody}`);
+
+              response = new Response(html, {
+                status: 200,
+                headers: {
+                  'Content-Type': 'text/html; charset=UTF-8',
+                  'Cache-Control': 'public, max-age=600, s-maxage=3600'
+                }
+              });
+              handledWithProfileSsr = true;
+            }
+          }
+        } catch (dbErr) {
+          console.warn("[Profile SSR DB Warning]:", dbErr);
+        }
+      }
+
+      // Default SPA asset fallback if not already handled with profile SSR
+      if (!handledWithProfileSsr) {
+        const assetUrl = new URL(request.url);
+        assetUrl.pathname = '/index.html';
+        const indexRes = await context.env.ASSETS.fetch(new Request(assetUrl));
+        if (indexRes.ok) {
+          response = indexRes;
+        }
+      }
+    } catch (e) {
+      // Fall through
+    }
   }
 
   // Clone or copy response to set immutable security headers

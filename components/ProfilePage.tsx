@@ -9,6 +9,7 @@ import Button from './Button';
 import EditProfileModal from './EditProfileModal';
 import FollowersModal from './FollowersModal';
 import CreatorDashboard from './CreatorDashboard';
+import CrawlableContent from './CrawlableContent';
 
 // Throttle utility
 const throttle = (func: (...args: any[]) => void, limit: number) => {
@@ -81,6 +82,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
 
   // Fetch Follow Stats (Uses stable user.uploaderUid to prevent any state evaluation loops!)
   const fetchFollowStats = useCallback(async () => {
+    if (!user.uploaderUid) return;
     try {
       const stats = await getFollowStats(user.uploaderUid, loggedInUser?.uid);
       setFollowersCount(stats.followersCount);
@@ -92,7 +94,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   }, [user.uploaderUid, loggedInUser?.uid]);
 
   useEffect(() => {
-    fetchFollowStats();
+    if (user.uploaderUid) {
+      fetchFollowStats();
+    }
   }, [fetchFollowStats, user.uploaderUid, loggedInUser?.uid]);
 
   const handleFollowToggle = async (e: React.MouseEvent) => {
@@ -143,6 +147,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
     setDisplayedLikedImages([]);
     setActiveTab('created');
 
+    if (!user.uploaderUid) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchProfile = async () => {
         const fullProfile = await getUserProfile(user.uploaderUid);
         if (mounted && fullProfile) {
@@ -171,6 +180,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
 
   // Fetch Created/Uploaded Images
   const fetchUserImages = useCallback(async () => {
+    if (!user.uploaderUid) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const { images: userImages } = await getImagesByUploader(user.uploaderUid);
@@ -434,7 +447,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
          {/* Bio & Meta */}
          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
              <div className="max-w-2xl">
-                 {profileData.bio && <p className="text-secondary text-sm md:text-base whitespace-pre-wrap mb-3">{profileData.bio}</p>}
+                 {profileData.bio && <CrawlableContent content={profileData.bio} className="text-secondary text-sm md:text-base whitespace-pre-wrap mb-3" />}
                  
                  <div className="flex flex-wrap gap-4 text-sm text-secondary">
                      {profileData.location && (

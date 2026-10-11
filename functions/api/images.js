@@ -1,6 +1,6 @@
 import { getDb } from "./lib/turso.js";
 import { submitToIndexNow } from "./lib/indexnow.js";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon";
 
 const corsHeaders = {
@@ -963,14 +963,30 @@ Return the response strictly as a JSON object with this exact format:
         const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         let updatedFlags = tags || [];
         let isUnsafe = false;
+        let isExtreme = false;
+        let extremeViolations = [];
         let aiConceptsArr = [];
 
         try {
           const safetyRes = await checkContentSafety(title || '', description || '', location || '', imageUrl, id, env);
           isUnsafe = safetyRes.isUnsafe;
+          isExtreme = safetyRes.isExtreme;
+          extremeViolations = safetyRes.extremeViolations || [];
           aiConceptsArr = safetyRes.aiConcepts || [];
         } catch (err) {
           console.error("[API Upload Content Safety] Moderation failed:", err);
+        }
+
+        // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
+        if (isExtreme) {
+          console.warn(`[Content Safety Block] Rejecting extreme content (${extremeViolations.join(', ')}). Purging from R2: ${uniqueFileName}`);
+          await deleteR2Object(uniqueFileName, env);
+          return Response.json({
+            success: false,
+            blocked: true,
+            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            violations: extremeViolations
+          }, { status: 400, headers: corsHeaders });
         }
 
         if (isUnsafe && !updatedFlags.includes("Flagged")) {
@@ -1082,13 +1098,29 @@ Return the response strictly as a JSON object with this exact format:
 
         let updatedFlags = flags || [];
         let isUnsafe = false;
+        let isExtreme = false;
+        let extremeViolations = [];
         let aiConceptsArr = [];
         try {
           const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env, keyframes);
           isUnsafe = safetyRes.isUnsafe;
+          isExtreme = safetyRes.isExtreme;
+          extremeViolations = safetyRes.extremeViolations || [];
           aiConceptsArr = safetyRes.aiConcepts || [];
         } catch (err) {
           console.error("[Content Safety] Moderation failed during upload:", err);
+        }
+
+        // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
+        if (isExtreme) {
+          console.warn(`[Content Safety Block] Rejecting extreme upload (${extremeViolations.join(', ')}). Purging from R2: ${imageUrl}`);
+          await deleteR2Object(imageUrl, env);
+          return Response.json({
+            success: false,
+            blocked: true,
+            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            violations: extremeViolations
+          }, { status: 400, headers: corsHeaders });
         }
 
         if (isUnsafe) {
@@ -1384,14 +1416,30 @@ Return the response strictly as a JSON object with this exact format:
         const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         let updatedFlags = tags || [];
         let isUnsafe = false;
+        let isExtreme = false;
+        let extremeViolations = [];
         let aiConceptsArr = [];
 
         try {
           const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env);
           isUnsafe = safetyRes.isUnsafe;
+          isExtreme = safetyRes.isExtreme;
+          extremeViolations = safetyRes.extremeViolations || [];
           aiConceptsArr = safetyRes.aiConcepts || [];
         } catch (err) {
           console.error("[API Stream Upload Content Safety] Moderation failed:", err);
+        }
+
+        // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
+        if (isExtreme) {
+          console.warn(`[Content Safety Block] Rejecting stream upload (${extremeViolations.join(', ')}). Purging from R2: ${uniqueFileName}`);
+          await deleteR2Object(uniqueFileName, env);
+          return Response.json({
+            success: false,
+            blocked: true,
+            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            violations: extremeViolations
+          }, { status: 400, headers: corsHeaders });
         }
 
         if (isUnsafe && !updatedFlags.includes("Flagged")) {
@@ -1441,6 +1489,33 @@ Return the response strictly as a JSON object with this exact format:
   }
 }
 
+async function deleteR2Object(fileUrlOrKey, env) {
+  try {
+    if (!fileUrlOrKey) return;
+    const key = fileUrlOrKey.includes('/') ? fileUrlOrKey.split('/').pop().split('?')[0] : fileUrlOrKey;
+    if (!key) return;
+
+    const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
+    const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
+    const S3 = new S3Client({
+      region: "auto",
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: env.R2_ACCESS_KEY_ID,
+        secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      },
+    });
+
+    await S3.send(new DeleteObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+    }));
+    console.log(`[R2 Storage Cleanup] Successfully deleted object: ${key}`);
+  } catch (err) {
+    console.error(`[R2 Storage Cleanup] Failed to delete object: ${fileUrlOrKey}`, err);
+  }
+}
+
 async function checkContentSafety(title, description, location, imageUrl, imageId, env, keyframes = []) {
   try {
     const openaiKey = env.OPENAI_API_KEY;
@@ -1453,6 +1528,8 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
 
     const isVideo = Boolean(imageUrl && imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i));
     let isUnsafe = false;
+    let isExtreme = false;
+    let extremeViolations = [];
     let violatedCategories = [];
     let aiConcepts = [];
 
@@ -1537,6 +1614,30 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
                                     (scores['self-harm'] > 0.20) ||
                                     (scores.harassment > 0.40);
 
+            // Extreme violations for HARD BLOCK (severe gore, CSAM, explicit sexual material)
+            const isExtremeGoreOrSexual = 
+              (cats['sexual/minors'] || (scores['sexual/minors'] && scores['sexual/minors'] > 0.01)) ||
+              (cats['violence/graphic'] || (scores['violence/graphic'] && scores['violence/graphic'] > 0.25)) ||
+              (cats.sexual || (scores.sexual && scores.sexual > 0.40)) ||
+              (cats['self-harm/intent'] || cats['self-harm/instructions'] || (scores['self-harm'] && scores['self-harm'] > 0.40));
+
+            if (isExtremeGoreOrSexual) {
+              isExtreme = true;
+              isUnsafe = true;
+              if ((cats['sexual/minors'] || (scores['sexual/minors'] && scores['sexual/minors'] > 0.01)) && !extremeViolations.includes('sexual/minors')) {
+                extremeViolations.push('sexual/minors');
+              }
+              if ((cats['violence/graphic'] || (scores['violence/graphic'] && scores['violence/graphic'] > 0.25)) && !extremeViolations.includes('violence/graphic')) {
+                extremeViolations.push('violence/graphic');
+              }
+              if ((cats.sexual || (scores.sexual && scores.sexual > 0.40)) && !extremeViolations.includes('sexual')) {
+                extremeViolations.push('sexual');
+              }
+              if ((scores['self-harm'] && scores['self-harm'] > 0.40) && !extremeViolations.includes('self-harm')) {
+                extremeViolations.push('self-harm');
+              }
+            }
+
             if (isCategoryFlagged || isHighRiskScore) {
               isUnsafe = true;
               for (const [c, flagged] of Object.entries(cats)) {
@@ -1548,7 +1649,7 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
           }
         }
 
-        console.log(`[OpenAI omni-moderation-latest] Scanned ${moderationTasks.length} elements. isUnsafe: ${isUnsafe}. Violations:`, violatedCategories);
+        console.log(`[OpenAI omni-moderation-latest] Scanned ${moderationTasks.length} elements. isUnsafe: ${isUnsafe}, isExtreme: ${isExtreme}. Violations:`, violatedCategories);
       } catch (openAiErr) {
         console.error("[OpenAI Moderation] Failed with error:", openAiErr);
       }
@@ -1623,9 +1724,9 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
       }
     }
 
-    return { isUnsafe, aiConcepts, violatedCategories };
+    return { isUnsafe: isUnsafe || isExtreme, isExtreme, extremeViolations, aiConcepts, violatedCategories };
   } catch (error) {
     console.error("[Content Safety] Critical error:", error);
-    return { isUnsafe: false, aiConcepts: [], violatedCategories: [] };
+    return { isUnsafe: false, isExtreme: false, extremeViolations: [], aiConcepts: [], violatedCategories: [] };
   }
 }

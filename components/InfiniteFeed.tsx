@@ -1,5 +1,5 @@
 import React, { useState, useRef, memo } from 'react';
-import { Virtuoso, VirtuosoHandle, State } from 'react-virtuoso';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { recordWatchInterest } from '../services/interestTracker';
@@ -8,6 +8,7 @@ import EmbedModal from './EmbedModal';
 import VideoPlayer from './VideoPlayer';
 import Button from './Button';
 import Spinner from './Spinner';
+import CrawlableContent from './CrawlableContent';
 
 interface InfiniteFeedProps {
   images: ImageMeta[];
@@ -28,7 +29,7 @@ interface InfiniteFeedProps {
   onEndReached?: () => void;
   isFetchingNextPage?: boolean;
   virtuosoRef?: React.RefObject<VirtuosoHandle | null>;
-  restoreStateFrom?: State;
+  restoreStateFrom?: any;
 }
 
 export const FeedItem: React.FC<{
@@ -214,9 +215,9 @@ export const FeedItem: React.FC<{
           </div>
         </div>
 
-        <div className="text-[15px] text-primary whitespace-pre-wrap break-words mb-3 leading-snug">
-          {image.title && <span className="font-semibold block">{image.title}</span>}
-          {image.description && <span className="block mt-1">{image.description}</span>}
+        <div className="text-[15px] text-primary mb-3 leading-snug">
+          {image.title && <span className="font-semibold block mb-0.5">{image.title}</span>}
+          {image.description && <CrawlableContent content={image.description} className="block mt-1 text-primary/95 text-[14px] sm:text-[15px] leading-normal" />}
         </div>
 
         <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-surface/30 relative min-h-[180px] flex items-center justify-center">
@@ -252,6 +253,7 @@ export const FeedItem: React.FC<{
 
         <div className="flex justify-between items-center text-secondary w-full max-w-md mt-1">
           <button
+            aria-label="Comments"
             onClick={(e) => {
               e.stopPropagation();
               onImageClick(image);
@@ -268,6 +270,7 @@ export const FeedItem: React.FC<{
 
           {/* Like */}
           <button
+            aria-label="Like post"
             onClick={(e) => {
               e.stopPropagation();
               if (!user) {
@@ -304,6 +307,7 @@ export const FeedItem: React.FC<{
 
           {/* Bookmark / Save */}
           <button
+            aria-label="Save bookmark"
             onClick={(e) => {
               e.stopPropagation();
               onSaveToggle(image);
@@ -323,6 +327,7 @@ export const FeedItem: React.FC<{
           </button>
 
           <button
+            aria-label="Share post"
             onClick={(e) => {
               e.stopPropagation();
               const shareUrl = `${window.location.origin}/image/${image.id}`;
@@ -425,38 +430,37 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
     <div className="w-full flex justify-center bg-background min-h-screen">
       <div className="w-full max-w-2xl border-l border-r border-border min-h-screen pb-20 md:pb-0">
         <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border">
-          <div className="flex">
-            {topicFilter ? (
-              <div className="flex items-center gap-4 py-3 px-4 w-full">
-                <button onClick={onClearTopicFilter} className="p-2 hover:bg-surface/50 rounded-full transition-colors text-primary">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <h1 className="text-xl font-bold text-primary truncate">Search: {topicFilter}</h1>
-              </div>
-            ) : (
-              <>
-                <button
-                  className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'discover' ? 'text-primary' : 'text-secondary font-medium'}`}
-                  onClick={() => setFeedTab('discover')}
-                >
-                  Discover
-                  {feedTab === 'discover' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
-                </button>
-                <button
-                  className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'following' ? 'text-primary' : 'text-secondary font-medium'}`}
-                  onClick={() => {
-                    if (!user) onLoginClick();
-                    else setFeedTab('following');
-                  }}
-                >
-                  Following
-                  {feedTab === 'following' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
-                </button>
-              </>
-            )}
-          </div>
+          <h1 className="sr-only">Glass Gallery</h1>
+          {topicFilter ? (
+            <div className="flex items-center gap-4 py-3 px-4 w-full">
+              <button onClick={onClearTopicFilter} className="p-2 hover:bg-surface/50 rounded-full transition-colors text-primary" aria-label="Back">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+              <div className="text-xl font-bold text-primary truncate">Search: {topicFilter}</div>
+            </div>
+          ) : (
+            <div className="flex">
+              <button
+                className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'discover' ? 'text-primary' : 'text-secondary font-medium'}`}
+                onClick={() => setFeedTab('discover')}
+              >
+                Discover
+                {feedTab === 'discover' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
+              </button>
+              <button
+                className={`flex-1 pt-4 pb-3 text-[15px] font-bold hover:bg-surface/30 transition-colors relative ${feedTab === 'following' ? 'text-primary' : 'text-secondary font-medium'}`}
+                onClick={() => {
+                  if (!user) onLoginClick();
+                  else setFeedTab('following');
+                }}
+              >
+                Following
+                {feedTab === 'following' && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-accent rounded-t-full"></div>}
+              </button>
+            </div>
+          )}
         </div>
 
         {!topicFilter && (
@@ -471,9 +475,33 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
             <div className="flex-1 flex flex-col justify-center">
               <div className="text-[20px] text-secondary/70 font-medium">What is happening?!</div>
             </div>
-            <button className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-accent hover:bg-accent/10 transition-colors mt-0.5">
+            <button aria-label="Create new post" className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full text-accent hover:bg-accent/10 transition-colors mt-0.5">
               <svg viewBox="0 0 24 24" className="w-[22px] h-[22px] fill-current"><g><path d="M3 5.5C3 4.119 4.119 3 5.5 3h13C19.881 3 21 4.119 21 5.5v13c0 1.381-1.119 2.5-2.5 2.5h-13C4.119 21 3 19.881 3 18.5v-13zM5.5 5c-.276 0-.5.224-.5.5v9.086l3-3 3 3 5-5 3 3V5.5c0-.276-.224-.5-.5-.5h-13zM19 15.414l-3-3-5 5-3-3-3 3V18.5c0 .276.224.5.5.5h13c.276 0 .5-.224.5-.5v-3.086zM9.75 7C8.784 7 8 7.784 8 8.75s.784 1.75 1.75 1.75 1.75-.784 1.75-1.75S10.716 7 9.75 7z"></path></g></svg>
             </button>
+          </div>
+        )}
+
+        {images.length === 0 && (
+          <div className="p-6 text-center space-y-4">
+            <div className="max-w-md mx-auto text-sm text-secondary leading-relaxed space-y-1.5">
+              <p className="font-semibold text-primary">Discover, Share &amp; Download High-Resolution Images</p>
+              <p>Explore cosmic astrophotography from James Webb and Hubble, digital anime art, 4K wallpapers, and creative photography shared by the community.</p>
+            </div>
+            <div className="space-y-4 pt-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="border border-border/60 rounded-2xl p-4 bg-surface/20 space-y-3 animate-pulse text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-surface/80" />
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-3.5 bg-surface/80 rounded w-1/3" />
+                      <div className="h-2.5 bg-surface/50 rounded w-1/4" />
+                    </div>
+                  </div>
+                  <div className="h-4 bg-surface/60 rounded w-3/4" />
+                  <div className="h-44 bg-surface/40 rounded-xl" />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

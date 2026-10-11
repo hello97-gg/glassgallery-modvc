@@ -562,10 +562,21 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                             {LICENSES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
                         </select>
                      </div>
+                     <div>
+                        <label htmlFor="originalWorkUrl" className="block text-sm font-medium text-secondary">Credit / Source URL (Optional)</label>
+                        <input 
+                          type="url" 
+                          id="originalWorkUrl" 
+                          value={originalWorkUrl} 
+                          onChange={(e) => setOriginalWorkUrl(e.target.value)} 
+                          className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent sm:text-sm" 
+                          placeholder="https://... (creator source link)" 
+                        />
+                     </div>
                       {license === 'Other' && (
-                        <div>
-                          <label htmlFor="licenseUrl" className="block text-sm font-medium text-secondary">License URL</label>
-                          <input type="url" id="licenseUrl" value={licenseUrl} onChange={(e) => setLicenseUrl(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder="https://creativecommons.org/licenses/by/4.0/" required />
+                        <div className="sm:col-span-2">
+                          <label htmlFor="licenseUrl" className="block text-sm font-medium text-secondary">Custom License URL</label>
+                          <input type="url" id="licenseUrl" value={licenseUrl} onChange={(e) => setLicenseUrl(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent sm:text-sm" placeholder="https://creativecommons.org/licenses/by/4.0/" required />
                         </div>
                       )}
                   </div>
@@ -623,7 +634,14 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                       <input type="url" id="originalWork" value={originalWorkUrl} onChange={(e) => setOriginalWorkUrl(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder="https://example.com/source_image"/>
                   </div>
 
-                  {error && <p className="text-sm text-red-500">{error}</p>}
+                  {error && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-400 flex items-start gap-2.5">
+                      <svg className="w-5 h-5 flex-shrink-0 text-red-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <span className="leading-relaxed font-medium">{error}</span>
+                    </div>
+                  )}
 
                   <div className="flex justify-end gap-3 pt-2">
                       <Button type="button" onClick={onClose} variant="secondary">Cancel</Button>

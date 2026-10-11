@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
+    <!-- Preconnect hints for performance -->
+    <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
+    <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-4J31FLLQ5L"></script>
     <script>
@@ -24,13 +28,13 @@
 
     <!-- SEO_META_START -->
     <!-- Default Social & SEO Meta Tags -->
-    <title>Glass Gallery – Discover, Share & Download High Quality Images</title>
-    <meta name="description" content="Discover, share, and download high-resolution photography, deep-space astrophotography from James Webb and Hubble, automotive wallpapers, anime art, and visual media." />
+    <title>Glass Gallery – Discover, Share &amp; Download HD Images</title>
+    <meta name="description" content="Discover, share, and download high-resolution photography, deep-space Webb astrophotography, anime art, and HD wallpapers on Glass Gallery." />
     
     <meta property="og:site_name" content="Glass Gallery" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Glass Gallery – Discover, Share & Download High Quality Images" />
-    <meta property="og:description" content="Discover, share, and download high-resolution photography, deep-space astrophotography from James Webb and Hubble, automotive wallpapers, anime art, and visual media." />
+    <meta property="og:title" content="Glass Gallery – Discover, Share &amp; Download HD Images" />
+    <meta property="og:description" content="Discover, share, and download high-resolution photography, deep-space Webb astrophotography, anime art, and HD wallpapers on Glass Gallery." />
     <meta property="og:url" content="https://gg.modvc.org/" />
     <meta property="og:image" content="https://gg.modvc.org/web-app-manifest-512x512.png" />
     <meta property="og:image:width" content="512" />
@@ -38,12 +42,13 @@
     
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@GlassGallery" />
-    <meta name="twitter:title" content="Glass Gallery – Discover, Share & Download High Quality Images" />
-    <meta name="twitter:description" content="Discover, share, and download high-resolution photography, deep-space astrophotography from James Webb and Hubble, automotive wallpapers, anime art, and visual media." />
+    <meta name="twitter:title" content="Glass Gallery – Discover, Share &amp; Download HD Images" />
+    <meta name="twitter:description" content="Discover, share, and download high-resolution photography, deep-space Webb astrophotography, anime art, and HD wallpapers on Glass Gallery." />
     <meta name="twitter:image" content="https://gg.modvc.org/web-app-manifest-512x512.png" />
 
     <!-- Canonical URL -->
     <link rel="canonical" href="https://gg.modvc.org/" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
     <!-- SEO_META_END -->
 
     <!-- JSON_LD_START -->
@@ -75,7 +80,7 @@
     <!-- JSON_LD_END -->
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -162,6 +167,9 @@
     </style>
 </head>
   <body class="bg-background text-primary antialiased">
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[9999] focus:bg-surface focus:text-accent focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-xl focus:outline-none">
+      Skip to main content
+    </a>
     <!-- 
       We add semantic HTML inside the root element so crawlers see meaningful 
       content immediately before React hydrates, fixing "Crawled - currently not indexed".
@@ -186,7 +194,7 @@
         </header>
 
         <!-- Main Content Area -->
-        <main style="max-width: 1400px; width: 100%; margin: 0 auto; padding: 2.5rem 1.5rem; flex-grow: 1; box-sizing: border-box;">
+        <main id="main-content" style="max-width: 1400px; width: 100%; margin: 0 auto; padding: 2.5rem 1.5rem; flex-grow: 1; box-sizing: border-box;">
           
           <!-- Hero Section -->
           <section style="text-align: center; max-width: 850px; margin: 0 auto 3rem auto;">
@@ -338,7 +346,8 @@
             <a href="/api" style="color: #a0a0a0; text-decoration: none;">API Documentation</a> &bull;
             <a href="/legal?tab=terms" style="color: #a0a0a0; text-decoration: none;">Terms of Service</a> &bull; 
             <a href="/legal?tab=privacy" style="color: #a0a0a0; text-decoration: none;">Privacy Policy</a> &bull; 
-            <a href="/legal?tab=guidelines" style="color: #a0a0a0; text-decoration: none;">Content Guidelines</a>
+            <a href="/legal?tab=guidelines" style="color: #a0a0a0; text-decoration: none;">Content Guidelines</a> &bull;
+            <a href="mailto:contact@modvc.org" style="color: #a0a0a0; text-decoration: none;">Contact Us</a>
           </p>
         </footer>
       </div>

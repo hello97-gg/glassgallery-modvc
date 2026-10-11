@@ -45,6 +45,10 @@ export async function onRequest(context) {
   <title>Developer API Documentation | Glass Gallery</title>
   <meta name="description" content="Official Glass Gallery REST API documentation. Endpoints for retrieving trending photos, image metadata, search, and direct embed tags." />
   <link rel="canonical" href="${pageUrl}" />
+  <link rel="icon" type="image/png" sizes="96x96" href="${baseUrl}/favicon-96x96.png" />
+  <link rel="icon" type="image/x-icon" href="${baseUrl}/favicon.ico" />
+  <link rel="shortcut icon" href="${baseUrl}/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="${baseUrl}/apple-touch-icon.png" />
 
   <meta property="og:site_name" content="Glass Gallery" />
   <meta property="og:type" content="website" />

@@ -57,6 +57,10 @@ export async function onRequest(context) {
   <link rel="canonical" href="${pageUrl}" />
   ${prevUrl ? `<link rel="prev" href="${prevUrl}" />` : ''}
   ${nextUrl ? `<link rel="next" href="${nextUrl}" />` : ''}
+  <link rel="icon" type="image/png" sizes="96x96" href="${baseUrl}/favicon-96x96.png" />
+  <link rel="icon" type="image/x-icon" href="${baseUrl}/favicon.ico" />
+  <link rel="shortcut icon" href="${baseUrl}/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="${baseUrl}/apple-touch-icon.png" />
   
   <meta property="og:site_name" content="Glass Gallery" />
   <meta property="og:type" content="website" />
@@ -263,10 +267,17 @@ export async function onRequest(context) {
       ${images.map(img => {
         const title = escapeHtml(img.title ? img.title.charAt(0).toUpperCase() + img.title.slice(1) : "Untitled Showcase");
         const uploader = escapeHtml(img.uploaderName || "Glass Gallery Creator");
+        const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(img.imageUrl || "");
+        const mediaTag = isVideo
+          ? `<div style="position:relative; width:100%; height:200px; background:#000; overflow:hidden;">
+              <video src="${escapeHtml(img.imageUrl)}" muted playsinline preload="metadata" style="width:100%; height:200px; object-fit:cover; display:block;"></video>
+              <span style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.8); color:#fff; font-size:10px; font-weight:700; padding:3px 7px; border-radius:4px; letter-spacing:0.5px; border:1px solid rgba(255,255,255,0.2);">▶ VIDEO</span>
+            </div>`
+          : `<img src="${escapeHtml(img.imageUrl)}" alt="${title} by ${uploader} on Glass Gallery" width="280" height="200" loading="lazy" style="width:100%; height:200px; object-fit:cover; display:block;" />`;
         return `
           <li>
             <a href="${baseUrl}/image/${escapeHtml(img.id)}" class="card">
-              <img src="${escapeHtml(img.imageUrl)}" alt="${title} by ${uploader} on Glass Gallery" width="280" height="200" loading="lazy" />
+              ${mediaTag}
               <div class="card-info">
                 <h3>${title}</h3>
                 <span class="uploader">By ${uploader}</span>

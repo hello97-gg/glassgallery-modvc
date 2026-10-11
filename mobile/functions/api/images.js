@@ -1,5 +1,5 @@
 import { getDb } from "./lib/turso.js";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon";
 
 const corsHeaders = {
@@ -855,14 +855,30 @@ Return the response strictly as a JSON object with this exact format:
         const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         let updatedFlags = tags || [];
         let isUnsafe = false;
+        let isExtreme = false;
+        let extremeViolations = [];
         let aiConceptsArr = [];
 
         try {
           const safetyRes = await checkContentSafety(title || '', description || '', location || '', imageUrl, id, env);
           isUnsafe = safetyRes.isUnsafe;
+          isExtreme = safetyRes.isExtreme;
+          extremeViolations = safetyRes.extremeViolations || [];
           aiConceptsArr = safetyRes.aiConcepts || [];
         } catch (err) {
           console.error("[API Upload Content Safety] Moderation failed:", err);
+        }
+
+        // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
+        if (isExtreme) {
+          console.warn(`[Content Safety Block] Rejecting extreme content (${extremeViolations.join(', ')}). Purging from R2: ${uniqueFileName}`);
+          await deleteR2Object(uniqueFileName, env);
+          return Response.json({
+            success: false,
+            blocked: true,
+            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            violations: extremeViolations
+          }, { status: 400, headers: corsHeaders });
         }
 
         if (isUnsafe && !updatedFlags.includes("Flagged")) {
@@ -915,13 +931,29 @@ Return the response strictly as a JSON object with this exact format:
 
         let updatedFlags = flags || [];
         let isUnsafe = false;
+        let isExtreme = false;
+        let extremeViolations = [];
         let aiConceptsArr = [];
         try {
           const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env);
           isUnsafe = safetyRes.isUnsafe;
+          isExtreme = safetyRes.isExtreme;
+          extremeViolations = safetyRes.extremeViolations || [];
           aiConceptsArr = safetyRes.aiConcepts || [];
         } catch (err) {
           console.error("[Content Safety] Moderation failed during upload:", err);
+        }
+
+        // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
+        if (isExtreme) {
+          console.warn(`[Content Safety Block] Rejecting extreme upload (${extremeViolations.join(', ')}). Purging from R2: ${imageUrl}`);
+          await deleteR2Object(imageUrl, env);
+          return Response.json({
+            success: false,
+            blocked: true,
+            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            violations: extremeViolations
+          }, { status: 400, headers: corsHeaders });
         }
 
         if (isUnsafe) {
@@ -1114,119 +1146,245 @@ Return the response strictly as a JSON object with this exact format:
   }
 }
 
-async function checkContentSafety(title, description, location, imageUrl, imageId, env) {
+async function deleteR2Object(fileUrlOrKey, env) {
   try {
-    let mistralKey = env.MISTRAL_API_KEY;
+    if (!fileUrlOrKey) return;
+    const key = fileUrlOrKey.includes('/') ? fileUrlOrKey.split('/').pop().split('?')[0] : fileUrlOrKey;
+    if (!key) return;
 
-    if (!mistralKey) {
-      console.warn("[Content Safety] MISTRAL_API_KEY is not defined. Skipping safety moderation.");
-      return { isUnsafe: false, aiConcepts: [] };
+    const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
+    const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
+    const S3 = new S3Client({
+      region: "auto",
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: env.R2_ACCESS_KEY_ID,
+        secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      },
+    });
+
+    await S3.send(new DeleteObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+    }));
+    console.log(`[R2 Storage Cleanup] Successfully deleted object: ${key}`);
+  } catch (err) {
+    console.error(`[R2 Storage Cleanup] Failed to delete object: ${fileUrlOrKey}`, err);
+  }
+}
+
+async function checkContentSafety(title, description, location, imageUrl, imageId, env, keyframes = []) {
+  try {
+    const openaiKey = env.OPENAI_API_KEY;
+    const mistralKey = env.MISTRAL_API_KEY;
+
+    if (!openaiKey && !mistralKey) {
+      console.warn("[Content Safety] Neither OPENAI_API_KEY nor MISTRAL_API_KEY is configured. Skipping moderation.");
+      return { isUnsafe: false, isExtreme: false, extremeViolations: [], aiConcepts: [], violatedCategories: [] };
     }
 
-    let propagated = false;
-    let urlAttempt = 0;
-    while (urlAttempt < 6) {
+    const isVideo = Boolean(imageUrl && imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i));
+    let isUnsafe = false;
+    let isExtreme = false;
+    let extremeViolations = [];
+    let violatedCategories = [];
+    let aiConcepts = [];
+
+    // --- 1. PRIMARY ENGINE: OpenAI omni-moderation-latest ---
+    if (openaiKey) {
       try {
-        const checkRes = await fetch(imageUrl);
-        if (checkRes.ok) {
-          propagated = true;
-          break;
-        }
-      } catch (e) {}
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      urlAttempt++;
-    }
+        const textToModerate = [
+          title ? `Title: ${title}` : '',
+          description ? `Description: ${description}` : '',
+          location ? `Location: ${location}` : ''
+        ].filter(Boolean).join('\n') || 'Untitled artwork';
 
-    const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
-    const payload = {
-      model: "pixtral-12b-2409",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Task: Analyze the uploaded image and its metadata details to:
-1. Evaluate safety: Check if there is unsafe content based on the Safety Policy Categories (S1-S6). Intimate anatomy or medical/disease raw graphics of intimate areas MUST be rated as 'unsafe'. Provide a rating of either 'safe' or 'unsafe'.
-2. Generate concepts: If safe, generate 5 descriptive, high-quality aesthetic keyword/concept tags.
+        const moderationTasks = [];
 
-Metadata:
-Title: ${title || "Untitled"}
-Description: ${description || "No description"}
-Location: ${location || "No location"}
-
-Return the response strictly as a JSON object with this exact format:
-{
-  "safety": "safe" or "unsafe",
-  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
-}`
+        // Check A: Text metadata (Title, Description, Location)
+        moderationTasks.push(
+          fetch('https://api.openai.com/v1/moderations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${openaiKey}`
             },
-            { type: "image_url", image_url: { url: imageUrl } }
-          ]
+            body: JSON.stringify({
+              model: 'omni-moderation-latest',
+              input: [{ type: 'text', text: textToModerate }]
+            })
+          }).then(r => r.ok ? r.json() : null).catch(() => null)
+        );
+
+        // Check B: Visual content
+        if (isVideo) {
+          if (Array.isArray(keyframes) && keyframes.length > 0) {
+            const framesToCheck = keyframes.slice(0, 5);
+            for (const frame of framesToCheck) {
+              moderationTasks.push(
+                fetch('https://api.openai.com/v1/moderations', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${openaiKey}`
+                  },
+                  body: JSON.stringify({
+                    model: 'omni-moderation-latest',
+                    input: [{ type: 'image_url', image_url: { url: frame } }]
+                  })
+                }).then(r => r.ok ? r.json() : null).catch(() => null)
+              );
+            }
+          }
+        } else if (imageUrl) {
+          moderationTasks.push(
+            fetch('https://api.openai.com/v1/moderations', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${openaiKey}`
+              },
+              body: JSON.stringify({
+                model: 'omni-moderation-latest',
+                input: [{ type: 'image_url', image_url: { url: imageUrl } }]
+              })
+            }).then(r => r.ok ? r.json() : null).catch(() => null)
+          );
         }
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 512,
-      temperature: 0.20,
-      top_p: 0.70
-    };
 
-    let attempt = 0;
-    const maxAttempts = 3;
-    let delay = 2000;
-    let response;
+        const results = await Promise.all(moderationTasks);
 
-    while (attempt < maxAttempts) {
+        for (const res of results) {
+          if (res?.results?.[0]) {
+            const resultObj = res.results[0];
+            const cats = resultObj.categories || {};
+            const scores = resultObj.category_scores || {};
+
+            const isCategoryFlagged = resultObj.flagged;
+            const isHighRiskScore = (scores.sexual > 0.15) || 
+                                    (scores['sexual/minors'] > 0.05) || 
+                                    (scores['violence/graphic'] > 0.25) || 
+                                    (scores.violence > 0.40) || 
+                                    (scores['self-harm'] > 0.20) ||
+                                    (scores.harassment > 0.40);
+
+            // Extreme violations for HARD BLOCK (severe gore, CSAM, explicit sexual material)
+            const isExtremeGoreOrSexual = 
+              (cats['sexual/minors'] || (scores['sexual/minors'] && scores['sexual/minors'] > 0.01)) ||
+              (cats['violence/graphic'] || (scores['violence/graphic'] && scores['violence/graphic'] > 0.25)) ||
+              (cats.sexual || (scores.sexual && scores.sexual > 0.40)) ||
+              (cats['self-harm/intent'] || cats['self-harm/instructions'] || (scores['self-harm'] && scores['self-harm'] > 0.40));
+
+            if (isExtremeGoreOrSexual) {
+              isExtreme = true;
+              isUnsafe = true;
+              if ((cats['sexual/minors'] || (scores['sexual/minors'] && scores['sexual/minors'] > 0.01)) && !extremeViolations.includes('sexual/minors')) {
+                extremeViolations.push('sexual/minors');
+              }
+              if ((cats['violence/graphic'] || (scores['violence/graphic'] && scores['violence/graphic'] > 0.25)) && !extremeViolations.includes('violence/graphic')) {
+                extremeViolations.push('violence/graphic');
+              }
+              if ((cats.sexual || (scores.sexual && scores.sexual > 0.40)) && !extremeViolations.includes('sexual')) {
+                extremeViolations.push('sexual');
+              }
+              if ((scores['self-harm'] && scores['self-harm'] > 0.40) && !extremeViolations.includes('self-harm')) {
+                extremeViolations.push('self-harm');
+              }
+            }
+
+            if (isCategoryFlagged || isHighRiskScore) {
+              isUnsafe = true;
+              for (const [c, flagged] of Object.entries(cats)) {
+                if ((flagged || (scores[c] && scores[c] > 0.15)) && !violatedCategories.includes(c)) {
+                  violatedCategories.push(c);
+                }
+              }
+            }
+          }
+        }
+
+        console.log(`[OpenAI omni-moderation-latest] Scanned ${moderationTasks.length} elements. isUnsafe: ${isUnsafe}, isExtreme: ${isExtreme}. Violations:`, violatedCategories);
+      } catch (openAiErr) {
+        console.error("[OpenAI Moderation] Failed with error:", openAiErr);
+      }
+    }
+
+    // --- 2. FALLBACK TO MISTRAL (If OpenAI key is absent or errored) ---
+    if (!openaiKey && mistralKey) {
       try {
-        response = await fetch(invokeUrl, {
+        let messagesContent = [
+          {
+            type: "text",
+            text: `Task: Analyze the metadata details for the uploaded ${isVideo ? 'video' : 'image'} to evaluate safety: Check if there is unsafe content based on Safety Policy Categories (S1-S6). Intimate anatomy, nudity, or graphic violence MUST be rated as 'unsafe'. Return strictly JSON: {"safety": "safe" or "unsafe"}\nTitle: ${title || "Untitled"}\nDescription: ${description || "No description"}`
+          }
+        ];
+        if (!isVideo && imageUrl) {
+          messagesContent.push({ type: "image_url", image_url: { url: imageUrl } });
+        }
+        const mistralRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${mistralKey}`,
             "Content-Type": "application/json"
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            model: "pixtral-12b-2409",
+            messages: [{ role: "user", content: messagesContent }],
+            response_format: { type: "json_object" },
+            max_tokens: 256,
+            temperature: 0.2
+          })
         });
-
-        if (response.status === 429) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-          attempt++;
-          delay *= 2.5;
-          continue;
+        if (mistralRes.ok) {
+          const mData = await mistralRes.json();
+          const parsed = JSON.parse(mData.choices?.[0]?.message?.content || "{}");
+          if (parsed.safety === "unsafe") {
+            isUnsafe = true;
+            isExtreme = true;
+            extremeViolations.push('extreme_content');
+          }
         }
-        break;
-      } catch (fetchErr) {
-        attempt++;
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2.5;
+      } catch (mErr) {
+        console.error("[Mistral Fallback Moderation] Error:", mErr);
       }
     }
 
-    if (!response || !response.ok) {
-      return { isUnsafe: false, aiConcepts: [] };
-    }
-
-    const data = await response.json();
-    const resultText = data.choices?.[0]?.message?.content || "{}";
-
-    let isUnsafe = false;
-    let aiConcepts = [];
-    try {
-      const parsed = JSON.parse(resultText);
-      isUnsafe = parsed.safety === "unsafe";
-      aiConcepts = parsed.keywords || [];
-    } catch (e) {
-      const normalizedText = resultText.toLowerCase();
-      isUnsafe = normalizedText.includes("unsafe");
-      const match = resultText.match(/\[.*?\]/s);
-      if (match) {
-        try { aiConcepts = JSON.parse(match[0]); } catch (je) {}
+    // --- 3. GENERATE AESTHETIC TAG CONCEPTS IF CONTENT IS SAFE ---
+    if (!isUnsafe && mistralKey) {
+      try {
+        const tagRes = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${mistralKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "pixtral-12b-2409",
+            messages: [{
+              role: "user",
+              content: [{
+                type: "text",
+                text: `Suggest 5 aesthetic, one-word concept tags for: Title: "${title || ''}", Description: "${description || ''}". Return JSON format: {"keywords": ["tag1", "tag2", "tag3", "tag4", "tag5"]}`
+              }]
+            }],
+            response_format: { type: "json_object" },
+            max_tokens: 150,
+            temperature: 0.2
+          })
+        });
+        if (tagRes.ok) {
+          const tData = await tagRes.json();
+          const tParsed = JSON.parse(tData.choices?.[0]?.message?.content || "{}");
+          aiConcepts = tParsed.keywords || tParsed.tags || [];
+        }
+      } catch (tErr) {
+        console.warn("[Content Safety] Concept tag generation error:", tErr);
       }
     }
 
-    return { isUnsafe, aiConcepts };
-
+    return { isUnsafe: isUnsafe || isExtreme, isExtreme, extremeViolations, aiConcepts, violatedCategories };
   } catch (error) {
     console.error("[Content Safety] Critical error:", error);
-    return { isUnsafe: false, aiConcepts: [] };
+    return { isUnsafe: false, isExtreme: false, extremeViolations: [], aiConcepts: [], violatedCategories: [] };
   }
 }

@@ -2,13 +2,15 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, Comment, ProfileUser } from '../types';
-import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, getFollowStats, toggleFollowUser } from '../services/firestoreService';
+import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, getFollowStats, toggleFollowUser, updateImageDetails } from '../services/firestoreService';
+import { LICENSES } from '../constants';
 import { recordWatchInterest } from '../services/interestTracker';
 import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
 import EmbedModal from './EmbedModal';
 import { FeedItem } from './InfiniteFeed';
+import CrawlableContent from './CrawlableContent';
 
 interface PostDetailViewProps {
   image: ImageMeta;
@@ -54,8 +56,35 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isMainLoaded, setIsMainLoaded] = useState(false);
   const [renderRelated, setRenderRelated] = useState(false);
+  const [isEditingAttribution, setIsEditingAttribution] = useState(false);
+  const [editLicense, setEditLicense] = useState(currentImage.license || 'CC0');
+  const [editOriginalWorkUrl, setEditOriginalWorkUrl] = useState(currentImage.originalWorkUrl || '');
+  const [isSavingAttribution, setIsSavingAttribution] = useState(false);
   const mainImgRef = useRef<HTMLImageElement>(null);
   const watchLoggedRef = useRef(false);
+
+  const handleSaveAttribution = async () => {
+    setIsSavingAttribution(true);
+    try {
+      await updateImageDetails(currentImage.id, {
+        license: editLicense,
+        originalWorkUrl: editOriginalWorkUrl,
+      });
+      const updated = {
+        ...currentImage,
+        license: editLicense,
+        originalWorkUrl: editOriginalWorkUrl,
+      };
+      setCurrentImage(updated);
+      onImageUpdate?.(updated);
+      setIsEditingAttribution(false);
+      showToast('Credit & attribution updated!');
+    } catch (err) {
+      showToast('Failed to update credit');
+    } finally {
+      setIsSavingAttribution(false);
+    }
+  };
 
   useEffect(() => {
     setIsMainLoaded(false);
@@ -596,14 +625,14 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                     </svg>
                   </button>
                   {showDropdown && (
-                    <div className="absolute right-0 mt-1 w-48 bg-surface border border-border rounded-xl shadow-lg z-50 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                    <div className="absolute right-0 mt-1 w-60 bg-surface border border-border rounded-xl shadow-xl z-50 overflow-hidden py-1" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => {
                           setShowDropdown(false);
                           const url = `${window.location.origin}/image/${currentImage.id}`;
                           navigator.clipboard.writeText(url).then(() => showToast('Link copied to clipboard!'));
                         }}
-                        className="w-full text-left px-4 py-3 text-[15px] font-bold text-primary hover:bg-background transition-colors flex items-center gap-3"
+                        className="w-full text-left px-4 py-2.5 text-[14px] font-medium text-primary hover:bg-background transition-colors flex items-center gap-3"
                       >
                         <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[18px] h-[18px] fill-current"><g><path d="M18.36 5.64c-1.95-1.96-5.11-1.96-7.07 0L9.88 7.05 8.46 5.64l1.42-1.42c2.73-2.73 7.16-2.73 9.9 0 2.73 2.74 2.73 7.17 0 9.9l-1.42 1.42-1.41-1.42 1.41-1.41c1.96-1.96 1.96-5.12 0-7.07zm-2.12 3.53l-7.07 7.07-1.41-1.41 7.07-7.07 1.41 1.41zm-12.02.71l1.42-1.42 1.41 1.42-1.42 1.41c-1.96 1.96-1.96 5.12 0 7.07 1.95 1.96 5.11 1.96 7.07 0l1.41-1.41 1.42 1.41-1.42 1.42c-2.73 2.73-7.16 2.73-9.9 0-2.73-2.74-2.73-7.17 0-9.9z"></path></g></svg>
                         Copy link to post
@@ -613,11 +642,60 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                           setShowDropdown(false);
                           setShowEmbed(true);
                         }}
-                        className="w-full text-left px-4 py-3 text-[15px] font-bold text-primary hover:bg-background transition-colors flex items-center gap-3"
+                        className="w-full text-left px-4 py-2.5 text-[14px] font-medium text-primary hover:bg-background transition-colors flex items-center gap-3"
                       >
                         <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[18px] h-[18px] fill-current"><g><path d="M22 12l-7.5 5.5v-3.5c-3.1 0-6.1 1.2-8.5 3.5 1.1-4.7 4.2-8.3 8.5-9.5V4.5L22 12z"></path></g></svg>
                         Embed post
                       </button>
+
+                      {/* License in 3-dots */}
+                      <div className="px-4 py-2 border-t border-border/40 text-xs flex items-center justify-between">
+                        <span className="text-secondary font-medium">License:</span>
+                        <span className="px-2 py-0.5 rounded bg-border/50 text-primary font-semibold">
+                          {currentImage.license || 'CC0'}
+                        </span>
+                      </div>
+
+                      {/* Credit / Source in 3-dots */}
+                      {currentImage.originalWorkUrl ? (
+                        <a
+                          href={currentImage.originalWorkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setShowDropdown(false)}
+                          className="w-full text-left px-4 py-2 text-xs text-accent hover:underline hover:bg-background transition-colors flex items-center justify-between gap-2 border-t border-border/30"
+                        >
+                          <span className="text-secondary font-medium">Credit / Source:</span>
+                          <span className="font-semibold truncate max-w-[120px] flex items-center gap-1">
+                            {(() => {
+                              try {
+                                return new URL(currentImage.originalWorkUrl).hostname.replace(/^www\./, '');
+                              } catch {
+                                return 'Source';
+                              }
+                            })()}
+                            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </span>
+                        </a>
+                      ) : null}
+
+                      {/* Author Edit Credit / License */}
+                      {user && user.uid === currentImage.uploaderUid && (
+                        <button
+                          onClick={() => {
+                            setShowDropdown(false);
+                            setEditLicense(currentImage.license || 'CC0');
+                            setEditOriginalWorkUrl(currentImage.originalWorkUrl || '');
+                            setIsEditingAttribution(true);
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-xs font-bold text-accent hover:bg-background transition-colors flex items-center gap-2 border-t border-border/40"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" className="w-3.5 h-3.5 fill-current"><path d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"></path></svg>
+                          {currentImage.originalWorkUrl ? 'Edit Credit & License' : '+ Add Credit & License'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -625,10 +703,57 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             </div>
 
             {/* Text content */}
-            <div className="text-[17px] text-primary whitespace-pre-wrap break-words px-4 pt-4 leading-normal">
+            <div className="text-[17px] text-primary px-4 pt-4 leading-normal">
               {currentImage.title && <h2 className="font-bold text-lg mb-1">{currentImage.title}</h2>}
-              {currentImage.description && <p className="text-primary/95">{currentImage.description}</p>}
+              {currentImage.description && <CrawlableContent content={currentImage.description} className="text-primary/95 text-[15px] sm:text-[16px] leading-relaxed" />}
             </div>
+
+            {/* Attribution Edit Modal/Panel (only if author chose to edit via 3-dots) */}
+            {isEditingAttribution && (
+              <div className="mx-4 mt-3 p-3 rounded-xl bg-surface border border-accent/40 space-y-2.5 text-xs animate-fade-in">
+                <div className="font-bold text-primary flex items-center justify-between">
+                  <span>Edit Credit &amp; Attribution</span>
+                  <button onClick={() => setIsEditingAttribution(false)} className="text-secondary hover:text-primary">✕</button>
+                </div>
+                <div>
+                  <label className="block text-secondary mb-1 font-medium">License</label>
+                  <select
+                    value={editLicense}
+                    onChange={(e) => setEditLicense(e.target.value)}
+                    className="w-full bg-background border border-border rounded-lg p-2 text-primary text-xs focus:outline-none focus:border-accent"
+                  >
+                    {LICENSES.map((l) => (
+                      <option key={l.value} value={l.value}>{l.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-secondary mb-1 font-medium">Original Source URL (Credit Link)</label>
+                  <input
+                    type="url"
+                    value={editOriginalWorkUrl}
+                    onChange={(e) => setEditOriginalWorkUrl(e.target.value)}
+                    placeholder="https://... (author portfolio, unsplash, etc.)"
+                    className="w-full bg-background border border-border rounded-lg p-2 text-primary text-xs focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => setIsEditingAttribution(false)}
+                    className="px-3 py-1.5 text-secondary hover:text-primary rounded-lg border border-border"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveAttribution}
+                    disabled={isSavingAttribution}
+                    className="px-3.5 py-1.5 bg-accent text-surface font-semibold rounded-lg hover:opacity-90 disabled:opacity-50 transition-all"
+                  >
+                    {isSavingAttribution ? 'Saving...' : 'Save Credit'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Image/Video */}
             <div className="relative rounded-2xl border border-border overflow-hidden max-h-[500px] min-h-[200px] mx-4 mt-4 bg-black/40 flex items-center justify-center">
