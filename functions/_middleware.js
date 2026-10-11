@@ -42,7 +42,7 @@ export const onRequest = async (context) => {
   }
 
   // SPA Route Fallback & Creator Profile SSR for direct URLs (/@username, /username, etc.)
-  if (response.status === 404 && !url.pathname.startsWith('/api') && !url.pathname.includes('.')) {
+  if (response.status === 404 && !url.pathname.startsWith('/api') && !url.pathname.startsWith('/image/') && !url.pathname.includes('.')) {
     try {
       const atMatch = url.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
       const directMatch = !atMatch ? url.pathname.match(/^\/([a-zA-Z0-9_.-]+)$/) : null;
@@ -71,12 +71,40 @@ export const onRequest = async (context) => {
 
           if (result.rows.length > 0) {
             const creator = result.rows[0];
+            const creatorUid = creator.uploaderUid;
             const name = escapeHtml(creator.uploaderName || cleanUser);
             const handle = escapeHtml((creator.uploaderName || cleanUser).replace(/\s+/g, '').toLowerCase());
             const rawBio = creator.bio ? creator.bio.trim() : `Explore creative visuals and HD wallpaper photography by ${name} on Glass Gallery.`;
             const desc = escapeHtml(rawBio.slice(0, 160));
             const photo = creator.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
             const profileUrl = `https://gg.modvc.org/@${handle}`;
+
+            // Fetch creator's stats & recent images for instant SSR population
+            let uploadCount = 0;
+            let totalLikes = 0;
+            let totalDownloads = 0;
+            let creatorImages = [];
+
+            if (creatorUid) {
+              try {
+                const [statsRes, imgRes] = await Promise.all([
+                  db.execute({
+                    sql: "SELECT COUNT(*) as uploadCount, COALESCE(SUM(likeCount), 0) as totalLikes, COALESCE(SUM(downloadCount), 0) as totalDownloads FROM images WHERE uploaderUid = ?",
+                    args: [creatorUid]
+                  }),
+                  db.execute({
+                    sql: "SELECT id, title, imageUrl, likeCount, downloadCount, uploadedAt FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC LIMIT 24",
+                    args: [creatorUid]
+                  })
+                ]);
+                uploadCount = statsRes.rows[0]?.uploadCount || 0;
+                totalLikes = statsRes.rows[0]?.totalLikes || 0;
+                totalDownloads = statsRes.rows[0]?.totalDownloads || 0;
+                creatorImages = imgRes.rows || [];
+              } catch (statsErr) {
+                console.warn("[Profile SSR Stats Warning]:", statsErr);
+              }
+            }
 
             // Fetch index.html
             const assetUrl = new URL(request.url);
@@ -86,16 +114,16 @@ export const onRequest = async (context) => {
               let html = await indexRes.text();
 
               const metaTags = `<title>${name} (@${handle}) | Glass Gallery</title>
-    <meta name="description" content="${desc}" />
+    <meta name="description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
     <link rel="canonical" href="${profileUrl}" />
     <meta property="og:title" content="${name} (@${handle}) | Glass Gallery" />
-    <meta property="og:description" content="${desc}" />
+    <meta property="og:description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
     <meta property="og:image" content="${photo}" />
     <meta property="og:url" content="${profileUrl}" />
     <meta property="og:type" content="profile" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="${name} (@${handle}) | Glass Gallery" />
-    <meta name="twitter:description" content="${desc}" />
+    <meta name="twitter:description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
     <meta name="twitter:image" content="${photo}" />
     <script type="application/ld+json">
     {
@@ -110,15 +138,25 @@ export const onRequest = async (context) => {
         "description": "${desc}"
       }
     }
+    </script>
+    <script>
+      window.__PRELOADED_CREATOR_DATA__ = ${JSON.stringify({ creator, uploadCount, totalLikes, totalDownloads })};
+      window.__PRELOADED_CREATOR_IMAGES__ = ${JSON.stringify(creatorImages)};
     </script>`;
 
               html = html.replace(/<title>.*?<\/title>/i, metaTags);
 
-              // Server-rendered crawlable HTML inside #root so web crawlers index creator data immediately
+              // Server-rendered crawlable HTML inside #root so web crawlers index creator data and images immediately
+              const imageLinks = creatorImages.map(img => 
+                `<li><a href="https://gg.modvc.org/image/${escapeHtml(img.id)}">${escapeHtml(img.title || 'Untitled artwork')}</a></li>`
+              ).join('');
+
               const ssrBody = `<div id="ssr-profile" style="position:absolute;left:-9999px;top:-9999px;opacity:0;pointer-events:none;" aria-hidden="true">
                 <h1>${name} (@${handle})</h1>
                 <p>${desc}</p>
+                <p>Stats: ${uploadCount} Uploads &bull; ${totalLikes} Likes &bull; ${totalDownloads} Downloads</p>
                 <a href="${profileUrl}">View ${name}'s Profile on Glass Gallery</a>
+                ${imageLinks ? `<h2>Uploads by ${name}</h2><ul>${imageLinks}</ul>` : ''}
               </div>`;
 
               html = html.replace('<div id="root">', `<div id="root">${ssrBody}`);

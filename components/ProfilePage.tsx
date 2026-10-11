@@ -51,11 +51,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   // Tab Management
   const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'dashboard'>('created');
 
-  // Created/Uploads Gallery State
-  const [allImages, setAllImages] = useState<ImageMeta[]>([]);
-  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Created/Uploads Gallery State (preloads from SSR if available for instant Googlebot render)
+  const preloadedImages = useMemo<ImageMeta[]>(() => {
+    if (typeof window !== 'undefined' && (window as any).__PRELOADED_CREATOR_IMAGES__) {
+      const p = (window as any).__PRELOADED_CREATOR_IMAGES__;
+      if (Array.isArray(p) && p.length > 0) return p;
+    }
+    return [];
+  }, []);
+
+  const [allImages, setAllImages] = useState<ImageMeta[]>(preloadedImages);
+  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>(preloadedImages.slice(0, PAGE_SIZE));
+  const [isLoading, setIsLoading] = useState(preloadedImages.length === 0);
+  const [currentIndex, setCurrentIndex] = useState(preloadedImages.length > 0 ? PAGE_SIZE : 0);
 
   // Saved/Likes Gallery State
   const [likedImages, setLikedImages] = useState<ImageMeta[]>([]);
@@ -138,11 +146,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, loggedInUser, onBack, o
   useEffect(() => {
     let mounted = true;
     
-    // Reset states immediately when shifting profiles
+    // Reset states immediately when shifting profiles (unless matching preloaded SSR)
     setProfileData(user);
-    setAllImages([]);
-    setDisplayedImages([]);
-    setIsLoading(true);
+    const hasMatchingPreload = preloadedImages.length > 0 && preloadedImages[0]?.uploaderUid === user.uploaderUid;
+    if (!hasMatchingPreload) {
+      setAllImages([]);
+      setDisplayedImages([]);
+      setIsLoading(true);
+    }
     setLikedImages([]);
     setDisplayedLikedImages([]);
     setActiveTab('created');
