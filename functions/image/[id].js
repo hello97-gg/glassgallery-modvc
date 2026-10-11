@@ -362,6 +362,9 @@ export async function onRequest(context) {
 
   } catch (error) {
     console.error("[og-image] Error:", error);
-    return Response.redirect(`${baseUrl}/gallery`, 302);
+    return new Response(`[og-image Error]: ${error.message}\nStack: ${error.stack}`, {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain' }
+    });
   }
 }
