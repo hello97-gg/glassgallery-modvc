@@ -37,6 +37,33 @@ export async function onRequest(context) {
     const prevUrl = page > 1 ? (page === 2 ? `${baseUrl}/gallery` : `${baseUrl}/gallery?page=${page - 1}`) : null;
     const nextUrl = page < totalPages ? `${baseUrl}/gallery?page=${page + 1}` : null;
 
+    // Generate crawlable pagination links with milestones so all pages are <= 2 clicks away
+    const paginationSet = new Set();
+    paginationSet.add(1);
+    paginationSet.add(totalPages);
+    for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p++) {
+      paginationSet.add(p);
+    }
+    for (let p = 10; p < totalPages; p += 10) {
+      paginationSet.add(p);
+    }
+    const sortedPages = Array.from(paginationSet).sort((a, b) => a - b);
+    
+    let paginationLinksHtml = '';
+    let lastP = 0;
+    for (const p of sortedPages) {
+      if (lastP && p - lastP > 1) {
+        paginationLinksHtml += `<span class="ellipsis">&hellip;</span>`;
+      }
+      if (p === page) {
+        paginationLinksHtml += `<span class="current">${p}</span>`;
+      } else {
+        const link = p === 1 ? `${baseUrl}/gallery` : `${baseUrl}/gallery?page=${p}`;
+        paginationLinksHtml += `<a href="${link}">${p}</a>`;
+      }
+      lastP = p;
+    }
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -227,6 +254,12 @@ export async function onRequest(context) {
       color: #181818;
       border-color: #f5c3b8;
     }
+    .pagination .ellipsis {
+      background: transparent;
+      border: none;
+      color: #777;
+      padding: 0.6rem 0.2rem;
+    }
     footer {
       border-top: 1px solid #282828;
       padding: 2rem 1.5rem;
@@ -290,9 +323,9 @@ export async function onRequest(context) {
     </ul>
 
     <nav aria-label="Pagination navigation" class="pagination">
-      ${prevUrl ? `<a href="${prevUrl}">&larr; Previous Page</a>` : ''}
-      <span class="current">Page ${page} of ${totalPages}</span>
-      ${nextUrl ? `<a href="${nextUrl}">Next Page &rarr;</a>` : ''}
+      ${prevUrl ? `<a href="${prevUrl}">&larr; Prev</a>` : ''}
+      ${paginationLinksHtml}
+      ${nextUrl ? `<a href="${nextUrl}">Next &rarr;</a>` : ''}
     </nav>
   </main>
 
