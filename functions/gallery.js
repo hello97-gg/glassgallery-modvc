@@ -55,6 +55,7 @@ export async function onRequest(context) {
   <title>Gallery Archive – Page ${page} of ${totalPages} | Glass Gallery</title>
   <meta name="description" content="Browse page ${page} of Glass Gallery's comprehensive photo archive. Explore over ${totalCount} high-resolution astrophotography, wallpaper, and photography showcases." />
   <link rel="canonical" href="${pageUrl}" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
   ${prevUrl ? `<link rel="prev" href="${prevUrl}" />` : ''}
   ${nextUrl ? `<link rel="next" href="${nextUrl}" />` : ''}
   <link rel="icon" type="image/png" sizes="96x96" href="${baseUrl}/favicon-96x96.png" />

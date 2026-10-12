@@ -120,7 +120,7 @@ export async function onRequest(context) {
     const license = (image.license || "CC0").trim();
     const rawLicense = license;
     const licenseUrl = LICENSE_URLS[rawLicense] || (rawLicense.startsWith('http') ? rawLicense : `${baseUrl}/legal#license`);
-    const pageUrl = `${baseUrl}/image/${id}`;
+    const pageUrl = `${baseUrl}/image/${cleanId}`;
     const altText = `${title} photography by ${uploaderName} on Glass Gallery`;
     const creditName = (image.uploaderName || "Glass Gallery User").trim();
     const copyrightYear = image.uploadedAt ? new Date(image.uploadedAt).getFullYear() : new Date().getFullYear();
@@ -191,6 +191,7 @@ export async function onRequest(context) {
     <title>${escapeHtml(seoTitle)}</title>
     <meta name="description" content="${escapeHtml(description)}" />
     <meta name="keywords" content="${tags.map(t => escapeHtml(t)).join(', ')}" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <link rel="canonical" href="${pageUrl}" />
     <link rel="icon" type="image/png" sizes="96x96" href="${baseUrl}/favicon-96x96.png" />
     <link rel="icon" type="image/x-icon" href="${baseUrl}/favicon.ico" />

@@ -56,7 +56,7 @@ export async function onRequest(context) {
   const seoMetaTags = `
   <title>${title} | Legal Center | Glass Gallery</title>
   <meta name="description" content="${description}" />
-  <meta name="robots" content="index, follow" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
   <link rel="canonical" href="${pageUrl}" />
   <link rel="icon" type="image/png" sizes="96x96" href="${baseUrl}/favicon-96x96.png" />
   <link rel="icon" type="image/x-icon" href="${baseUrl}/favicon.ico" />

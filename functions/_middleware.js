@@ -124,6 +124,7 @@ export const onRequest = async (context) => {
 
               const metaTags = `<title>${name} (@${handle}) | Glass Gallery</title>
     <meta name="description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <link rel="canonical" href="${profileUrl}" />
     <meta property="og:title" content="${name} (@${handle}) | Glass Gallery" />
     <meta property="og:description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
