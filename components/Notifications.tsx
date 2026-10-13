@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Notification, ImageMeta, ProfileUser } from '../types';
 import { markNotificationsAsRead } from '../services/firestoreService';
+import { isVideoUrl } from '../utils/mediaUtils';
 import Button from './Button';
 
 interface NotificationProps {
@@ -79,20 +80,37 @@ export const NotificationsList: React.FC<NotificationProps> = ({ notifications, 
                 )}
                 <div className="flex-grow text-sm">
                   {n.type === 'flagged' ? (
-                    <p className="text-primary">Your image was <span className="text-red-500 font-semibold">flagged</span> for content safety review.</p>
+                    <p className="text-primary">Your {isVideoUrl(n.imageUrl) ? 'video' : 'image'} was <span className="text-red-500 font-semibold">flagged</span> for content safety review.</p>
                   ) : n.type === 'follow' ? (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> followed you.</p>
                   ) : n.type === 'comment' ? (
-                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> commented on your image.</p>
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> commented on your {isVideoUrl(n.imageUrl) ? 'video' : 'image'}.</p>
                   ) : n.type === 'reply' ? (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> replied to your comment.</p>
                   ) : (
-                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> liked your image.</p>
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> liked your {isVideoUrl(n.imageUrl) ? 'video' : 'image'}.</p>
                   )}
                   <p className="text-xs text-secondary">{timeAgo(n.createdAt.toDate())} ago</p>
                 </div>
                 {n.type !== 'follow' && n.imageUrl ? (
-                  <img src={n.imageUrl} alt="notification thumbnail" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                  isVideoUrl(n.imageUrl) ? (
+                    <div className="w-10 h-10 rounded overflow-hidden relative flex-shrink-0 bg-black/40 border border-border">
+                      <video
+                        src={n.imageUrl}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-cover pointer-events-none"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white drop-shadow" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                  ) : (
+                    <img src={(n as any).thumbnailUrl || n.imageUrl} alt="notification thumbnail" className="w-10 h-10 rounded object-cover flex-shrink-0 border border-border" />
+                  )
                 ) : null}
               </div>
             ))

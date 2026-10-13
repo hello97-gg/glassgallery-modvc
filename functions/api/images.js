@@ -75,6 +75,36 @@ export async function onRequest(context) {
         return Response.redirect(imageUrl, 302);
       }
 
+      // Action: Fetch real APK download count
+      if (action === 'app_stats') {
+        try {
+          await db.execute("CREATE TABLE IF NOT EXISTS app_stats (key TEXT PRIMARY KEY, count INTEGER DEFAULT 0)");
+          const res = await db.execute({
+            sql: "SELECT count FROM app_stats WHERE key = 'apk_downloads'",
+            args: []
+          });
+          const count = res.rows.length > 0 ? (parseInt(res.rows[0].count) || 0) : 0;
+          return Response.json({ success: true, downloadCount: count }, { headers: corsHeaders });
+        } catch (e) {
+          console.error("Error fetching app stats:", e);
+          return Response.json({ success: true, downloadCount: 0 }, { headers: corsHeaders });
+        }
+      }
+
+      // Action: Direct APK download tracking redirect
+      if (action === 'app_download') {
+        try {
+          await db.execute("CREATE TABLE IF NOT EXISTS app_stats (key TEXT PRIMARY KEY, count INTEGER DEFAULT 0)");
+          await db.execute({
+            sql: "INSERT INTO app_stats (key, count) VALUES ('apk_downloads', 1) ON CONFLICT(key) DO UPDATE SET count = count + 1",
+            args: []
+          });
+        } catch (e) {
+          console.error("Error updating app stats:", e);
+        }
+        return Response.redirect("https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/GlassGallery.apk", 302);
+      }
+
       // --- Render/Embed: Let external websites embed images via <img src="..."> ---
       // Usage:
       //   By ID:       /api/images?action=render&imageId=img_xxx
@@ -133,6 +163,7 @@ export async function onRequest(context) {
             image: {
               id: targetImage.id,
               imageUrl: targetImage.imageUrl,
+              thumbnailUrl: targetImage.thumbnailUrl || targetImage.imageUrl,
               title: targetImage.title || '',
               uploaderName: targetImage.uploaderName || '',
               license: targetImage.license || 'CC0',
@@ -179,6 +210,7 @@ export async function onRequest(context) {
         const image = {
           id: row.id,
           imageUrl: row.imageUrl,
+          thumbnailUrl: row.thumbnailUrl || row.imageUrl,
           uploaderUid: row.uploaderUid,
           uploaderName: row.uploaderName,
           uploaderPhotoURL: row.uploaderPhotoURL || '',
@@ -432,6 +464,7 @@ export async function onRequest(context) {
             image: {
               id: row.id,
               imageUrl: row.imageUrl,
+              thumbnailUrl: row.thumbnailUrl || row.imageUrl,
               uploaderUid: row.uploaderUid,
               uploaderName: row.uploaderName,
               uploaderPhotoURL: row.uploaderPhotoURL || '',
@@ -618,6 +651,7 @@ export async function onRequest(context) {
             image: {
               id: row.id,
               imageUrl: row.imageUrl,
+              thumbnailUrl: row.thumbnailUrl || row.imageUrl,
               uploaderUid: row.uploaderUid,
               uploaderName: row.uploaderName,
               uploaderPhotoURL: row.uploaderPhotoURL || '',
@@ -702,6 +736,7 @@ export async function onRequest(context) {
           return {
             id: row.id,
             imageUrl: row.imageUrl,
+            thumbnailUrl: row.thumbnailUrl || row.imageUrl,
             uploaderUid: row.uploaderUid,
             uploaderName: row.uploaderName,
             uploaderPhotoURL: row.uploaderPhotoURL || '',
@@ -862,7 +897,7 @@ Return the response strictly as a JSON object with this exact format:
         const uploaderPhotoURL = userRow.uploaderPhotoURL;
 
         const {
-          image, title, description, license, licenseUrl, tags, originalWorkUrl, location
+          image, thumbnail, thumbnailUrl: inputThumbnailUrl, title, description, license, licenseUrl, tags, originalWorkUrl, location
         } = body;
 
         if (!image) {
@@ -975,6 +1010,57 @@ Return the response strictly as a JSON object with this exact format:
         const domain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
         const imageUrl = `${domain}/${uniqueFileName}`;
 
+        // Generate lower quality lightweight thumbnail for background/feed display (480px, 65%)
+        let thumbUrl = null;
+        let thumbInput = !isVideo ? buffer : null;
+
+        // If it's a video and the API caller provided an explicit thumbnail image (base64 or public URL)
+        const rawThumbInput = thumbnail || inputThumbnailUrl;
+        if (isVideo && rawThumbInput) {
+          try {
+            if (rawThumbInput.startsWith('http://') || rawThumbInput.startsWith('https://')) {
+              const fRes = await fetch(rawThumbInput);
+              const ab = await fRes.arrayBuffer();
+              thumbInput = new Uint8Array(ab);
+            } else if (rawThumbInput.startsWith('data:image/')) {
+              const b64 = rawThumbInput.replace(/^data:image\/\w+;base64,/, '');
+              const bin = atob(b64);
+              thumbInput = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) thumbInput[i] = bin.charCodeAt(i);
+            }
+          } catch (tFetchErr) {
+            console.warn("[API Upload] Failed to parse video thumbnail input:", tFetchErr);
+          }
+        }
+
+        if (thumbInput) {
+          try {
+            let photonThumb = PhotonImage.new_from_byteslice(thumbInput);
+            const tWidth = photonThumb.get_width();
+            const tHeight = photonThumb.get_height();
+            const THUMB_WIDTH = 480;
+            if (tWidth > THUMB_WIDTH) {
+              const newHeight = Math.round(tHeight * (THUMB_WIDTH / tWidth));
+              const resizedThumb = resize(photonThumb, THUMB_WIDTH, newHeight, SamplingFilter.Nearest);
+              photonThumb.free();
+              photonThumb = resizedThumb;
+            }
+            const thumbBytes = photonThumb.get_bytes_jpeg(65);
+            photonThumb.free();
+
+            const thumbFileName = uniqueFileName.replace(/\.[^.]+$/, '') + '-thumb.jpg';
+            await S3.send(new PutObjectCommand({
+              Bucket: R2_BUCKET,
+              Key: thumbFileName,
+              Body: thumbBytes,
+              ContentType: 'image/jpeg',
+            })).catch(err => console.warn("[API Upload] Thumbnail upload failed:", err));
+            thumbUrl = `${domain}/${thumbFileName}`;
+          } catch (tErr) {
+            console.warn("[API Upload] Thumbnail generation failed:", tErr);
+          }
+        }
+
         const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         let updatedFlags = tags || [];
         let isUnsafe = false;
@@ -1012,12 +1098,12 @@ Return the response strictly as a JSON object with this exact format:
 
         await db.execute({
           sql: `INSERT INTO images (
-            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL,
             title, description, license, licenseUrl, flags, originalWorkUrl,
             uploadedAt, likeCount, downloadCount, location, aiConcepts
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
           args: [
-            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            id, imageUrl, thumbUrl || imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
             title || '', description || '', license || 'CC0', licenseUrl || '',
             JSON.stringify(updatedFlags), originalWorkUrl || '', uploadedAt, location || '',
             JSON.stringify(aiConceptsArr)
@@ -1049,6 +1135,7 @@ Return the response strictly as a JSON object with this exact format:
           success: true,
           imageId: id,
           imageUrl,
+          thumbnailUrl: thumbUrl || imageUrl,
           flagged: isUnsafe,
           aiConcepts: aiConceptsArr
         }, { status: 200, headers: corsHeaders });
@@ -1086,12 +1173,12 @@ Return the response strictly as a JSON object with this exact format:
 
         await db.execute({
           sql: `INSERT INTO images (
-            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL,
             title, description, license, licenseUrl, flags, originalWorkUrl,
             uploadedAt, likeCount, downloadCount, location, aiConcepts
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
           args: [
-            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            id, imageUrl, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
             title || '', description || '', license || 'CC0', licenseUrl || '',
             JSON.stringify(tags || []), originalWorkUrl || '', uploadedAt, location || '',
             JSON.stringify([])
@@ -1104,7 +1191,7 @@ Return the response strictly as a JSON object with this exact format:
       // Action: Add/Upload image
       if (action === 'upload') {
         const {
-          id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location, keyframes
+          id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location, keyframes
         } = body;
 
         if (!id || !imageUrl || !uploaderUid) {
@@ -1146,12 +1233,12 @@ Return the response strictly as a JSON object with this exact format:
 
         await db.execute({
           sql: `INSERT INTO images (
-            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL,
             title, description, license, licenseUrl, flags, originalWorkUrl,
             uploadedAt, likeCount, downloadCount, location, aiConcepts
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
           args: [
-            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            id, imageUrl, thumbnailUrl || imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
             title || '', description || '', license || 'CC0', licenseUrl || '',
             JSON.stringify(updatedFlags), originalWorkUrl || '', uploadedAt, location || '',
             JSON.stringify(aiConceptsArr)
@@ -1245,6 +1332,26 @@ Return the response strictly as a JSON object with this exact format:
         });
 
         return Response.json({ success: true }, { status: 200, headers: corsHeaders });
+      }
+
+      // Action: Increment app download count
+      if (action === 'app_download') {
+        try {
+          await db.execute("CREATE TABLE IF NOT EXISTS app_stats (key TEXT PRIMARY KEY, count INTEGER DEFAULT 0)");
+          await db.execute({
+            sql: "INSERT INTO app_stats (key, count) VALUES ('apk_downloads', 1) ON CONFLICT(key) DO UPDATE SET count = count + 1",
+            args: []
+          });
+          const res = await db.execute({
+            sql: "SELECT count FROM app_stats WHERE key = 'apk_downloads'",
+            args: []
+          });
+          const count = res.rows.length > 0 ? (parseInt(res.rows[0].count) || 0) : 1;
+          return Response.json({ success: true, downloadCount: count }, { status: 200, headers: corsHeaders });
+        } catch (e) {
+          console.error("Error incrementing app download count:", e);
+          return Response.json({ success: false, error: e.message }, { status: 500, headers: corsHeaders });
+        }
       }
 
       // Action: Toggle like

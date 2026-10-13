@@ -6,6 +6,7 @@ import 'firebase/compat/firestore';
 export interface ImageMeta {
   id: string;
   imageUrl: string;
+  thumbnailUrl?: string;
   uploaderUid: string;
   uploaderName: string;
   uploaderPhotoURL: string;

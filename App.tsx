@@ -33,6 +33,7 @@ import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
 import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
 import MobileAppPromo from './components/MobileAppPromo';
 import TrendingSidebar from './components/TrendingSidebar';
+import AppShowcasePage from './components/AppShowcasePage';
 
 // Global Fetch Interceptor for Capacitor Native Platform or External Sandbox/Embed Hosts to reroute relative paths to the production API
 const isExternalHost = typeof window !== 'undefined' && 
@@ -72,6 +73,9 @@ const EXPLORE_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000
 
 // Code/Terminal Icon for API
 const API_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4'/%3E%3C/svg%3E`;
+
+// Mobile App Camera Icon for App Showcase
+const APP_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='none'%3E%3Crect width='512' height='512' rx='115' fill='%2318161B'/%3E%3Ccircle cx='256' cy='256' r='160' fill='%23F5C3B8'/%3E%3Ccircle cx='256' cy='256' r='88' fill='%2318161B'/%3E%3Ccircle cx='256' cy='256' r='88' stroke='%23FFFFFF' stroke-width='26'/%3E%3Ccircle cx='256' cy='256' r='32' fill='%23F5C3B8'/%3E%3Ccircle cx='336' cy='176' r='18' fill='%2318161B'/%3E%3C/svg%3E`;
 
 
 // --- Skeleton Components for Initial Load ---
@@ -462,9 +466,9 @@ const App: React.FC = () => {
   
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post' | 'app'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'discover' | 'explore' | 'api' | 'legal'>('home');
+  const [lastView, setLastView] = useState<'home' | 'discover' | 'explore' | 'api' | 'legal' | 'app'>('home');
   
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
   const [homeTopicFilter, setHomeTopicFilter] = useState('');
@@ -875,7 +879,7 @@ const App: React.FC = () => {
 
       // Detect @username or direct /username routes (e.g. /@pixeletedthoughts or /pixeletedthoughts)
       const RESERVED_PATHS = new Set([
-        'image', 'gallery', 'api', 'legal', 'discover', 'explore',
+        'image', 'gallery', 'api', 'legal', 'discover', 'explore', 'app', 'download', 'apk',
         'login', 'notifications', 'feed', 'assets', 'favicon.ico',
         'robots.txt', 'sitemap.xml', 'manifest.json', 'html', 'run',
         'sandbox', 'embed', 'preview', 'index'
@@ -975,6 +979,9 @@ const App: React.FC = () => {
       } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
+      } else if (viewParam === 'app' || window.location.pathname === '/app' || window.location.pathname === '/download') {
+          setActiveView('app');
+          setProfileUser(null);
       } else if (viewParam === 'discover' || window.location.pathname === '/discover') {
           setActiveView('discover');
           setProfileUser(null);
@@ -1059,6 +1066,10 @@ const App: React.FC = () => {
       } else if (params?.view === 'legal') {
         url.pathname = '/legal';
         if (params?.tab) url.searchParams.set('tab', params.tab);
+      } else if (params?.view === 'app') {
+        url.pathname = '/app';
+      } else if (params?.view === 'api') {
+        url.pathname = '/api';
       } else if (params?.username) {
         url.pathname = `/@${params.username.replace(/^@/, '')}`;
       } else {
@@ -1067,7 +1078,7 @@ const App: React.FC = () => {
       
       if (params?.user && !params?.username) url.searchParams.set('user', params.user);
       if (params?.search) url.searchParams.set('search', params.search);
-      if (params?.view && params.view !== 'legal') url.searchParams.set('view', params.view);
+      if (params?.view && params.view !== 'legal' && params.view !== 'app' && params.view !== 'api') url.searchParams.set('view', params.view);
       
       window.history.pushState({}, '', url.toString());
     } catch {
@@ -1513,7 +1524,7 @@ const App: React.FC = () => {
     updateURL(null);
   }
   
-  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api') => {
+  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api' | 'app') => {
     savedVirtuosoStateRef.current = {}; // Clear all Virtuoso scroll states on explicit nav click to start fresh
     console.log('[Nav] Explicit navigation click to view:', view, 'Cleared Virtuoso scroll states');
     if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
@@ -1554,6 +1565,8 @@ const App: React.FC = () => {
         
         if (view === 'api') {
           updateURL({ view: 'api' });
+        } else if (view === 'app') {
+          updateURL({ view: 'app' });
         } else if (view === 'discover') {
           updateURL({ view: 'discover' });
         } else {
@@ -1673,6 +1686,20 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+    if (activeView === 'app') {
+        return (
+            <>
+                <SEOHead 
+                    title="Glass Gallery Android App – Download APK"
+                    description="Download the official Glass Gallery mobile app for Android. Experience zero-delay reels, dual-tier fast thumbnails, and high-res media downloads."
+                    url={window.location.href}
+                    favicon={APP_FAVICON}
+                />
+                <AppShowcasePage onBack={() => handleSetView('home')} />
+            </>
+        );
+    }
+
     if (activeView === 'api') {
         return (
             <>
@@ -1916,7 +1943,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Added min-w-0 to fix flex child overflow issues on mobile */}
-      <main id="main-content" className={`flex-1 min-w-0 ${activeView === 'home' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
+      <main id="main-content" className={`flex-1 min-w-0 ${activeView === 'home' || activeView === 'app' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
         {renderContent()}
       </main>
 

@@ -121,6 +121,14 @@ const MobileAppPromo: React.FC = () => {
                             >
                                 Open app
                             </a>
+
+                            <a 
+                                href="/app"
+                                onClick={handleDismiss}
+                                className="inline-block mt-4 text-xs font-semibold text-secondary hover:text-primary hover:underline transition-colors"
+                            >
+                                View app showcase &amp; screenshots →
+                            </a>
                         </div>
                     </div>
                 </div>

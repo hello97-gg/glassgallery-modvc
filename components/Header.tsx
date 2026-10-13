@@ -9,8 +9,8 @@ interface SidebarProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api';
-  setView: (view: 'home' | 'discover' | 'explore' | 'notifications' | 'api') => void;
+  activeView: 'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'app';
+  setView: (view: 'home' | 'discover' | 'explore' | 'notifications' | 'api' | 'app') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications: Notification[];
   onImageClick: (image: ImageMeta) => void;
@@ -77,6 +77,19 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
             <circle cx="12" cy="12" r="10" />
             <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
           </svg>
+        </NavItem>
+        <NavItem label="Android App" active={activeView === 'app'} onClick={() => setView('app')}>
+          <div className="relative w-6 h-6 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="w-5 h-5 rounded-md overflow-hidden drop-shadow-sm" fill="none">
+              <rect width="512" height="512" rx="115" fill="#18161B" />
+              <circle cx="256" cy="256" r="160" fill="#F5C3B8" />
+              <circle cx="256" cy="256" r="88" fill="#18161B" />
+              <circle cx="256" cy="256" r="88" stroke="#FFFFFF" strokeWidth="26" />
+              <circle cx="256" cy="256" r="32" fill="#F5C3B8" />
+              <circle cx="336" cy="176" r="18" fill="#18161B" />
+            </svg>
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-background"></span>
+          </div>
         </NavItem>
         <NavItem label="API" active={activeView === 'api'} onClick={() => setView('api')}>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

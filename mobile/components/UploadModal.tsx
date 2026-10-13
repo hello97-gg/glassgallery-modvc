@@ -381,7 +381,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     setLoadingMessage('Uploading pin to Glass Gallery...');
     setError(null);
     try {
-      const { url: imageUrl } = await uploadImage(file);
+      const { url: imageUrl, thumbnailUrl } = await uploadImage(file);
       await addImageToFirestore(
         user, 
         imageUrl, 
@@ -392,7 +392,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         originalWorkUrl, 
         '', 
         location,
-        videoThumbnail ? [videoThumbnail] : []
+        videoThumbnail ? [videoThumbnail] : [],
+        thumbnailUrl || videoThumbnail || imageUrl
       );
       onUploadSuccess();
     } catch (err: any) {

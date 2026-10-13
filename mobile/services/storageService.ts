@@ -27,7 +27,7 @@ export const fileToBase64 = (file: File): Promise<string> => {
    * @param file The image file to upload.
    * @returns A promise that resolves with an object containing the direct URL.
    */
-  export const uploadImage = async (file: File): Promise<{ url: string; }> => {
+  export const uploadImage = async (file: File): Promise<{ url: string; thumbnailUrl?: string; }> => {
     try {
       // 1. Convert the file to a Base64 string.
       const base64File = await fileToBase64(file);
@@ -65,7 +65,10 @@ export const fileToBase64 = (file: File): Promise<string> => {
           throw new Error(`Invalid URL received from server: ${data.url}`);
       }
       
-      return { url: data.url };
+      return { 
+        url: data.url, 
+        thumbnailUrl: data.thumbnailUrl || data.url 
+      };
       
     } catch (error) {
       console.error("Failed to upload image:", error);

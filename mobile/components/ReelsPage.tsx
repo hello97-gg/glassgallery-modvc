@@ -591,12 +591,35 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
+
+    // Zero-latency proximity check: as soon as the user scrolls within 15% of the snap point,
+    // immediately transition the active reel so video starts loading & playing without waiting for scroll to stop
+    const container = containerRef.current;
+    if (container) {
+      const height = container.clientHeight || window.innerHeight;
+      if (height > 0) {
+        const scrollY = container.scrollTop;
+        const targetIndex = Math.round(scrollY / height);
+        const distFromSnap = Math.abs(scrollY - targetIndex * height);
+
+        if (distFromSnap < height * 0.15 && targetIndex >= 0 && targetIndex < reels.length) {
+          setCurrentIndex(prev => {
+            if (prev !== targetIndex) {
+              handleReelTransition(prev, targetIndex);
+              return targetIndex;
+            }
+            return prev;
+          });
+        }
+      }
+    }
+
     if (scrollSettleTimerRef.current) {
       clearTimeout(scrollSettleTimerRef.current);
     }
-    // Debounce settle check during scroll glide/inertia
-    scrollSettleTimerRef.current = setTimeout(checkScrollSettle, 100);
-  }, [checkScrollSettle]);
+    // Fast 40ms debounce settle as backup for slow or interrupted scrolls
+    scrollSettleTimerRef.current = setTimeout(checkScrollSettle, 40);
+  }, [checkScrollSettle, reels.length, handleReelTransition]);
 
   // Bind native 'scrollend' for instant zero-latency snap settle
   useEffect(() => {
@@ -1400,15 +1423,10 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     x5-playsinline="true"
                     loop
                     autoPlay={false}
-                    preload={isActive ? "auto" : "none"}
+                    preload={isActive ? "auto" : (index === currentIndex + 1 ? "metadata" : "none")}
                     muted={isMuted}
                     onLoadedMetadata={(e) => {
                       handleVideoMetadata(reel.id, e.currentTarget);
-                      try {
-                        if (e.currentTarget.currentTime === 0) {
-                          e.currentTarget.currentTime = 0.001;
-                        }
-                      } catch (err) {}
                       firstFrameMap.current.set(index, true);
                       setFirstFrameVersion(v => v + 1);
                     }}

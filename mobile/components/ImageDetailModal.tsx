@@ -39,6 +39,8 @@ const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({ image, onClose }) => {
   const [copied, setCopied] = useState(false);
 
+  const isVideo = isVideoUrl(image.imageUrl) || image.flags?.includes('Video');
+  const videoPoster = (image as any).thumbnailUrl || (image as any).poster || (image as any).keyframes?.[0];
   const hasOriginalWork = !!image.originalWorkUrl;
   let attributionText = '';
   let copyText = '';
@@ -47,20 +49,18 @@ const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({
   if (hasOriginalWork) {
       let sourceText = 'the original source';
       try {
-          const hostname = new URL(image.originalWorkUrl!).hostname;
-          sourceText = hostname.replace(/^www\./, '');
+        const hostname = new URL(image.originalWorkUrl!).hostname;
+        sourceText = hostname.replace(/^www\./, '');
       } catch (e) { /* Fallback is fine */ }
-      
       shoutoutText = `Give credit to the original creator by copying the source link below.`;
-      attributionText = `Image from ${sourceText}`;
-      copyText = `Image source: ${image.originalWorkUrl}`;
+      attributionText = `${isVideo ? 'Video' : 'Image'} from ${sourceText}`;
+      copyText = `${isVideo ? 'Video' : 'Image'} source: ${image.originalWorkUrl}`;
 
   } else {
       shoutoutText = `Give a shoutout to ${image.uploaderName} on social or copy the text below to attribute.`;
-      attributionText = `Photo by ${image.uploaderName} on Glass Gallery`;
-      copyText = `Photo by ${image.uploaderName} on Glass Gallery (${image.imageUrl})`;
+      attributionText = `${isVideo ? 'Video' : 'Photo'} by ${image.uploaderName} on Glass Gallery`;
+      copyText = `${isVideo ? 'Video' : 'Photo'} by ${image.uploaderName} on Glass Gallery (${image.imageUrl})`;
   }
-
 
   const handleCopy = () => {
     navigator.clipboard.writeText(copyText);
@@ -76,7 +76,29 @@ const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({
       >
         <button onClick={onClose} className="absolute top-4 right-4 text-2xl font-light text-neutral-400 hover:text-white">&times;</button>
         <div className="flex items-start gap-4 w-full">
-          <img src={image.imageUrl} alt="thumbnail" className="w-16 h-16 object-cover rounded-xl flex-shrink-0 border border-white/10" />
+          {isVideo ? (
+            videoPoster && !isVideoUrl(videoPoster) ? (
+              <div className="w-16 h-16 rounded-xl overflow-hidden relative flex-shrink-0 bg-black/40 border border-white/10">
+                <img src={videoPoster} alt="thumbnail" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white drop-shadow" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded-xl overflow-hidden relative flex-shrink-0 bg-black/60 border border-white/10">
+                <video src={image.imageUrl} muted playsInline preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/25">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white drop-shadow" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
+            )
+          ) : (
+            <img src={(image as any).thumbnailUrl || image.imageUrl} alt="thumbnail" className="w-16 h-16 object-cover rounded-xl flex-shrink-0 border border-white/10" />
+          )}
           <div className="flex-grow min-w-0">
             <h2 className="text-lg font-bold text-white">Say thanks!</h2>
             <p className="text-xs text-neutral-400 mt-1">{shoutoutText}</p>

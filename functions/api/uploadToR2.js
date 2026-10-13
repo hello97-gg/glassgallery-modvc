@@ -73,6 +73,10 @@ export async function onRequest(context) {
     let extension = getFileExtension(name) || 'jpg';
     let contentType = getContentType(name);
 
+    let thumbBuffer = null;
+    let thumbFileName = null;
+    let thumbUrl = null;
+
     // --- Only compress images, never videos ---
     if (!isVideo) {
       try {
@@ -80,6 +84,18 @@ export async function onRequest(context) {
         const width = image.get_width();
         const height = image.get_height();
 
+        // 1. Generate lightweight thumbnail for fast mobile/web feed loading (480px width, 65% quality)
+        const THUMB_WIDTH = 480;
+        if (width > THUMB_WIDTH) {
+          const thumbHeight = Math.round(height * (THUMB_WIDTH / width));
+          const resizedThumb = resize(image, THUMB_WIDTH, thumbHeight, SamplingFilter.Nearest);
+          thumbBuffer = resizedThumb.get_bytes_jpeg(65);
+          resizedThumb.free();
+        } else {
+          thumbBuffer = image.get_bytes_jpeg(65);
+        }
+
+        // 2. Compress main image if larger than 1920 or > 1MB
         const MAX_WIDTH = 1920;
         const ONE_MB = 1024 * 1024;
 
@@ -117,7 +133,7 @@ export async function onRequest(context) {
       return Response.json({ error: "File exceeds maximum size of 50MB." }, { status: 413 });
     }
 
-    // Upload to R2
+    // Upload main file to R2
     await S3.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: uniqueFileName,
@@ -126,11 +142,27 @@ export async function onRequest(context) {
       ContentLength: buffer.byteLength,
     }));
 
-    // Construct the public URL
+    // Construct the public URLs
     const domain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
     const fileUrl = `${domain}/${uniqueFileName}`;
 
-    return Response.json({ url: fileUrl }, { status: 200 });
+    // Upload thumbnail if generated
+    if (thumbBuffer) {
+      thumbFileName = `${timestamp}-${sanitizedName}-thumb.jpg`;
+      await S3.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: thumbFileName,
+        Body: thumbBuffer,
+        ContentType: 'image/jpeg',
+        ContentLength: thumbBuffer.byteLength,
+      })).catch(err => console.warn("Failed to upload thumbnail:", err));
+      thumbUrl = `${domain}/${thumbFileName}`;
+    }
+
+    return Response.json({
+      url: fileUrl,
+      thumbnailUrl: thumbUrl || fileUrl
+    }, { status: 200 });
 
   } catch (err) {
     console.error("Error in /api/uploadToR2:", err);

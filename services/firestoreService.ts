@@ -30,7 +30,8 @@ export const addImageToFirestore = async (
     originalWorkUrl?: string,
     licenseUrl?: string,
     location?: string,
-    keyframes?: string[]
+    keyframes?: string[],
+    thumbnailUrl?: string
 ) => {
     try {
         const id = generateImageId();
@@ -40,6 +41,7 @@ export const addImageToFirestore = async (
             body: JSON.stringify({
                 id,
                 imageUrl,
+                thumbnailUrl: thumbnailUrl || imageUrl,
                 uploaderUid: user.uid,
                 uploaderName: user.displayName || 'Anonymous',
                 uploaderPhotoURL: user.photoURL || '',

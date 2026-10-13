@@ -518,7 +518,7 @@ export async function onRequest(context) {
       return {
         id: v.id,
         videoUrl: v.imageUrl,
-        poster: v.imageUrl, // Will be paired with DARK_VIDEO_POSTER
+        poster: v.thumbnailUrl || v.imageUrl, // Will be paired with DARK_VIDEO_POSTER
         width: v.width || 1080,
         height: v.height || 1920,
         duration: v.duration || 15,

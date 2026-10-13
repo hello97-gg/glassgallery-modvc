@@ -7,8 +7,8 @@ interface BottomNavProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api';
-  setView: (view: 'home' | 'discover' | 'explore' | 'notifications' | 'api') => void;
+  activeView: 'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'app' | 'legal' | 'post';
+  setView: (view: 'home' | 'discover' | 'explore' | 'notifications' | 'api' | 'app') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications: Notification[];
   onNotificationsClick: () => void;

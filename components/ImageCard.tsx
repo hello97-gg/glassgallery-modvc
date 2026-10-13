@@ -31,13 +31,14 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [imageSrc, setImageSrc] = useState(image.imageUrl);
+  const isVideo = isVideoUrl(image.imageUrl);
+  const preferredSrc = (!isVideo && image.thumbnailUrl) ? image.thumbnailUrl : image.imageUrl;
+  const [imageSrc, setImageSrc] = useState(preferredSrc);
   const [isLikeAnimating, setIsLikeAnimating] = useState(false);
   const [revealed, setRevealed] = useState(false);
 
   const imgRef = React.useRef<HTMLImageElement>(null);
   const cardContainerRef = React.useRef<HTMLDivElement>(null);
-  const isVideo = isVideoUrl(image.imageUrl);
 
   // Impression view tracking (MRC Standard: >=50% in viewport for >= 1s)
   React.useEffect(() => {
@@ -74,7 +75,8 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   }, [image.id]);
 
   React.useEffect(() => {
-    setImageSrc(image.imageUrl);
+    const nextSrc = (!isVideoUrl(image.imageUrl) && image.thumbnailUrl) ? image.thumbnailUrl : image.imageUrl;
+    setImageSrc(nextSrc);
     setHasError(false);
     setRetryCount(0);
     setIsLoaded(false);
@@ -95,9 +97,14 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
     checkComplete();
     const timeout = setTimeout(checkComplete, 50); // Frame backup check
     return () => clearTimeout(timeout);
-  }, [image.imageUrl]);
+  }, [image.imageUrl, image.thumbnailUrl]);
 
   const handleImageError = () => {
+    // If thumbnail failed to load, seamlessly fall back to original full image URL
+    if (imageSrc !== image.imageUrl) {
+      setImageSrc(image.imageUrl);
+      return;
+    }
     if (retryCount < 3) {
       setTimeout(() => {
         setRetryCount(prev => prev + 1);

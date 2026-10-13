@@ -397,7 +397,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     setLoadingMessage(isVideoUpload ? 'Uploading video...' : 'Uploading image...');
     setError(null);
     try {
-      const { url: imageUrl } = await uploadImage(file);
+      const { url: imageUrl, thumbnailUrl } = await uploadImage(file);
       await addImageToFirestore(
         user,
         imageUrl,
@@ -408,7 +408,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         originalWorkUrl,
         license === 'Other' ? licenseUrl : '',
         location,
-        isVideoUpload ? videoKeyframes : undefined
+        isVideoUpload ? videoKeyframes : undefined,
+        thumbnailUrl
       );
       onUploadSuccess();
     } catch (err: any) {
