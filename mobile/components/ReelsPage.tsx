@@ -23,6 +23,7 @@ import {
 import { DARK_VIDEO_POSTER } from './VideoPlayer';
 import Spinner from './Spinner';
 import { downloadMedia } from '../services/mediaDownloader';
+import { isVideoUrl } from '../../utils/mediaUtils';
 
 interface ReelsPageProps {
   user: User | null;
