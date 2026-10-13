@@ -67,7 +67,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
   updateStatusMessage = null
 }) => {
   const [profileData, setProfileData] = useState<ProfileUser>(user);
-  const isOwner = loggedInUser?.uid === user.uploaderUid;
+  const isOwner = loggedInUser?.uid === user?.uploaderUid;
   
   // Tab Management
   const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'replies' | 'dashboard'>('created');
@@ -83,27 +83,53 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
 
+  // Created/Uploads Gallery State
+  const [allImages, setAllImages] = useState<ImageMeta[]>([]);
+  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Saved/Likes Gallery State
+  const [likedImages, setLikedImages] = useState<ImageMeta[]>([]);
+  const [displayedLikedImages, setDisplayedLikedImages] = useState<ImageMeta[]>([]);
+  const [likedCurrentIndex, setLikedCurrentIndex] = useState(0);
+  const [isLoadingLikes, setIsLoadingLikes] = useState(false);
+
+  // Modals & Controls State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [isFollowingUser, setIsFollowingUser] = useState(false);
+  const [followersModalType, setFollowersModalType] = useState<'followers' | 'following'>('followers');
+  const [isFollowPending, setIsFollowPending] = useState(false);
+  const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
+  const [showVerifiedModal, setShowVerifiedModal] = useState(false);
+
   // Synchronize hide replies preference with database profile + local fallback
   const isRepliesHidden = useMemo(() => {
-    if (typeof profileData.hideReplies === 'boolean') {
+    if (typeof profileData?.hideReplies === 'boolean') {
       return profileData.hideReplies;
     }
     try {
-      return localStorage.getItem(`gg_hide_replies_${user.uploaderUid}`) === 'true';
+      return localStorage.getItem(`gg_hide_replies_${user?.uploaderUid}`) === 'true';
     } catch {
       return false;
     }
-  }, [profileData.hideReplies, user.uploaderUid]);
+  }, [profileData?.hideReplies, user?.uploaderUid]);
 
   const handleToggleRepliesVisibility = async () => {
     const next = !isRepliesHidden;
     setProfileData(prev => ({ ...prev, hideReplies: next }));
     try {
-      localStorage.setItem(`gg_hide_replies_${user.uploaderUid}`, next ? 'true' : 'false');
+      if (user?.uploaderUid) {
+        localStorage.setItem(`gg_hide_replies_${user.uploaderUid}`, next ? 'true' : 'false');
+      }
       if (navigator.vibrate) navigator.vibrate(10);
     } catch {}
     try {
-      await updateUserProfile(profileData.uploaderUid, { hideReplies: next });
+      if (profileData?.uploaderUid) {
+        await updateUserProfile(profileData.uploaderUid, { hideReplies: next });
+      }
     } catch (err) {
       console.error("Failed to save hideReplies preference to database:", err);
     }
@@ -111,7 +137,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
 
   // Fetch User Replies
   const fetchUserReplies = useCallback(async () => {
-    if (!user.uploaderUid) return;
+    if (!user?.uploaderUid) return;
     setIsLoadingReplies(true);
     try {
       const comments = await getUserComments(user.uploaderUid, loggedInUser?.uid);
@@ -122,7 +148,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     } finally {
       setIsLoadingReplies(false);
     }
-  }, [user.uploaderUid, loggedInUser?.uid]);
+  }, [user?.uploaderUid, loggedInUser?.uid]);
 
   useEffect(() => {
     if (activeTab === 'replies' && !hasLoadedReplies) {
@@ -219,30 +245,9 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     }
   };
 
-  // Created/Uploads Gallery State
-  const [allImages, setAllImages] = useState<ImageMeta[]>([]);
-  const [displayedImages, setDisplayedImages] = useState<ImageMeta[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Saved/Likes Gallery State
-  const [likedImages, setLikedImages] = useState<ImageMeta[]>([]);
-  const [displayedLikedImages, setDisplayedLikedImages] = useState<ImageMeta[]>([]);
-  const [likedCurrentIndex, setLikedCurrentIndex] = useState(0);
-  const [isLoadingLikes, setIsLoadingLikes] = useState(false);
-
-  // Modals & Controls State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
-  const [followingCount, setFollowingCount] = useState(0);
-  const [isFollowingUser, setIsFollowingUser] = useState(false);
-  const [followersModalType, setFollowersModalType] = useState<'followers' | 'following'>('followers');
-  const [isFollowPending, setIsFollowPending] = useState(false);
-  const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
-  const [showVerifiedModal, setShowVerifiedModal] = useState(false);
-
   // Fetch Follow Stats (Uses stable user.uploaderUid to prevent any state evaluation loops!)
   const fetchFollowStats = useCallback(async () => {
+    if (!user?.uploaderUid) return;
     try {
       const stats = await getFollowStats(user.uploaderUid, loggedInUser?.uid);
       setFollowersCount(stats.followersCount);
@@ -251,11 +256,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     } catch (err) {
       console.error("Failed to fetch follow stats:", err);
     }
-  }, [user.uploaderUid, loggedInUser?.uid]);
+  }, [user?.uploaderUid, loggedInUser?.uid]);
 
   useEffect(() => {
     fetchFollowStats();
-  }, [fetchFollowStats, user.uploaderUid, loggedInUser?.uid]);
+  }, [fetchFollowStats, user?.uploaderUid, loggedInUser?.uid]);
 
   const handleFollowToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -304,8 +309,10 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     setProfileData(user);
     
     // Instantly filter from hybrid cache!
-    const cachedCreated = cacheAllImages.filter(img => img.uploaderUid === user.uploaderUid);
-    const cachedSaved = cacheAllImages.filter(img => img.likedBy?.includes(user.uploaderUid));
+    const allImgs = cacheAllImages || [];
+    const uid = user?.uploaderUid;
+    const cachedCreated = uid ? allImgs.filter(img => img.uploaderUid === uid) : [];
+    const cachedSaved = uid ? allImgs.filter(img => img.likedBy?.includes(uid)) : [];
     
     setAllImages(cachedCreated);
     setDisplayedImages(cachedCreated.slice(0, PAGE_SIZE));
@@ -318,17 +325,18 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     setActiveTab('created');
 
     const fetchProfile = async () => {
-        const fullProfile = await getUserProfile(user.uploaderUid);
+        if (!uid) return;
+        const fullProfile = await getUserProfile(uid);
         if (mounted && fullProfile) {
             setProfileData(prev => ({ ...prev, ...fullProfile }));
         }
     };
     fetchProfile();
     return () => { mounted = false; };
-  }, [user.uploaderUid, cacheAllImages]);
+  }, [user?.uploaderUid, cacheAllImages]);
 
   const totalLikes = useMemo(() => {
-    return allImages.reduce((sum, img) => sum + (img.likeCount || 0), 0);
+    return (allImages || []).reduce((sum, img) => sum + (img.likeCount || 0), 0);
   }, [allImages]);
 
   // Auto-equip and save Verified Creator status in DB when milestones are unlocked

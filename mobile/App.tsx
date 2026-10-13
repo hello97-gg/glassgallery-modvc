@@ -841,7 +841,21 @@ const App: React.FC = () => {
     if (imagesLoading || allImages.length === 0 || isLoadingMore.current) return;
 
     if (currentIndex >= allImages.length) {
-      isLoadingMore.current = false;
+      // For small image sets (under 50), seamlessly loop images so the user has an endless feed
+      if (allImages.length > 0 && allImages.length <= 50) {
+        isLoadingMore.current = true;
+        const uniqueTime = Date.now();
+        const loopImages = allImages.slice(0, FEED_BATCH_SIZE);
+        const processed = loopImages.map((img, idx) => ({
+            ...img,
+            id: `${img.id}_loop_${uniqueTime}_${idx}`
+        }));
+        setDisplayedImages(prev => [...prev, ...processed]);
+        setCurrentIndex(FEED_BATCH_SIZE);
+        requestAnimationFrame(() => { isLoadingMore.current = false; });
+      } else {
+        isLoadingMore.current = false;
+      }
       return;
     }
 
@@ -861,7 +875,7 @@ const App: React.FC = () => {
     }
 
     requestAnimationFrame(() => { isLoadingMore.current = false; });
-  }, [currentIndex, allImages, imagesLoading]);
+  }, [currentIndex, allImages, imagesLoading, FEED_BATCH_SIZE]);
 
   useEffect(() => {
     let ticking = false;
@@ -870,9 +884,9 @@ const App: React.FC = () => {
       ticking = true;
       requestAnimationFrame(() => {
         if (activeView === 'home' && !isLoadingMore.current) {
-            const scrollThreshold = 500;
-            const hasUserScrolled = window.scrollY > 50;
-            const isNearBottom = hasUserScrolled && (window.innerHeight + window.scrollY >= document.documentElement.offsetHeight - scrollThreshold);
+            const scrollThreshold = 800;
+            const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+            const isNearBottom = (window.innerHeight + scrollY >= document.documentElement.offsetHeight - scrollThreshold);
             
             if (isNearBottom) {
               loadMoreImages();
@@ -885,6 +899,15 @@ const App: React.FC = () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [loadMoreImages, activeView]);
+
+  // Auto-fill effect: if initial or rendered feed is shorter than viewport + 300px, immediately load more images
+  useEffect(() => {
+    if (activeView === 'home' && displayedImages.length > 0 && !imagesLoading && !isLoadingMore.current) {
+      if (document.documentElement.offsetHeight <= window.innerHeight + 300 && currentIndex < allImages.length) {
+        loadMoreImages();
+      }
+    }
+  }, [activeView, displayedImages.length, currentIndex, allImages.length, imagesLoading, loadMoreImages]);
 
   // --- Full-screen drag-and-drop ---
   const handleDragEnter = useCallback((e: DragEvent) => {
@@ -1274,16 +1297,19 @@ const App: React.FC = () => {
         );
     }
 
-    if (activeView === 'profile' && profileUser) {
+    if (activeView === 'profile') {
+        if (!profileUser) {
+            return <SkeletonGrid />;
+        }
         return (
             <>
                 <SEOHead 
-                    title={`${profileUser.uploaderName}'s Profile`}
-                    description={`Check out photos and images uploaded by ${profileUser.uploaderName} on Glass Gallery.`}
-                    imageUrl={profileUser.uploaderPhotoURL}
+                    title={`${profileUser.uploaderName || 'User'}'s Profile`}
+                    description={`Check out photos and images uploaded by ${profileUser.uploaderName || 'User'} on Glass Gallery.`}
+                    imageUrl={profileUser.uploaderPhotoURL || ''}
                     type="profile"
                     url={window.location.href}
-                    favicon={profileUser.uploaderPhotoURL}
+                    favicon={profileUser.uploaderPhotoURL || undefined}
                 />
                 <ProfilePage 
                     key={profileUser.uploaderUid}
@@ -1294,9 +1320,10 @@ const App: React.FC = () => {
                     onViewProfile={handleViewProfile} 
                     onLikeToggle={handleLikeToggle}
                     onLocationClick={handleLocationClick}
-                    allImages={allImages}
+                    allImages={allImages || []}
                     onLongPress={setLongPressedImage}
                     onViewFollowList={handleViewFollowList}
+                    onCheckUpdates={checkForUpdates}
                 />
             </>
         );
@@ -1359,7 +1386,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-background text-primary font-sans">
+    <div className="flex flex-col md:flex-row min-h-screen w-full bg-background text-primary font-sans">
       {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
       {activeView === 'home' && !profileUser && (
         <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#0a0a0a]/95 border-b border-white/5 flex items-center justify-between px-5 backdrop-blur-md md:hidden select-none">
