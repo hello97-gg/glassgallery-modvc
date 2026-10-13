@@ -29,6 +29,7 @@ interface ReelsPageProps {
   onImageUpdate?: (image: ImageMeta) => void;
   initialReelId?: string | null;
   allImages?: ImageMeta[];
+  refreshTrigger?: number;
 }
 
 interface FloatingHeart {
@@ -108,7 +109,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   onLikeToggle,
   onImageUpdate,
   initialReelId,
-  allImages = []
+  allImages = [],
+  refreshTrigger
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -431,6 +433,60 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     loadInitial();
     return () => { active = false; };
   }, [user?.uid, initialReelId]);
+
+  // Force change and pull fresh new reels whenever requested
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const forceRefreshReels = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    showToast("Pulling fresh reels...");
+
+    // Pause all current videos and reset playback
+    videoRefs.current.forEach(v => {
+      try { v.pause(); v.currentTime = 0; } catch {}
+    });
+
+    // Scroll smoothly/instantly to top
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
+    setCurrentIndex(0);
+    try { sessionStorage.setItem('gg_reels_last_index', '0'); } catch {}
+
+    try {
+      const res = await fetchReelsFeed({
+        userUid: user?.uid,
+        cursor: 0,
+        limit: 10,
+        forceRefresh: true
+      });
+
+      if (res.reels && res.reels.length > 0) {
+        setReels(res.reels);
+        setNextCursor(res.nextCursor);
+        setHasMore(res.hasMore);
+        try {
+          localStorage.setItem('cached_reels_feed', JSON.stringify(res.reels.slice(0, 15)));
+        } catch {}
+        showToast("Pulled fresh reels!");
+      } else {
+        showToast("No new reels available");
+      }
+    } catch (err) {
+      console.warn("Failed to force refresh reels:", err);
+      showToast("Unable to refresh reels");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [isRefreshing, user?.uid, showToast]);
+
+  const prevRefreshTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger !== prevRefreshTriggerRef.current) {
+      prevRefreshTriggerRef.current = refreshTrigger;
+      forceRefreshReels();
+    }
+  }, [refreshTrigger, forceRefreshReels]);
 
   // Load more reels when near the bottom
   const loadMore = useCallback(async () => {
@@ -1053,13 +1109,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   const activeDuration = activeVideoEl?.duration || currentReel?.duration || 15;
 
   return (
-    <div className="fixed inset-0 z-40 bg-black flex flex-col overflow-hidden text-white select-none touch-manipulation">
+    <div className="fixed inset-0 z-30 bg-black flex flex-col overflow-hidden text-white select-none touch-manipulation">
       {/* Top Floating Transparent Header */}
       <div 
         className="absolute top-0 left-0 right-0 z-30 pointer-events-none flex items-center justify-between px-4 pb-6 bg-gradient-to-b from-black/80 via-black/35 to-transparent"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 16px) + 8px)' }}
       >
-        <div className="flex items-center gap-3 pointer-events-auto">
+        <div className="flex items-center gap-2.5 pointer-events-auto">
           {/* Back Button */}
           <button
             onClick={onBack}
@@ -1071,6 +1127,21 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
             </svg>
           </button>
           <span className="font-bold text-base tracking-wide drop-shadow-md">Reels</span>
+
+          {/* Force Pull New Reels Button */}
+          <button
+            onClick={() => forceRefreshReels()}
+            disabled={isRefreshing}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/15 text-xs font-semibold text-white/90 hover:text-white active:scale-95 transition-all shadow-md ml-1 ${
+              isRefreshing ? 'opacity-60 pointer-events-none' : ''
+            }`}
+            title="Pull New Reels"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.25}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>{isRefreshing ? 'Pulling...' : 'New Reels'}</span>
+          </button>
         </div>
 
         {/* Top Right Actions: Mute / Speed */}
@@ -1295,7 +1366,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       {/* Current Reel Overlay: Right Action Stack + Bottom-Left Info */}
       <div 
         className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-end"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 12px)' }}
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 76px)' }}
       >
         {/* Soft Bottom Gradient behind text and action stack */}
         <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />

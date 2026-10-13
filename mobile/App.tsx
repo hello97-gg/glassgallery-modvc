@@ -298,6 +298,7 @@ const App: React.FC = () => {
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
   const [lastView, setLastView] = useState<'home' | 'explore' | 'reels' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal'>('home');
   const [initialReelId, setInitialReelId] = useState<string | null>(null);
+  const [reelsRefreshTrigger, setReelsRefreshTrigger] = useState<number>(0);
   const savedPinHistoryRef = useRef<ImageMeta[]>([]);
   
   // Standalone Follow/Unfollow view variables
@@ -1044,26 +1045,8 @@ const App: React.FC = () => {
       return;
     }
 
-    // Clean up any existing view transition names safely without querying whole document
-    const activeVTs = document.querySelectorAll('[style*="view-transition-name"]');
-    activeVTs.forEach((el: any) => el?.style?.removeProperty('view-transition-name'));
-
-    // Pinterest-style shared element expansion using View Transitions API
-    const cardEl = document.getElementById(`pin-card-${image.id}`);
-    if (cardEl && (document as any).startViewTransition) {
-      const imgEl = cardEl.querySelector('img') || cardEl.querySelector('video') || cardEl;
-      imgEl.style.setProperty('view-transition-name', 'pin-active');
-      const transition = (document as any).startViewTransition(() => {
-        pushPin();
-      });
-      transition.finished.finally(() => {
-        imgEl.style.removeProperty('view-transition-name');
-        const heroEl = document.getElementById('hero-detail-image');
-        if (heroEl) heroEl.style.removeProperty('view-transition-name');
-      });
-    } else {
-      pushPin();
-    }
+    // Instant native-style modal open (zero frame delay, no DOM freeze)
+    pushPin();
 
     // Record view for server-side taste profile (fire-and-forget)
     if (user) {
@@ -1076,64 +1059,28 @@ const App: React.FC = () => {
   const handlePopPin = useCallback(() => {
     if (pinHistory.length === 0) return;
 
-    const popPin = () => {
-      if (pinHistory.length > 1) {
-        // Pop pin B -> pin A
-        const nextHistory = pinHistory.slice(0, -1);
-        const prevPin = nextHistory[nextHistory.length - 1];
-        setPinHistory(nextHistory);
-        updateURL({ image: prevPin.id });
-      } else {
-        // Pop pin A -> feed
-        setPinHistory([]);
-        if (deepLinkUnsubscribeRef.current) {
-          deepLinkUnsubscribeRef.current();
-          deepLinkUnsubscribeRef.current = null;
-        }
-        if (activeView === 'profile' && profileUser) {
-          updateURL({ user: profileUser.uploaderUid });
-        } else if (activeView === 'explore' && exploreSearchTerm) {
-          updateURL({ search: exploreSearchTerm });
-        } else if (activeView === 'api') {
-          updateURL({ view: 'api' });
-        } else {
-          updateURL(null);
-        }
-      }
-    };
-
-    const currentPin = pinHistory[pinHistory.length - 1];
-    const targetCardId = pinHistory.length > 1 
-      ? `pin-card-${pinHistory[pinHistory.length - 2].id}`
-      : `pin-card-${currentPin.id}`;
-
-    const targetEl = document.getElementById(targetCardId);
-    if ((document as any).startViewTransition) {
-      document.querySelectorAll('*').forEach((el: any) => {
-        if (el.style && el.style.viewTransitionName) {
-          el.style.removeProperty('view-transition-name');
-        }
-      });
-      const heroEl = document.getElementById('hero-detail-image');
-      if (heroEl) {
-        heroEl.style.setProperty('view-transition-name', 'pin-active');
-      }
-      const transition = (document as any).startViewTransition(() => {
-        popPin();
-      });
-      if (targetEl) {
-        const img = targetEl.querySelector('img') || targetEl.querySelector('video') || targetEl;
-        img.style.setProperty('view-transition-name', 'pin-active');
-      }
-      transition.finished.finally(() => {
-        if (heroEl) heroEl.style.removeProperty('view-transition-name');
-        if (targetEl) {
-          const img = targetEl.querySelector('img') || targetEl.querySelector('video') || targetEl;
-          img.style.removeProperty('view-transition-name');
-        }
-      });
+    if (pinHistory.length > 1) {
+      // Pop pin B -> pin A
+      const nextHistory = pinHistory.slice(0, -1);
+      const prevPin = nextHistory[nextHistory.length - 1];
+      setPinHistory(nextHistory);
+      updateURL({ image: prevPin.id });
     } else {
-      popPin();
+      // Pop pin A -> feed
+      setPinHistory([]);
+      if (deepLinkUnsubscribeRef.current) {
+        deepLinkUnsubscribeRef.current();
+        deepLinkUnsubscribeRef.current = null;
+      }
+      if (activeView === 'profile' && profileUser) {
+        updateURL({ user: profileUser.uploaderUid });
+      } else if (activeView === 'explore' && exploreSearchTerm) {
+        updateURL({ search: exploreSearchTerm });
+      } else if (activeView === 'api') {
+        updateURL({ view: 'api' });
+      } else {
+        updateURL(null);
+      }
     }
   }, [pinHistory, activeView, profileUser, exploreSearchTerm]);
   
@@ -1266,6 +1213,21 @@ const App: React.FC = () => {
   };
   
   const handleSetView = (view: 'home' | 'explore' | 'reels' | 'notifications' | 'api') => {
+    if (view === 'reels') {
+      if (activeView !== 'reels') {
+        setLastView(activeView);
+      }
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      setActiveView('reels');
+      setInitialReelId(null);
+      setProfileUser(null);
+      setExploreSearchTerm('');
+      updateURL(null);
+      // Force change and pull new reels whenever pressed reels button
+      setReelsRefreshTrigger(Date.now());
+      return;
+    }
+
     if (view === activeView && (view === 'home' || view === 'explore')) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setAllImages(prevImages => {
@@ -1500,6 +1462,7 @@ const App: React.FC = () => {
                 onImageUpdate={handleImageUpdate}
                 initialReelId={initialReelId}
                 allImages={allImages}
+                refreshTrigger={reelsRefreshTrigger}
             />
         );
     }

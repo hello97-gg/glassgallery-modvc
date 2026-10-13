@@ -49,6 +49,29 @@ export interface ReelTrackingEvent {
 const DEVICE_ID_KEY = 'gg_reels_device_id';
 const SESSION_TASTE_KEY = 'gg_reels_session_taste';
 const FAST_SKIP_TAGS_KEY = 'gg_reels_fast_skip_tags';
+const SESSION_SEEN_KEY = 'gg_reels_session_seen';
+
+export const recordSessionSeen = (videoId: string): void => {
+  try {
+    const baseId = (videoId || '').split('_loop_')[0].split('_rel_loop_')[0].trim();
+    if (!baseId) return;
+    const raw = sessionStorage.getItem(SESSION_SEEN_KEY);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(baseId)) {
+      list.push(baseId);
+      sessionStorage.setItem(SESSION_SEEN_KEY, JSON.stringify(list.slice(-60)));
+    }
+  } catch {}
+};
+
+export const getSessionSeenIds = (): string[] => {
+  try {
+    const raw = sessionStorage.getItem(SESSION_SEEN_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
 
 export const getOrCreateDeviceId = (): string => {
   try {
@@ -170,6 +193,7 @@ class ReelsTracker {
 
   public track(event: ReelTrackingEvent) {
     this.queue.push(event);
+    recordSessionSeen(event.videoId);
 
     // Instant local adaptation
     const ratio = event.watchMs / (Math.max(event.duration, 0.1) * 1000);
@@ -263,6 +287,7 @@ export interface FetchReelsOptions {
   limit?: number;
   userUid?: string | null;
   startId?: string | null;
+  forceRefresh?: boolean;
 }
 
 export const fetchReelsFeed = async (options: FetchReelsOptions = {}): Promise<{
@@ -270,6 +295,11 @@ export const fetchReelsFeed = async (options: FetchReelsOptions = {}): Promise<{
   nextCursor: number | null;
   hasMore: boolean;
 }> => {
+  // Flush any pending watch events before fetching new feed on force refresh
+  if (options.forceRefresh) {
+    try { await reelsTracker.flush(); } catch {}
+  }
+
   const deviceId = getOrCreateDeviceId();
   const params = new URLSearchParams();
   params.set('action', 'feed');
@@ -278,6 +308,12 @@ export const fetchReelsFeed = async (options: FetchReelsOptions = {}): Promise<{
   if (options.cursor !== undefined && options.cursor !== null) params.set('cursor', options.cursor.toString());
   if (options.limit) params.set('limit', options.limit.toString());
   if (options.startId) params.set('startId', options.startId);
+  if (options.forceRefresh) params.set('_t', Date.now().toString());
+
+  const seenList = getSessionSeenIds();
+  if (seenList.length > 0) {
+    params.set('seenIds', seenList.slice(-50).join(','));
+  }
 
   const res = await fetch(`/api/reels?${params.toString()}`);
   if (!res.ok) {

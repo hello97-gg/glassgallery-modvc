@@ -12,7 +12,7 @@ export const REELS_ALGO_CONFIG = {
   alpha: 1.8,       // Creator affinity boost
   beta: 1.2,        // Normalized popularity weight
   gamma: 0.8,       // Freshness boost for recent uploads
-  delta: 5.0,       // Seen penalty for videos viewed in last 24h
+  delta: 50.0,      // Aggressive seen penalty
   eta: 0.2,         // Learning rate for taste updates
   decay_lambda: Math.LN2 / (14 * 86400 * 1000), // 14-day exponential decay half-life in ms
 };
@@ -279,7 +279,7 @@ export async function onRequest(context) {
       } catch (err) {}
     }
 
-    // 4. Fetch Liked Video IDs for user
+    // 4. Fetch Liked Video IDs for user (both from likes table and reel_events)
     const likedSet = new Set();
     if (userUid) {
       try {
@@ -291,16 +291,41 @@ export async function onRequest(context) {
       } catch (err) {}
     }
 
-    // 5. Fetch Recently Seen Videos (last 24 hours)
-    const recentlySeenMap = new Map(); // videoId -> count
+    // 5. Fetch comprehensive watch history for user/device (last 30 days)
+    // and parse client-reported session seen IDs
+    const clientSeenParam = url.searchParams.get('seenIds') || '';
+    const clientSeenSet = new Set(
+      clientSeenParam.split(',').map(s => s.trim().split('_loop_')[0].split('_rel_loop_')[0]).filter(Boolean)
+    );
+
+    const seenInfoMap = new Map(); // videoId -> { count, completed, watchMs, lastSeen, liked }
     if (userOrDeviceId) {
       try {
-        const dayAgo = now - (24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
         const seenRes = await db.execute({
-          sql: `SELECT video_id, COUNT(*) as cnt FROM reel_events WHERE user_or_device_id = ? AND timestamp > ? GROUP BY video_id`,
-          args: [userOrDeviceId, dayAgo]
+          sql: `SELECT video_id, 
+                       COUNT(*) as cnt, 
+                       MAX(completed) as was_completed, 
+                       MAX(liked) as was_liked,
+                       MAX(watch_ms) as max_watch,
+                       MAX(timestamp) as last_seen
+                FROM reel_events 
+                WHERE user_or_device_id = ? AND timestamp > ? 
+                GROUP BY video_id`,
+          args: [userOrDeviceId, thirtyDaysAgo]
         });
-        seenRes.rows.forEach(r => recentlySeenMap.set(r.video_id, parseInt(r.cnt) || 1));
+        seenRes.rows.forEach(r => {
+          seenInfoMap.set(r.video_id, {
+            count: parseInt(r.cnt) || 1,
+            completed: parseInt(r.was_completed) || 0,
+            watchMs: parseInt(r.max_watch) || 0,
+            lastSeen: parseInt(r.last_seen) || now,
+            liked: parseInt(r.was_liked) || 0
+          });
+          if (parseInt(r.was_liked) === 1) {
+            likedSet.add(r.video_id);
+          }
+        });
       } catch (err) {}
     }
 
@@ -312,8 +337,7 @@ export async function onRequest(context) {
       maxDownloads = Math.max(maxDownloads, parseInt(v.downloadCount) || 0);
     });
 
-    // 7. Score every candidate reel:
-    // score(v) = sum(w_k) + alpha * creator_affinity + beta * popularity + gamma * freshness - delta * seen_penalty + epsilon
+    // 7. Score every candidate reel with AGGRESSIVE anti-repeat penalties:
     const scoredList = candidateVideos.map(vid => {
       let tags = [];
       let concepts = [];
@@ -340,15 +364,44 @@ export async function onRequest(context) {
       const normDownloads = (parseInt(vid.downloadCount) || 0) / maxDownloads;
       const popularity = (normLikes * 0.7) + (normDownloads * 0.3);
 
-      // d) Freshness (exponential decay over 72h)
+      // d) Freshness (decay over 72h)
       let uploadTime = now;
       try { uploadTime = new Date(vid.uploadedAt).getTime() || now; } catch {}
       const ageHours = Math.max((now - uploadTime) / (3600 * 1000), 0);
       const freshness = Math.max(0, 1.0 - (ageHours / 72.0));
 
-      // e) Seen penalty
-      const seenCount = recentlySeenMap.get(vid.id) || 0;
-      const seenPenalty = seenCount * REELS_ALGO_CONFIG.delta;
+      // e) AGGRESSIVE ANTI-REPEAT PENALTIES
+      // 1. Liked penalty: videos already liked should NOT repeat in discovery feed
+      const isLiked = likedSet.has(vid.id);
+      const likedPenalty = isLiked ? 350.0 : 0.0;
+
+      // 2. Watched / Seen penalty
+      const inClientSeen = clientSeenSet.has(vid.id);
+      const seenInfo = seenInfoMap.get(vid.id);
+      const seenCount = (seenInfo ? seenInfo.count : 0) + (inClientSeen ? 1 : 0);
+      let seenPenalty = 0;
+
+      if (seenCount > 0) {
+        const timeSince = seenInfo?.lastSeen ? (now - seenInfo.lastSeen) : 0;
+        if (inClientSeen || timeSince < 2 * 3600 * 1000) {
+          // Seen in current session or within last 2 hours: absolute maximum penalty
+          seenPenalty = 300.0;
+        } else if (timeSince < 24 * 3600 * 1000) {
+          // Seen in last 24h
+          seenPenalty = 180.0 + (seenCount * 40.0);
+        } else if (timeSince < 7 * 86400 * 1000) {
+          // Seen in last 7 days
+          seenPenalty = 90.0 + (seenCount * 25.0);
+        } else {
+          // Older history
+          seenPenalty = 50.0 * seenCount;
+        }
+
+        // Additional penalty if user completed video or watched > 6 seconds
+        if (seenInfo?.completed || (seenInfo?.watchMs && seenInfo.watchMs > 6000)) {
+          seenPenalty += 60.0;
+        }
+      }
 
       // f) Deterministic jitter
       const jitter = deterministicJitter(vid.id);
@@ -358,7 +411,10 @@ export async function onRequest(context) {
         + (REELS_ALGO_CONFIG.beta * popularity)
         + (REELS_ALGO_CONFIG.gamma * freshness)
         - seenPenalty
+        - likedPenalty
         + jitter;
+
+      const isUnseen = !isLiked && seenCount === 0 && !inClientSeen;
 
       return {
         video: vid,
@@ -369,23 +425,34 @@ export async function onRequest(context) {
         creatorAffinity,
         popularity,
         freshness,
-        seenCount
+        seenCount,
+        isLiked,
+        isUnseen,
+        seenPenalty,
+        likedPenalty
       };
     });
 
-    // 8. Feed Mixing: 70% personalized, 20% exploration, 10% fresh/trending
+    // 8. Strict Unseen-First Feed Partition:
+    // Sort all candidates by totalScore
     scoredList.sort((a, b) => b.totalScore - a.totalScore);
 
-    const personalizedPool = [...scoredList];
-    const explorePool = [...scoredList].sort((a, b) => {
-      // Find reels with low taste score but high popularity
+    const unseenList = scoredList.filter(s => s.isUnseen);
+    const seenList = scoredList.filter(s => !s.isUnseen);
+
+    // Feed Mixing Pools:
+    // Build from unseen candidates first to guarantee zero repetition!
+    const activePool = unseenList.length >= limit ? unseenList : scoredList;
+
+    const personalizedPool = [...activePool];
+    const explorePool = [...activePool].sort((a, b) => {
       const aExplore = a.popularity - (a.tasteScore * 0.5);
       const bExplore = b.popularity - (b.tasteScore * 0.5);
       return bExplore - aExplore;
     });
-    const freshPool = [...scoredList].sort((a, b) => b.freshness - a.freshness);
+    const freshPool = [...activePool].sort((a, b) => b.freshness - a.freshness);
 
-    // 9. Diverse assembly enforcing creator diversity:
+    // 9. Diverse assembly enforcing creator diversity & unseen priority:
     // Max 2 reels from the same creator in any 5 consecutive reels!
     const finalSelection = [];
     const usedIds = new Set();
@@ -422,16 +489,15 @@ export async function onRequest(context) {
         candidate = freshPool[fIdx++] || null;
       }
 
-      // Fallback if category pool exhausted
+      // Fallback: pick next highest unused unseen video, then next highest scored
       if (!candidate) {
-        candidate = scoredList.find(s => !usedIds.has(s.video.id));
+        candidate = unseenList.find(s => !usedIds.has(s.video.id)) || scoredList.find(s => !usedIds.has(s.video.id));
       }
       if (!candidate) break; // All videos exhausted
 
       // Check Creator Diversity: no more than 2 in last 5
       const creatorCount = recentCreators.slice(-4).filter(c => c === candidate.video.uploaderUid).length;
       if (creatorCount >= 2 && scoredList.some(s => !usedIds.has(s.video.id) && s.video.uploaderUid !== candidate.video.uploaderUid)) {
-        // Find alternative candidate with different creator
         const alt = scoredList.find(s => !usedIds.has(s.video.id) && s.video.uploaderUid !== candidate.video.uploaderUid);
         if (alt) candidate = alt;
       }

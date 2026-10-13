@@ -38,7 +38,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
     }
   };
 
-  const isNavVisible = visible && activeView !== 'reels';
+  const isNavVisible = visible;
 
   return (
     <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#111111]/95 border border-white/10 rounded-[32px] px-3.5 py-2 flex items-center justify-between gap-1 shadow-2xl z-40 md:hidden w-[295px] backdrop-blur-md select-none transition-all duration-300 ease-out ${

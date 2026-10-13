@@ -1238,7 +1238,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
       <div 
         ref={modalRef}
-        className="bg-[#0a0a0a] w-full md:max-w-6xl h-full md:h-[92vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative shadow-none md:shadow-2xl md:rounded-3xl border-0" 
+        className="bg-[#0a0a0a] w-full md:max-w-6xl h-full md:h-[92vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative shadow-none md:shadow-2xl md:rounded-3xl border-0 animate-modal-enter" 
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left Column: Pin image & details */}
@@ -1249,7 +1249,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           {/* Main Hero Image Container - Edge-to-edge on mobile, contained on desktop */}
           <div className="bg-[#0a0a0a] flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative select-none w-full min-h-[260px]">
             {isVideoUrl(currentImage.imageUrl) ? (
-              <div id="hero-detail-image" style={{ viewTransitionName: 'pin-active' }} className="w-full relative group">
+              <div id="hero-detail-image" className="w-full relative group">
                 <VideoPlayer 
                   src={currentImage.imageUrl}
                   poster={currentImage.imageUrl}
@@ -1282,7 +1282,6 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 id="hero-detail-image"
                 src={currentImage.imageUrl} 
                 alt={currentImage.title || 'Pinterest Pin'} 
-                style={{ viewTransitionName: 'pin-active' }}
                 className={`w-full max-h-[72vh] md:max-h-[80vh] object-contain rounded-b-[20px] md:rounded-2xl transition-transform duration-300 ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
                 onClick={isFlagged && !revealed ? undefined : handleImageTap}
               />
