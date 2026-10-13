@@ -74,15 +74,56 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     return [...defaults, ...extras];
   }, [allImages, selectedFlags]);
 
+  const isCurrentFileVideo = (f?: File | null) => {
+    if (!f) return false;
+    return f.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|ogg|m4v)$/i.test(f.name);
+  };
+
+  const captureVideoFrame = (videoSrc: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.crossOrigin = 'anonymous';
+      video.muted = true;
+      video.playsInline = true;
+      video.src = videoSrc;
+      video.onloadeddata = () => {
+        video.currentTime = Math.min(1.0, (video.duration || 2) / 2);
+      };
+      video.onseeked = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.min(video.videoWidth || 640, 640);
+          canvas.height = Math.round((video.videoHeight || 360) * (canvas.width / (video.videoWidth || 640)));
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          } else {
+            resolve('');
+          }
+        } catch {
+          resolve('');
+        }
+      };
+      video.onerror = () => resolve('');
+    });
+  };
+
   const handleAutoTag = async () => {
     if (!preview) return;
     setIsAutoTagging(true);
     setError(null);
     try {
+        let imagePayload = preview;
+        if (isCurrentFileVideo(file)) {
+          const frame = await captureVideoFrame(preview);
+          if (frame) imagePayload = frame;
+        }
+
         const response = await fetch('/api/images?action=auto_tags', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: preview })
+            body: JSON.stringify({ image: imagePayload })
         });
         const data = await response.json();
         if (data.success) {
@@ -93,11 +134,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                 setSelectedFlags(data.tags);
             }
         } else {
-            setError(data.error || "Failed to auto-tag image.");
+            setError(data.error || "Failed to auto-tag file.");
         }
     } catch (err: any) {
         console.error("Auto tagging failed:", err);
-        setError("Failed to auto-tag image. Please try again.");
+        setError("Failed to auto-tag file. Please try again.");
     } finally {
         setIsAutoTagging(false);
     }
@@ -198,41 +239,64 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   };
 
   const handleFileSelect = async (selectedFile: File) => {
-    if (selectedFile && selectedFile.type.startsWith('image/')) {
+    const isImage = selectedFile && (selectedFile.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(selectedFile.name));
+    const isVideo = selectedFile && (selectedFile.type.startsWith('video/') || /\.(mp4|webm|ogg|mkv|mov|avi|m4v)$/i.test(selectedFile.name));
+
+    if (selectedFile && (isImage || isVideo)) {
+        const FIFTY_MB = 50 * 1024 * 1024;
+        if (isVideo && selectedFile.size > FIFTY_MB) {
+            const sizeMB = (selectedFile.size / (1024 * 1024)).toFixed(1);
+            setError(`Video file size (${sizeMB}MB) exceeds the maximum allowed limit of 50MB. Please choose a shorter or compressed video.`);
+            return;
+        }
+
         setIsLoading(true);
-        setLoadingMessage('Compressing image...');
         setError(null);
         setPreview(null);
         setFile(null);
 
         try {
-            const options = {
-                maxSizeMB: 2,
-                maxWidthOrHeight: 1920,
-                useWebWorker: true,
-            };
-            
-            const compressedFile = await imageCompression(selectedFile, options);
-            
-            setFile(compressedFile);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const previewUrl = reader.result as string;
+            if (isImage) {
+                setLoadingMessage('Compressing image...');
+                const options = {
+                    maxSizeMB: 2,
+                    maxWidthOrHeight: 1920,
+                    useWebWorker: true,
+                };
+                
+                const compressedFile = await imageCompression(selectedFile, options);
+                setFile(compressedFile);
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const previewUrl = reader.result as string;
+                    setPreview(previewUrl);
+                    setIsLoading(false);
+                    setStep(2);
+                };
+                reader.readAsDataURL(compressedFile);
+            } else if (isVideo) {
+                setLoadingMessage('Loading video...');
+                setFile(selectedFile);
+                const previewUrl = URL.createObjectURL(selectedFile);
                 setPreview(previewUrl);
+                setSelectedFlags(prev => {
+                  const set = new Set(prev);
+                  set.add('Video');
+                  set.add('Reels');
+                  return Array.from(set);
+                });
                 setIsLoading(false);
-                setStep(2); // Automatically transition to Step 2
-            };
-            reader.readAsDataURL(compressedFile);
-
+                setStep(2);
+            }
         } catch (err) {
-            console.error("Image compression error:", err);
-            setError("Could not process the image. Please try a different one.");
+            console.error("File processing error:", err);
+            setError("Could not process the file. Please try a different one.");
             setFile(null);
             setPreview(null);
             setIsLoading(false);
         }
     } else {
-        setError("Please select a valid image file.");
+        setError("Please select a valid image or video file.");
     }
   };
   
@@ -359,9 +423,9 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                       </div>
-                      <span className="text-white font-bold text-base">Pick from Gallery</span>
-                      <span className="text-neutral-400 text-xs mt-1 text-center">Choose from device photo gallery</span>
-                      <input id="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="image/*" />
+                      <span className="text-white font-bold text-base">Pick Photo or Video</span>
+                      <span className="text-neutral-400 text-xs mt-1 text-center">Choose photo or video from device gallery</span>
+                      <input id="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="image/*,video/*" />
                     </label>
                   </div>
                 )}
@@ -371,10 +435,23 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                   <div className="space-y-4">
                     {/* Small preview thumbnail with AI Auto tag */}
                     <div className="flex gap-4 p-3 bg-neutral-900/60 rounded-2xl border border-white/5 items-center">
-                      <img src={preview} alt="Chosen file preview" className="w-16 h-16 rounded-xl object-cover border border-white/10" />
+                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/10 flex-shrink-0 bg-black">
+                        {isCurrentFileVideo(file) ? (
+                          <>
+                            <video src={preview} className="w-full h-full object-cover" muted playsInline />
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white drop-shadow" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          </>
+                        ) : (
+                          <img src={preview} alt="Chosen file preview" className="w-full h-full object-cover" />
+                        )}
+                      </div>
                       <div className="flex-grow min-w-0">
-                        <p className="text-white text-xs font-bold truncate">Selected File</p>
-                        <p className="text-neutral-400 text-[10px]">Ready to process</p>
+                        <p className="text-white text-xs font-bold truncate">{file?.name || 'Selected File'}</p>
+                        <p className="text-neutral-400 text-[10px]">{isCurrentFileVideo(file) ? 'Video / Reel ready' : 'Image ready to process'}</p>
                       </div>
                       <button 
                         type="button" 
@@ -580,8 +657,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                   <div className="space-y-4">
                     {/* Pinterest Style Card Summary Preview */}
                     <div className="bg-neutral-950 rounded-[28px] overflow-hidden border border-white/10 p-4">
-                      <div className="relative h-48 w-full rounded-2xl overflow-hidden border border-white/5 mb-4">
-                        <img src={preview} alt="Final Preview" className="w-full h-full object-cover" />
+                      <div className="relative h-48 w-full rounded-2xl overflow-hidden border border-white/5 mb-4 bg-black">
+                        {isCurrentFileVideo(file) ? (
+                          <video src={preview} controls playsInline loop className="w-full h-full object-cover" />
+                        ) : (
+                          <img src={preview} alt="Final Preview" className="w-full h-full object-cover" />
+                        )}
                         {location && (
                           <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full text-white text-[10px] font-bold flex items-center gap-1">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-red-500" fill="currentColor" viewBox="0 0 20 20">

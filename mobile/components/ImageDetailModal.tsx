@@ -13,6 +13,7 @@ import SEOHead from './SEOHead';
 import VideoPlayer from './VideoPlayer';
 import { isVideoUrl } from '../../utils/mediaUtils';
 import { getInterestBoost, recordClickInterest } from '../services/interestTracker';
+import { downloadMedia } from '../services/mediaDownloader';
 
 interface ImageDetailModalProps {
   image: ImageMeta;
@@ -131,6 +132,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [isEditing, setIsEditing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [downloadToast, setDownloadToast] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1.0);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
@@ -1012,23 +1014,14 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     setCurrentImage(prev => ({ ...prev, downloadCount: (prev.downloadCount || 0) + 1 }));
     onImageUpdate({ ...currentImage, downloadCount: (currentImage.downloadCount || 0) + 1 });
 
-    const filename = currentImage.imageUrl.split('/').pop()?.split('?')[0] || 'download.jpg';
-    
-    // Use the proxy endpoint to avoid CORS issues.
-    // The proxy must return Content-Disposition: attachment for this to work as a download.
-    const proxyUrl = `/api/downloadProxy?url=${encodeURIComponent(currentImage.imageUrl)}&filename=${encodeURIComponent(filename)}`;
-    
-    // Create a temporary link and click it. 
-    // This uses the browser's native download capability via the proxy headers,
-    // avoiding the need for client-side blob processing (which can hit CORS limits).
-    const a = document.createElement('a');
-    a.href = proxyUrl;
-    a.download = filename; // This attribute is a hint, the server header takes precedence
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const res = await downloadMedia(currentImage.imageUrl, currentImage.title, (msg) => {
+      setDownloadToast(msg);
+      setTimeout(() => setDownloadToast(null), 3500);
+    });
 
-    setShowAttribution(true);
+    if (res.success) {
+      setShowAttribution(true);
+    }
   };
 
   const handleShare = async () => {
@@ -1678,11 +1671,19 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
             style={{ backgroundImage: `url(${currentImage.imageUrl})` }}
           />
 
-          {/* Top Bar Actions with auto-fade on zoom */}
+          {/* Top Bar Protection Gradient for Camera Notch / Pill / Status Bar */}
+          <div className="absolute top-0 left-0 right-0 h-36 pointer-events-none z-[85] bg-gradient-to-b from-black/90 via-black/40 to-transparent" />
+
+          {/* Top Bar Actions with auto-fade on zoom & Safe Area Inset to prevent Camera Pill / Notch Tearing */}
           <div 
-            className={`absolute top-6 left-6 right-6 z-[90] flex items-center justify-between pointer-events-none transition-opacity duration-200 ${
+            className={`absolute z-[90] flex items-center justify-between pointer-events-none transition-opacity duration-200 ${
               zoomScale > 1.05 ? 'opacity-0' : 'opacity-100'
             }`}
+            style={{
+              top: 'calc(max(env(safe-area-inset-top, 0px), 38px) + 12px)',
+              left: '16px',
+              right: '16px'
+            }}
           >
             {/* Close Button */}
             <button
@@ -1764,6 +1765,16 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               }}
             />
           </div>
+        </div>
+      )}
+
+      {/* Download Toast Notification */}
+      {downloadToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-full bg-neutral-900/90 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-fade-in pointer-events-none">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <span>{downloadToast}</span>
         </div>
       )}
     </div>

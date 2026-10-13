@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import type { ProfileUser, ImageMeta, Comment } from '../types';
 import { 
   fetchReelsFeed, 
@@ -19,6 +22,7 @@ import {
 } from '../services/firestoreService';
 import { DARK_VIDEO_POSTER } from './VideoPlayer';
 import Spinner from './Spinner';
+import { downloadMedia } from '../services/mediaDownloader';
 
 interface ReelsPageProps {
   user: User | null;
@@ -1579,14 +1583,15 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       </div>
 
       {/* Comments Bottom Sheet Drawer (~65% screen height with Back & Close Button) */}
-      {isCommentsOpen && (
+      {isCommentsOpen && createPortal(
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center animate-fade-in"
+          className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-md flex items-end justify-center animate-fade-in p-0 select-none"
           onClick={() => setIsCommentsOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg bg-[#141414] rounded-t-[32px] border-t border-white/10 shadow-2xl flex flex-col h-[65vh] animate-slide-up select-none overflow-hidden"
+            style={{ paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 8px)' }}
           >
             {/* Drawer Drag Indicator */}
             <div className="w-full flex items-center justify-center pt-2.5 pb-1 cursor-pointer" onClick={() => setIsCommentsOpen(false)}>
@@ -1785,60 +1790,153 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* More Options / Attribution Modal */}
-      {optionsReel && (
+      {/* Redesigned Reel Options Modal with createPortal to prevent BottomNav overlap */}
+      {optionsReel && createPortal(
         <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end justify-center animate-fade-in"
+          className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-md flex items-end justify-center animate-fade-in p-0 select-none"
           onClick={() => setOptionsReel(null)}
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm bg-[#161616] rounded-t-[32px] p-6 border-t border-white/10 shadow-2xl flex flex-col gap-3 animate-slide-up"
+            className="w-full max-w-md bg-[#161618]/95 backdrop-blur-2xl rounded-t-[36px] p-6 border-t border-white/15 shadow-[0_-10px_40px_rgba(0,0,0,0.8)] flex flex-col gap-4 animate-slide-up"
+            style={{ paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 16px) + 16px)' }}
           >
-            <div className="w-12 h-1.5 bg-neutral-600 rounded-full mx-auto mb-2" />
-            <h4 className="font-bold text-sm text-white mb-1">Reel Options</h4>
+            {/* Drawer drag indicator */}
+            <div className="w-12 h-1.5 bg-neutral-600/80 rounded-full mx-auto" />
 
-            <button
-              onClick={() => {
-                window.open(optionsReel.videoUrl, '_blank');
-                setOptionsReel(null);
-              }}
-              className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs text-left flex items-center justify-between"
-            >
-              <span>Download / Open Video</span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </button>
+            {/* Reel & Creator Info Card */}
+            <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-white/5 border border-white/10">
+              <img 
+                src={optionsReel.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${optionsReel.uploaderName}`}
+                alt={optionsReel.uploaderName}
+                className="w-12 h-12 rounded-full object-cover ring-2 ring-white/15 flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-sm text-white truncate">@{optionsReel.uploaderName}</span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600/20 text-red-400 border border-red-500/30">Creator</span>
+                </div>
+                <p className="text-xs text-neutral-400 truncate mt-0.5">{optionsReel.title || 'Reel'}</p>
+              </div>
+            </div>
 
-            <button
-              onClick={() => {
-                onViewProfile({
-                  uploaderUid: optionsReel.uploaderUid,
-                  uploaderName: optionsReel.uploaderName,
-                  uploaderPhotoURL: optionsReel.uploaderPhotoURL || ''
-                });
-                setOptionsReel(null);
-              }}
-              className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs text-left flex items-center justify-between"
-            >
-              <span>View Creator Profile</span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            {/* Action Buttons List */}
+            <div className="flex flex-col gap-2.5">
+              {/* Download Video Locally */}
+              <button
+                onClick={async () => {
+                  const reelToDownload = optionsReel;
+                  setOptionsReel(null);
+                  showToast('Starting video download...');
+                  await downloadMedia(reelToDownload.videoUrl, reelToDownload.title || 'reel', (msg) => showToast(msg));
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-white/10 text-white font-semibold text-xs flex items-center justify-between transition-all active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm text-white">Save Video</p>
+                    <p className="text-[11px] text-neutral-400 font-normal">Download directly to device storage</p>
+                  </div>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
 
+              {/* View Creator Profile */}
+              <button
+                onClick={() => {
+                  onViewProfile({
+                    uploaderUid: optionsReel.uploaderUid,
+                    uploaderName: optionsReel.uploaderName,
+                    uploaderPhotoURL: optionsReel.uploaderPhotoURL || ''
+                  });
+                  setOptionsReel(null);
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-white/10 text-white font-semibold text-xs flex items-center justify-between transition-all active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm text-white">View Creator Profile</p>
+                    <p className="text-[11px] text-neutral-400 font-normal">See all pins and reels by @{optionsReel.uploaderName}</p>
+                  </div>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              {/* Share Reel */}
+              <button
+                onClick={async () => {
+                  const reelToShare = optionsReel;
+                  setOptionsReel(null);
+                  const shareUrl = `https://gg.modvc.org/image/${reelToShare.id}`;
+                  try {
+                    if (Capacitor.isNativePlatform()) {
+                      await Share.share({
+                        title: reelToShare.title || 'Reel',
+                        text: `Watch this reel by @${reelToShare.uploaderName} on Glass Gallery!`,
+                        url: shareUrl,
+                        dialogTitle: 'Share Reel'
+                      });
+                    } else if (navigator.share) {
+                      await navigator.share({
+                        title: reelToShare.title || 'Reel',
+                        url: shareUrl
+                      });
+                    } else {
+                      await navigator.clipboard.writeText(shareUrl);
+                      showToast('Reel link copied to clipboard!');
+                    }
+                  } catch {
+                    navigator.clipboard?.writeText(shareUrl);
+                    showToast('Link copied to clipboard!');
+                  }
+                }}
+                className="w-full py-3.5 px-4 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-white/10 text-white font-semibold text-xs flex items-center justify-between transition-all active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-sm text-white">Share Reel</p>
+                    <p className="text-[11px] text-neutral-400 font-normal">Share video with friends or social apps</p>
+                  </div>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Cancel button */}
             <button
               onClick={() => setOptionsReel(null)}
-              className="w-full py-3 px-4 rounded-2xl bg-white/10 text-neutral-300 font-semibold text-xs text-center mt-1"
+              className="w-full py-3.5 px-4 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs text-center transition-all active:scale-[0.98]"
             >
               Cancel
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
