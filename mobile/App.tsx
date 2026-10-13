@@ -1450,6 +1450,15 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen w-full bg-background text-primary font-sans">
+      {/* Soft gradient behind the status bar only (black ~70% to transparent, ~40px) so the clock and icons stay readable */}
+      <div 
+        className="fixed top-0 left-0 right-0 z-50 pointer-events-none md:hidden"
+        style={{
+          height: 'calc(env(safe-area-inset-top, 0px) + 40px)',
+          background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.70) 0%, rgba(0, 0, 0, 0.35) 55%, rgba(0, 0, 0, 0) 100%)'
+        }}
+      />
+
       {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
       {activeView === 'home' && !profileUser && (
         <header 
@@ -1457,19 +1466,10 @@ const App: React.FC = () => {
             isHeaderVisible ? 'translate-y-0' : '-translate-y-full'
           }`}
           style={{ 
-            paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
-            height: 'calc(3.5rem + max(env(safe-area-inset-top, 0px), 12px))'
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            height: 'calc(3.5rem + env(safe-area-inset-top, 0px))'
           }}
         >
-          {/* Soft gradient fade behind the header: black at ~80% opacity at top fading to fully transparent at the bottom (~24px tall) */}
-          <div 
-            className="absolute inset-x-0 top-0 pointer-events-none -z-10"
-            style={{
-              height: 'calc(100% + 24px)',
-              background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 60%, rgba(0, 0, 0, 0) 100%)'
-            }}
-          />
-
           {/* Left Side: Authentic Web Icon Only (No 'Glass Gallery' text) */}
           <div 
             className="pointer-events-auto flex items-center cursor-pointer active:scale-95 transition-transform" 
@@ -1550,8 +1550,8 @@ const App: React.FC = () => {
         className="flex-1 min-w-0 px-2 sm:px-4 md:p-8 pb-24 md:pb-8"
         style={{
           paddingTop: activeView === 'home' && !profileUser 
-            ? 'calc(3.5rem + max(env(safe-area-inset-top, 0px), 12px) + 6px)' 
-            : 'max(env(safe-area-inset-top, 0px), 16px)'
+            ? 'calc(3.5rem + env(safe-area-inset-top, 0px))' 
+            : 'env(safe-area-inset-top, 0px)'
         }}
       >
         {renderContent()}

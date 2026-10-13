@@ -1409,19 +1409,16 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         {/* Right Column: "More Like This" Masonry Feed */}
         <div 
           ref={rightPanelRef}
-          className="w-full md:w-[55%] flex flex-col md:h-full bg-surface md:overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 p-4 md:p-8 pt-0 md:pt-8"
+          className="w-full md:w-[55%] flex flex-col md:h-full bg-background overflow-visible md:overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 px-3 sm:px-4 md:p-8 pt-4 md:pt-8"
         >
-          <div className="flex items-center justify-between mb-6 sticky top-0 bg-surface z-20 pb-4 pt-4 md:pt-0 border-b border-border/40 flex-shrink-0">
+          {/* Normal non-sticky heading that scrolls away with content on flat black background */}
+          <div className="flex items-center mb-5 pt-2 flex-shrink-0">
             <h3 className="text-lg font-bold text-primary flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
               More like this
             </h3>
-            <div className="flex items-center gap-1.5 text-xs text-secondary font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Personalized</span>
-            </div>
           </div>
 
           {isLoadingSuggestions && displayRelated.length === 0 ? (
