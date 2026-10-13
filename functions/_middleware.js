@@ -11,7 +11,7 @@ function escapeHtml(unsafe) {
 }
 
 const RESERVED_ROUTES = new Set([
-  'image', 'gallery', 'api', 'legal', 'discover', 'explore',
+  'image', 'gallery', 'api', 'legal', 'discover', 'explore', 'reels',
   'login', 'notifications', 'feed', 'assets', 'favicon.ico',
   'robots.txt', 'sitemap.xml', 'manifest.json'
 ]);

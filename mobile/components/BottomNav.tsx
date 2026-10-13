@@ -6,8 +6,8 @@ interface BottomNavProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'explore' | 'profile' | 'notifications' | 'api';
-  setView: (view: 'home' | 'explore' | 'notifications' | 'api') => void;
+  activeView: 'home' | 'explore' | 'reels' | 'profile' | 'notifications' | 'api';
+  setView: (view: 'home' | 'explore' | 'reels' | 'notifications' | 'api') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications?: Notification[];
   onNotificationsClick?: () => void;
@@ -38,14 +38,16 @@ const BottomNav: React.FC<BottomNavProps> = ({
     }
   };
 
+  const isNavVisible = visible && activeView !== 'reels';
+
   return (
-    <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#111111]/95 border border-white/10 rounded-[32px] px-4 py-2 flex items-center justify-between gap-2 shadow-2xl z-40 md:hidden w-[240px] backdrop-blur-md select-none transition-all duration-300 ease-out ${
-      visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-20 pointer-events-none'
+    <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#111111]/95 border border-white/10 rounded-[32px] px-3.5 py-2 flex items-center justify-between gap-1 shadow-2xl z-40 md:hidden w-[295px] backdrop-blur-md select-none transition-all duration-300 ease-out ${
+      isNavVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-20 pointer-events-none'
     }`}>
       {/* Home Button */}
       <button
         onClick={() => setView('home')}
-        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
           activeView === 'home' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >
@@ -64,7 +66,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
       {/* Explore/Search Button */}
       <button
         onClick={() => setView('explore')}
-        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
           activeView === 'explore' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >
@@ -72,6 +74,23 @@ const BottomNav: React.FC<BottomNavProps> = ({
           <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
         <span className="text-[10px] font-bold mt-1 tracking-wide">Search</span>
+      </button>
+
+      {/* Reels Button */}
+      <button
+        onClick={() => setView('reels')}
+        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+          activeView === 'reels' ? 'text-white' : 'text-neutral-400 hover:text-white'
+        }`}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeView === 'reels' ? 2.5 : 2}>
+          <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+          <path d="M10 8.5l5.5 3.5-5.5 3.5V8.5z" fill={activeView === 'reels' ? "currentColor" : "none"} />
+          <line x1="2" y1="7" x2="22" y2="7" />
+          <line x1="7" y1="2" x2="5" y2="7" />
+          <line x1="17" y1="2" x2="15" y2="7" />
+        </svg>
+        <span className="text-[10px] font-bold mt-1 tracking-wide">Reels</span>
       </button>
 
       {/* Profile/Saved Button */}

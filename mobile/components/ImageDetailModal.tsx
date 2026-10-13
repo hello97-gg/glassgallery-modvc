@@ -25,6 +25,7 @@ interface ImageDetailModalProps {
   onLikeToggle: (image: ImageMeta) => void;
   onLocationClick?: (location: string) => void;
   onSelectImage?: (image: ImageMeta) => void;
+  onOpenInReels?: (videoId: string) => void;
 }
 
 const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -122,7 +123,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   onImageDelete, 
   onLikeToggle, 
   onLocationClick,
-  onSelectImage
+  onSelectImage,
+  onOpenInReels
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [isEditing, setIsEditing] = useState(false);
@@ -1154,7 +1156,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           {/* Main Hero Image Container - Edge-to-edge on mobile, contained on desktop */}
           <div className="bg-[#0a0a0a] flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative select-none w-full min-h-[260px]">
             {isVideoUrl(currentImage.imageUrl) ? (
-              <div id="hero-detail-image" style={{ viewTransitionName: 'pin-active' }} className="w-full">
+              <div id="hero-detail-image" style={{ viewTransitionName: 'pin-active' }} className="w-full relative group">
                 <VideoPlayer 
                   src={currentImage.imageUrl}
                   poster={currentImage.imageUrl}
@@ -1166,6 +1168,21 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   onDoubleTapLike={handleLikeClick}
                   className="w-full"
                 />
+                {onOpenInReels && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenInReels(currentImage.id);
+                    }}
+                    className="absolute top-3 right-3 z-30 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg active:scale-95 transition-all hover:bg-black/80"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                      <path d="M16 2v20M8 2v20M2 12h20M2 7h6M2 17h6M16 7h6M16 17h6"/>
+                    </svg>
+                    <span>Watch in Reels</span>
+                  </button>
+                )}
               </div>
             ) : (
               <img 
@@ -1235,6 +1252,21 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 >
                   Credit
                 </button>
+
+                {/* Watch in Reels Button if Video */}
+                {onOpenInReels && isVideoUrl(currentImage.imageUrl) && (
+                  <button 
+                    onClick={() => onOpenInReels(currentImage.id)} 
+                    className="px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-neutral-200 hover:text-white text-xs font-semibold border border-white/10 flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Watch in Reels"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                      <path d="M16 2v20M8 2v20M2 12h20M2 7h6M2 17h6M16 7h6M16 17h6"/>
+                    </svg>
+                    <span>Reels</span>
+                  </button>
+                )}
 
                 {/* Share Button (monochrome icon) */}
                 <button 
@@ -1437,14 +1469,32 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                     className="break-inside-avoid mb-2 group relative cursor-pointer overflow-hidden rounded-[16px] bg-[#121212] transition-transform duration-200 active:scale-[0.98]"
                   >
                     {isVideoUrl(img.imageUrl) ? (
-                      <VideoPlayer 
-                        src={img.imageUrl} 
-                        poster={img.imageUrl}
-                        width={img.width}
-                        height={img.height}
-                        isFeedPreview={true}
-                        onClick={() => handleSelectRelated(img)}
-                      />
+                      <div className="relative">
+                        <VideoPlayer 
+                          src={img.imageUrl} 
+                          poster={img.imageUrl}
+                          width={img.width}
+                          height={img.height}
+                          isFeedPreview={true}
+                          onClick={() => handleSelectRelated(img)}
+                        />
+                        {onOpenInReels && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenInReels(img.id);
+                            }}
+                            className="absolute top-2 right-2 z-20 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white flex items-center gap-1 shadow-md hover:bg-black/80 active:scale-95 transition-all"
+                            title="Open in Reels"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                              <path d="M16 2v20M8 2v20M2 12h20M2 7h6M2 17h6M16 7h6M16 17h6"/>
+                            </svg>
+                            <span>Reels</span>
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <img 
                         src={img.imageUrl} 

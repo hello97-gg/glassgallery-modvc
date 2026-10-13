@@ -34,6 +34,7 @@ import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
 import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
 import { DARK_VIDEO_POSTER } from './components/VideoPlayer';
 import SkeletonGrid from './components/SkeletonGrid';
+import ReelsPage from './components/ReelsPage';
 
 // Global Fetch Interceptor for Capacitor Native Platform to reroute relative paths to the production API
 if (Capacitor.isNativePlatform()) {
@@ -293,9 +294,10 @@ const App: React.FC = () => {
   // Legal Tab State
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'explore' | 'profile' | 'notifications' | 'api' | 'followers_following' | 'legal'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'explore' | 'reels' | 'profile' | 'notifications' | 'api' | 'followers_following' | 'legal'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'explore' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal'>('home');
+  const [lastView, setLastView] = useState<'home' | 'explore' | 'reels' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal'>('home');
+  const [initialReelId, setInitialReelId] = useState<string | null>(null);
   
   // Standalone Follow/Unfollow view variables
   const [followViewType, setFollowViewType] = useState<'followers' | 'following'>('followers');
@@ -1206,12 +1208,17 @@ const App: React.FC = () => {
       return;
     }
     if (activeView === 'legal') {
-      setActiveView(lastView);
+      setActiveView(lastView === 'legal' ? 'home' : lastView);
       if (lastView === 'profile' && profileUser) {
         updateURL({ user: profileUser.uploaderUid });
       } else {
         updateURL(null);
       }
+      return;
+    }
+    if (activeView === 'reels') {
+      setActiveView(lastView === 'reels' ? 'home' : lastView);
+      setInitialReelId(null);
       return;
     }
     if (activeView === 'notifications') {
@@ -1237,7 +1244,7 @@ const App: React.FC = () => {
     setActiveView('followers_following');
   };
   
-  const handleSetView = (view: 'home' | 'explore' | 'notifications' | 'api') => {
+  const handleSetView = (view: 'home' | 'explore' | 'reels' | 'notifications' | 'api') => {
     if (view === activeView && (view === 'home' || view === 'explore')) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setAllImages(prevImages => {
@@ -1256,6 +1263,7 @@ const App: React.FC = () => {
         }
         window.scrollTo({ top: 0, behavior: 'instant' });
         setActiveView(view);
+        setInitialReelId(null);
         setProfileUser(null);
         setExploreSearchTerm('');
         
@@ -1266,6 +1274,13 @@ const App: React.FC = () => {
         }
     }
   };
+
+  const handleOpenInReels = useCallback((videoId: string) => {
+    setLastView(activeView);
+    setInitialReelId(videoId);
+    setPinHistory([]);
+    setActiveView('reels');
+  }, [activeView]);
 
   const handleOpenLegal = (tab: 'terms' | 'privacy' | 'guidelines' = 'terms') => {
       setLegalModalTab(tab);
@@ -1304,6 +1319,8 @@ const App: React.FC = () => {
         } else if (activeView === 'followers_following') {
           handleBack();
         } else if (activeView === 'legal') {
+          handleBack();
+        } else if (activeView === 'reels') {
           handleBack();
         } else if (activeView === 'notifications') {
           handleBack();
@@ -1411,6 +1428,20 @@ const App: React.FC = () => {
                 />
                 <ApiDocsPage />
             </>
+        );
+    }
+
+    if (activeView === 'reels') {
+        return (
+            <ReelsPage 
+                user={user}
+                onBack={handleBack}
+                onViewProfile={handleViewProfile}
+                onShare={(reel) => setLongPressedImage(reel)}
+                onLikeToggle={handleLikeToggle}
+                initialReelId={initialReelId}
+                allImages={allImages}
+            />
         );
     }
 
@@ -1537,13 +1568,15 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col md:flex-row min-h-screen w-full bg-background text-primary font-sans">
       {/* Soft gradient behind the status bar only (black ~70% to transparent, ~40px) so the clock and icons stay readable */}
-      <div 
-        className="fixed top-0 left-0 right-0 z-50 pointer-events-none md:hidden"
-        style={{
-          height: 'calc(env(safe-area-inset-top, 0px) + 40px)',
-          background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.70) 0%, rgba(0, 0, 0, 0.35) 55%, rgba(0, 0, 0, 0) 100%)'
-        }}
-      />
+      {activeView !== 'reels' && (
+        <div 
+          className="fixed top-0 left-0 right-0 z-50 pointer-events-none md:hidden"
+          style={{
+            height: 'calc(env(safe-area-inset-top, 0px) + 40px)',
+            background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.70) 0%, rgba(0, 0, 0, 0.35) 55%, rgba(0, 0, 0, 0) 100%)'
+          }}
+        />
+      )}
 
       {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
       {activeView === 'home' && !profileUser && (
@@ -1767,6 +1800,7 @@ const App: React.FC = () => {
           onLikeToggle={handleLikeToggle}
           onLocationClick={handleLocationClick}
           onSelectImage={handleImageClick}
+          onOpenInReels={handleOpenInReels}
         />
       )}
 
