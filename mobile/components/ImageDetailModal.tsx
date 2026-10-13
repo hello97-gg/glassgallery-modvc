@@ -1,9 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { User } from 'firebase/auth';
-import type { ImageMeta, ProfileUser } from '../types';
+import type { ImageMeta, ProfileUser, Comment } from '../types';
 import { LICENSES, FLAGS } from '../constants';
-import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage } from '../services/firestoreService';
+import { updateImageDetails, deleteImageFromFirestore, incrementDownloadCount, subscribeToImage, getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, deleteComment } from '../services/firestoreService';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -340,8 +340,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     setIsFullscreen(false);
   }, [image]);
 
-  // Sync fullscreen state to a global window property so App.tsx's single
-  // backButton listener can check it and close fullscreen before closing the modal.
+  // Sync fullscreen state and sub-state to global window properties so App.tsx's single
+  // backButton listener can check them and close fullscreen/sub-state before closing the modal.
   useEffect(() => {
     (window as any).__glassGalleryFullscreen = isFullscreen;
     (window as any).__glassGalleryCloseFullscreen = () => setIsFullscreen(false);
@@ -350,6 +350,333 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       (window as any).__glassGalleryCloseFullscreen = null;
     };
   }, [isFullscreen]);
+
+  // Comments & Discussion State
+  const [flatComments, setFlatComments] = useState<Comment[]>([]);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [collapsedComments, setCollapsedComments] = useState<Set<string>>(new Set());
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState('');
+  const [deleteConfirmCommentId, setDeleteConfirmCommentId] = useState<string | null>(null);
+  const [isDeletingComment, setIsDeletingComment] = useState(false);
+  const [isCommentsSectionHidden, setIsCommentsSectionHidden] = useState(false);
+
+  // Swipe Down to Dismiss Gesture
+  const headerTouchStartYRef = useRef<number | null>(null);
+
+  // Sub-state Back Button sync with App.tsx
+  useEffect(() => {
+    const hasSubState = Boolean(deleteConfirmCommentId || replyToId || editingCommentId);
+    (window as any).__glassGalleryModalHasSubState = hasSubState;
+    (window as any).__glassGalleryModalCloseSubState = () => {
+      setDeleteConfirmCommentId(null);
+      setReplyToId(null);
+      setEditingCommentId(null);
+    };
+    return () => {
+      (window as any).__glassGalleryModalHasSubState = false;
+      (window as any).__glassGalleryModalCloseSubState = null;
+    };
+  }, [deleteConfirmCommentId, replyToId, editingCommentId]);
+
+  // Load comments when currentImage changes
+  const loadComments = async (idToLoad: string) => {
+    if (!idToLoad) return;
+    setIsLoadingComments(true);
+    try {
+      const data = await getCommentsForImage(idToLoad);
+      setFlatComments(data);
+    } catch (err) {
+      console.error("Failed to load comments:", err);
+    } finally {
+      setIsLoadingComments(false);
+    }
+  };
+
+  useEffect(() => {
+    loadComments(currentImage.id);
+    setReplyToId(null);
+    setReplyText('');
+    setNewCommentText('');
+    setEditingCommentId(null);
+  }, [currentImage.id]);
+
+  const handlePostComment = async () => {
+    if (!user || !newCommentText.trim() || isSubmittingComment) return;
+    setIsSubmittingComment(true);
+    try {
+      const newComment = await addCommentToImage(currentImage.id, user, newCommentText.trim());
+      setFlatComments(prev => [newComment, ...prev]);
+      setNewCommentText('');
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handlePostReply = async (parentId: string) => {
+    if (!user || !replyText.trim() || isSubmittingComment) return;
+    setIsSubmittingComment(true);
+    try {
+      const newComment = await addCommentToImage(currentImage.id, user, replyText.trim(), parentId);
+      setFlatComments(prev => [...prev, newComment]);
+      setReplyText('');
+      setReplyToId(null);
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error("Failed to post reply:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleCommentLikeToggle = async (commentId: string) => {
+    if (!user) return;
+    setFlatComments(prev => prev.map(c => {
+      if (c.id === commentId) {
+        const isLiked = c.likedBy?.includes(user.uid);
+        return {
+          ...c,
+          likeCount: isLiked ? Math.max(0, (c.likeCount || 0) - 1) : (c.likeCount || 0) + 1,
+          likedBy: isLiked ? (c.likedBy || []).filter(uid => uid !== user.uid) : [...(c.likedBy || []), user.uid]
+        };
+      }
+      return c;
+    }));
+    try {
+      await toggleCommentLike(commentId, user.uid);
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error("Failed to toggle comment like:", err);
+    }
+  };
+
+  const handleEditCommentSubmit = async (commentId: string) => {
+    if (!user || !editCommentText.trim() || isSubmittingComment) return;
+    setIsSubmittingComment(true);
+    try {
+      await editComment(commentId, user.uid, editCommentText.trim());
+      setFlatComments(prev => prev.map(c => c.id === commentId ? { ...c, content: editCommentText.trim() } : c));
+      setEditingCommentId(null);
+      setEditCommentText('');
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error("Failed to edit comment:", err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!user) return;
+    setIsDeletingComment(true);
+    try {
+      await deleteComment(commentId, user.uid);
+      setFlatComments(prev => prev.filter(c => c.id !== commentId));
+      setDeleteConfirmCommentId(null);
+      if (navigator.vibrate) navigator.vibrate([15, 50, 15]);
+    } catch (err) {
+      console.error("Failed to delete comment:", err);
+    } finally {
+      setIsDeletingComment(false);
+    }
+  };
+
+  // Build recursive comment tree
+  const buildCommentTree = (comments: Comment[]): Comment[] => {
+    const map = new Map<string, Comment>();
+    const roots: Comment[] = [];
+    comments.forEach(c => map.set(c.id, { ...c, replies: [] }));
+    comments.forEach(c => {
+      const node = map.get(c.id)!;
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.replies!.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+    return roots;
+  };
+
+  const treeComments = buildCommentTree(flatComments);
+
+  // Render individual comment item
+  const renderCommentNode = (comment: Comment, depth = 0): React.ReactNode => {
+    const isReplying = replyToId === comment.id;
+    const isCollapsed = collapsedComments.has(comment.id);
+    const hasReplies = comment.replies && comment.replies.length > 0;
+    const isAuthor = user?.uid === comment.userUid;
+    const canDelete = isAuthor || user?.uid === currentImage.uploaderUid;
+
+    if (isCollapsed) {
+      return (
+        <div 
+          key={comment.id}
+          onClick={() => setCollapsedComments(prev => { const n = new Set(prev); n.delete(comment.id); return n; })}
+          className="py-1 px-2.5 rounded-lg bg-surface/40 border border-border/40 text-xs text-secondary flex items-center gap-1.5 cursor-pointer my-1 active:scale-[0.99] transition-transform"
+        >
+          <span className="font-mono text-accent text-[11px] font-bold">[+]</span>
+          <span>Thread by {comment.userName} ({comment.replies?.length || 0} replies)</span>
+        </div>
+      );
+    }
+
+    return (
+      <div 
+        key={comment.id} 
+        className={`flex flex-col gap-2 transform-gpu will-change-transform ${depth > 0 ? 'mt-2 pl-3 border-l-2 border-border/40 ml-2' : 'border-b border-border/30 pb-3 last:border-0 last:pb-0'}`}
+      >
+        <div className="flex gap-2.5 items-start">
+          <img 
+            src={comment.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${comment.userName}`} 
+            alt={comment.userName} 
+            className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border/60" 
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-xs text-primary leading-tight">{comment.userName}</span>
+              <span className="text-[10px] text-secondary">
+                {new Date(comment.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </span>
+              {hasReplies && (
+                <button
+                  onClick={() => setCollapsedComments(prev => new Set(prev).add(comment.id))}
+                  className="text-secondary/50 hover:text-secondary text-[10px] px-1 font-mono ml-auto"
+                >
+                  [-]
+                </button>
+              )}
+            </div>
+
+            {editingCommentId === comment.id ? (
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                <textarea
+                  value={editCommentText}
+                  onChange={(e) => setEditCommentText(e.target.value)}
+                  className="w-full bg-background border border-border focus:border-accent rounded-xl px-2.5 py-1.5 text-xs text-primary resize-none focus:outline-none"
+                  rows={2}
+                  autoFocus
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => { setEditingCommentId(null); setEditCommentText(''); }}
+                    className="text-[10px] text-secondary hover:text-primary px-2.5 py-1 font-medium"
+                    disabled={isSubmittingComment}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleEditCommentSubmit(comment.id)}
+                    disabled={!editCommentText.trim() || isSubmittingComment}
+                    className="bg-accent text-surface px-3 py-1 rounded-full text-[10px] font-bold"
+                  >
+                    {isSubmittingComment ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-primary/90 mt-0.5 leading-relaxed break-words whitespace-pre-wrap">{comment.content}</p>
+            )}
+
+            {/* Comment Action Bar */}
+            <div className="flex items-center mt-1.5 gap-3">
+              <button
+                onClick={() => handleCommentLikeToggle(comment.id)}
+                className={`flex items-center gap-1 text-[10px] font-bold active:scale-95 transition-transform ${comment.likedBy?.includes(user?.uid || '') ? 'text-red-400' : 'text-secondary'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill={comment.likedBy?.includes(user?.uid || '') ? "currentColor" : "none"} stroke="currentColor">
+                  <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                </svg>
+                {comment.likeCount || 0}
+              </button>
+
+              {user && (
+                <button
+                  onClick={() => {
+                    if (isReplying) {
+                      setReplyToId(null);
+                      setReplyText('');
+                    } else {
+                      setReplyToId(comment.id);
+                      setReplyText('');
+                    }
+                  }}
+                  className="text-[10px] font-bold text-accent hover:underline flex items-center gap-1 active:scale-95 transition-transform"
+                >
+                  Reply
+                </button>
+              )}
+
+              {isAuthor && (
+                <button
+                  onClick={() => {
+                    setEditingCommentId(comment.id);
+                    setEditCommentText(comment.content);
+                  }}
+                  className="text-[10px] font-bold text-secondary hover:text-primary flex items-center gap-1 active:scale-95 transition-transform"
+                >
+                  Edit
+                </button>
+              )}
+
+              {canDelete && (
+                <button
+                  onClick={() => setDeleteConfirmCommentId(comment.id)}
+                  className="text-[10px] font-bold text-secondary/70 hover:text-red-400 p-1 rounded ml-auto flex items-center gap-1 active:scale-95 transition-transform"
+                  title="Delete comment"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Inline Reply Composer */}
+        {isReplying && user && (
+          <div className="mt-2 pl-8 flex flex-col gap-2">
+            <div className="flex items-center justify-between text-[10px] text-accent font-semibold">
+              <span>Replying to {comment.userName}</span>
+              <button onClick={() => setReplyToId(null)} className="text-secondary hover:text-primary">&times; Cancel</button>
+            </div>
+            <textarea
+              placeholder={`Write a reply...`}
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              rows={2}
+              className="w-full bg-background border border-border/80 focus:border-accent rounded-xl py-2 px-3 text-xs text-primary resize-none focus:outline-none"
+              autoFocus
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={() => handlePostReply(comment.id)}
+                disabled={!replyText.trim() || isSubmittingComment}
+                className="bg-accent disabled:opacity-50 text-surface font-semibold px-3.5 py-1.5 rounded-full text-xs active:scale-95 transition-all shadow-sm flex items-center gap-1.5"
+              >
+                {isSubmittingComment ? <Spinner /> : 'Reply'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Nested Child Replies */}
+        {hasReplies && (
+          <div className="flex flex-col gap-2">
+            {comment.replies!.map(child => renderCommentNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const isOwner = user?.uid === currentImage.uploaderUid;
   const hasLiked = user && currentImage.likedBy?.includes(user.uid);
@@ -620,11 +947,24 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           ref={leftPanelRef}
           className="w-full md:w-[45%] flex flex-col md:h-full border-b border-border/20 md:border-b-0 md:border-r border-border md:overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 bg-background/5"
         >
-          {/* Action Bar Header */}
-          <div className="sticky top-0 z-30 bg-surface/90 backdrop-blur-md px-4 py-3 flex items-center justify-between border-b border-border/40 flex-shrink-0">
+          {/* Action Bar Header with Pull-Down Gesture indicator */}
+          <div 
+            onTouchStart={(e) => { headerTouchStartYRef.current = e.touches[0].clientY; }}
+            onTouchEnd={(e) => {
+              if (headerTouchStartYRef.current !== null) {
+                const deltaY = e.changedTouches[0].clientY - headerTouchStartYRef.current;
+                headerTouchStartYRef.current = null;
+                if (deltaY > 60) {
+                  if (navigator.vibrate) navigator.vibrate(10);
+                  onClose();
+                }
+              }
+            }}
+            className="sticky top-0 z-30 bg-surface/90 backdrop-blur-md px-4 py-2.5 flex items-center justify-between border-b border-border/40 flex-shrink-0 touch-pan-y"
+          >
             <button 
               onClick={onClose} 
-              className="p-2 rounded-full hover:bg-border/70 text-secondary hover:text-primary transition-all flex items-center justify-center" 
+              className="p-2 rounded-full hover:bg-border/70 text-secondary hover:text-primary transition-all flex items-center justify-center active:scale-95" 
               title="Close Modal"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -788,6 +1128,123 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                     </Button>
                   </>
                 )}
+              </div>
+            )}
+            {/* Comments & Community Discussion Section */}
+            <div className="pt-4 border-t border-border/40 mt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                  <span>Comments</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-border/60 text-secondary font-medium">
+                    {flatComments.length}
+                  </span>
+                </h3>
+
+                {flatComments.length > 0 && (
+                  <button
+                    onClick={() => setIsCommentsSectionHidden(prev => !prev)}
+                    className="text-xs text-secondary hover:text-primary flex items-center gap-1 active:scale-95 transition-transform"
+                  >
+                    {isCommentsSectionHidden ? "Show comments" : "Hide comments"}
+                  </button>
+                )}
+              </div>
+
+              {/* Comment Composer */}
+              {user ? (
+                <div className="flex gap-2.5 items-start mb-4">
+                  <img
+                    src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'User'}`}
+                    alt="Current user"
+                    className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border"
+                  />
+                  <div className="flex-1 flex flex-col gap-2">
+                    <textarea
+                      placeholder="Share your thoughts..."
+                      value={newCommentText}
+                      onChange={(e) => setNewCommentText(e.target.value)}
+                      rows={2}
+                      className="w-full bg-background border border-border/80 focus:border-accent/60 rounded-xl py-2 px-3 text-xs text-primary placeholder-secondary focus:outline-none resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handlePostComment}
+                        disabled={!newCommentText.trim() || isSubmittingComment}
+                        className="bg-accent hover:opacity-90 disabled:opacity-50 text-surface font-semibold px-3.5 py-1.5 rounded-full text-xs active:scale-95 transition-all shadow-md flex items-center gap-1.5"
+                      >
+                        {isSubmittingComment ? <Spinner /> : 'Comment'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-surface/50 border border-border/60 rounded-xl text-center mb-4">
+                  <p className="text-xs text-secondary">Log in to like and join the conversation!</p>
+                </div>
+              )}
+
+              {/* Comments Stream */}
+              {isCommentsSectionHidden ? (
+                <div 
+                  onClick={() => setIsCommentsSectionHidden(false)}
+                  className="py-3 px-4 bg-background/50 border border-dashed border-border rounded-xl text-center cursor-pointer hover:border-accent/40 transition-colors my-2 active:scale-[0.99]"
+                >
+                  <p className="text-xs text-secondary flex items-center justify-center gap-1.5">
+                    <span>Comments hidden</span>
+                    <span className="text-accent font-semibold underline">Tap to view ({flatComments.length})</span>
+                  </p>
+                </div>
+              ) : isLoadingComments ? (
+                <div className="flex justify-center py-6">
+                  <Spinner />
+                </div>
+              ) : treeComments.length > 0 ? (
+                <div className="space-y-3 pt-1">
+                  {treeComments.map(comment => renderCommentNode(comment))}
+                </div>
+              ) : (
+                <p className="text-xs text-secondary text-center py-6 italic">No comments yet. Be the first to share your thoughts!</p>
+              )}
+            </div>
+
+            {/* Native Delete Confirmation Bottom Sheet */}
+            {deleteConfirmCommentId && (
+              <div 
+                className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in"
+                onClick={() => setDeleteConfirmCommentId(null)}
+              >
+                <div 
+                  className="w-full max-w-sm bg-surface border border-border rounded-3xl p-6 shadow-2xl transform-gpu animate-slide-up flex flex-col gap-4"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center mx-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-base font-bold text-primary">Delete this comment?</h3>
+                    <p className="text-xs text-secondary mt-1">
+                      This comment will be permanently removed from the discussion.
+                    </p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setDeleteConfirmCommentId(null)}
+                      className="flex-1 py-3 px-4 rounded-xl bg-neutral-800 text-secondary hover:text-primary font-semibold text-xs active:scale-95 transition-all"
+                      disabled={isDeletingComment}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => deleteConfirmCommentId && handleDeleteComment(deleteConfirmCommentId)}
+                      className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5"
+                      disabled={isDeletingComment}
+                    >
+                      {isDeletingComment ? <Spinner /> : "Yes, Delete"}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

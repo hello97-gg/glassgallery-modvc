@@ -1129,6 +1129,10 @@ const App: React.FC = () => {
             (window as any).__glassGalleryCloseFullscreen();
             return;
           }
+          if ((window as any).__glassGalleryModalHasSubState && (window as any).__glassGalleryModalCloseSubState) {
+            (window as any).__glassGalleryModalCloseSubState();
+            return;
+          }
           setSelectedImage(null);
         } else if (longPressedImage) {
           setLongPressedImage(null);

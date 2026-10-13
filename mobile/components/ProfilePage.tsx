@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { User } from 'firebase/auth';
-import type { ProfileUser, ImageMeta } from '../types';
-import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore, updateUserProfile } from '../services/firestoreService';
+import type { ProfileUser, ImageMeta, Comment } from '../types';
+import { getImagesByUploader, PAGE_SIZE, getUserProfile, getFollowStats, toggleFollowUser, getImagesFromFirestore, updateUserProfile, getUserComments, deleteComment } from '../services/firestoreService';
+import { Capacitor } from '@capacitor/core';
 import ImageGrid from './ImageGrid';
 import Spinner from './Spinner';
 import Button from './Button';
@@ -69,7 +70,154 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
   const isOwner = loggedInUser?.uid === user.uploaderUid;
   
   // Tab Management
-  const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'dashboard'>('created');
+  const [activeTab, setActiveTab] = useState<'created' | 'saved' | 'replies' | 'dashboard'>('created');
+
+  // Replies Gallery State
+  const [userReplies, setUserReplies] = useState<Comment[]>([]);
+  const [isLoadingReplies, setIsLoadingReplies] = useState(false);
+  const [hasLoadedReplies, setHasLoadedReplies] = useState(false);
+  const [deleteConfirmCommentId, setDeleteConfirmCommentId] = useState<string | null>(null);
+  const [isDeletingReply, setIsDeletingReply] = useState(false);
+
+  // Swipe Gesture Coordinates
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+
+  // Synchronize hide replies preference with database profile + local fallback
+  const isRepliesHidden = useMemo(() => {
+    if (typeof profileData.hideReplies === 'boolean') {
+      return profileData.hideReplies;
+    }
+    try {
+      return localStorage.getItem(`gg_hide_replies_${user.uploaderUid}`) === 'true';
+    } catch {
+      return false;
+    }
+  }, [profileData.hideReplies, user.uploaderUid]);
+
+  const handleToggleRepliesVisibility = async () => {
+    const next = !isRepliesHidden;
+    setProfileData(prev => ({ ...prev, hideReplies: next }));
+    try {
+      localStorage.setItem(`gg_hide_replies_${user.uploaderUid}`, next ? 'true' : 'false');
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch {}
+    try {
+      await updateUserProfile(profileData.uploaderUid, { hideReplies: next });
+    } catch (err) {
+      console.error("Failed to save hideReplies preference to database:", err);
+    }
+  };
+
+  // Fetch User Replies
+  const fetchUserReplies = useCallback(async () => {
+    if (!user.uploaderUid) return;
+    setIsLoadingReplies(true);
+    try {
+      const comments = await getUserComments(user.uploaderUid, loggedInUser?.uid);
+      setUserReplies(comments);
+      setHasLoadedReplies(true);
+    } catch (err) {
+      console.error("Failed to fetch user replies:", err);
+    } finally {
+      setIsLoadingReplies(false);
+    }
+  }, [user.uploaderUid, loggedInUser?.uid]);
+
+  useEffect(() => {
+    if (activeTab === 'replies' && !hasLoadedReplies) {
+      fetchUserReplies();
+    }
+  }, [activeTab, hasLoadedReplies, fetchUserReplies]);
+
+  const handleDeleteReply = async (commentId: string) => {
+    if (!loggedInUser) return;
+    setIsDeletingReply(true);
+    try {
+      await deleteComment(commentId, loggedInUser.uid);
+      setUserReplies(prev => prev.filter(c => c.id !== commentId));
+      setDeleteConfirmCommentId(null);
+      if (navigator.vibrate) navigator.vibrate([15, 50, 15]);
+    } catch (err) {
+      console.error("Failed to delete comment:", err);
+    } finally {
+      setIsDeletingReply(false);
+    }
+  };
+
+  // Android Hardware Back Button listener
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let active = true;
+    let listener: any;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        listener = await CapApp.addListener('backButton', () => {
+          if (!active) return;
+          if (deleteConfirmCommentId) {
+            setDeleteConfirmCommentId(null);
+          } else if (isEditModalOpen) {
+            setIsEditModalOpen(false);
+          } else if (isFollowersModalOpen) {
+            setIsFollowersModalOpen(false);
+          } else if (showVerifiedModal) {
+            setShowVerifiedModal(false);
+          } else if (activeTab === 'replies' || activeTab === 'saved' || activeTab === 'dashboard') {
+            setActiveTab('created');
+            if (navigator.vibrate) navigator.vibrate(10);
+          } else {
+            onBack();
+          }
+        });
+      } catch (err) {
+        console.warn("Back button setup error:", err);
+      }
+    })();
+    return () => {
+      active = false;
+      if (listener && typeof listener.remove === 'function') {
+        listener.remove();
+      }
+    };
+  }, [deleteConfirmCommentId, isEditModalOpen, isFollowersModalOpen, showVerifiedModal, activeTab, onBack]);
+
+  // Touch Gesture Swipe Handler
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || touchStartY === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX;
+    const deltaY = e.changedTouches[0].clientY - touchStartY;
+    setTouchStartX(null);
+    setTouchStartY(null);
+
+    // Only detect clean horizontal swipe gestures (horizontal delta > 50px, vertical delta < 45px)
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 45) {
+      if (deltaX < -50) {
+        // Swipe Left -> next tab
+        if (activeTab === 'created') {
+          setActiveTab('saved');
+          if (navigator.vibrate) navigator.vibrate(10);
+        } else if (activeTab === 'saved' && (isOwner || !isRepliesHidden)) {
+          setActiveTab('replies');
+          if (navigator.vibrate) navigator.vibrate(10);
+        }
+      } else if (deltaX > 50) {
+        // Swipe Right -> previous tab
+        if (activeTab === 'replies') {
+          setActiveTab('saved');
+          if (navigator.vibrate) navigator.vibrate(10);
+        } else if (activeTab === 'saved') {
+          setActiveTab('created');
+          if (navigator.vibrate) navigator.vibrate(10);
+        }
+      }
+    }
+  };
 
   // Created/Uploads Gallery State
   const [allImages, setAllImages] = useState<ImageMeta[]>([]);
@@ -562,8 +710,11 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
           )}
         </button>
         <button
-          onClick={() => setActiveTab('saved')}
-          className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer ${
+          onClick={() => {
+            setActiveTab('saved');
+            if (navigator.vibrate) navigator.vibrate(10);
+          }}
+          className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer transform-gpu active:scale-95 ${
             activeTab === 'saved' ? 'text-primary' : 'text-secondary hover:text-primary'
           }`}
         >
@@ -572,10 +723,38 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
           )}
         </button>
+        {(isOwner || !isRepliesHidden) && (
+          <button
+            onClick={() => {
+              setActiveTab('replies');
+              if (navigator.vibrate) navigator.vibrate(10);
+            }}
+            className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer flex items-center gap-1.5 transform-gpu active:scale-95 ${
+              activeTab === 'replies' ? 'text-primary' : 'text-secondary hover:text-primary'
+            }`}
+          >
+            Replies
+            {isRepliesHidden && isOwner ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-medium">
+                Hidden
+              </span>
+            ) : hasLoadedReplies && userReplies.length > 0 ? (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-surface border border-border text-secondary font-normal">
+                {userReplies.length}
+              </span>
+            ) : null}
+            {activeTab === 'replies' && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full animate-fade-in" />
+            )}
+          </button>
+        )}
         {isOwner && (
           <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer ${
+            onClick={() => {
+              setActiveTab('dashboard');
+              if (navigator.vibrate) navigator.vibrate(10);
+            }}
+            className={`relative pb-3 text-sm font-semibold transition-colors cursor-pointer transform-gpu active:scale-95 ${
               activeTab === 'dashboard' ? 'text-primary' : 'text-secondary hover:text-primary'
             }`}
           >
@@ -587,58 +766,241 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
         )}
       </div>
       
-      {/* Gallery Content switcher */}
-      {activeTab === 'created' ? (
-        isLoading ? (
-          <div className="flex justify-center items-center py-20">
-            <Spinner />
-          </div>
-        ) : allImages.length === 0 ? (
-          <div className="text-center py-20 px-4">
-            <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+      {/* Swipeable & Hardware-Accelerated Content Container */}
+      <div 
+        onTouchStart={handleTouchStart} 
+        onTouchEnd={handleTouchEnd}
+        className="transform-gpu will-change-transform touch-pan-y"
+      >
+        {activeTab === 'created' ? (
+          isLoading ? (
+            <div className="flex justify-center items-center py-20">
+              <Spinner />
             </div>
-            <h3 className="text-lg font-bold text-primary mb-1">Nothing created yet</h3>
-            <p className="text-sm text-secondary max-w-sm mx-auto">
-              {isOwner ? "Share your first masterpiece with the Glass Gallery community!" : "This creator hasn't published any images yet."}
-            </p>
+          ) : allImages.length === 0 ? (
+            <div className="text-center py-20 px-4">
+              <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-primary mb-1">Nothing created yet</h3>
+              <p className="text-sm text-secondary max-w-sm mx-auto">
+                {isOwner ? "Share your first masterpiece with the Glass Gallery community!" : "This creator hasn't published any images yet."}
+              </p>
+            </div>
+          ) : (
+            <div className="px-4 md:px-8">
+              <ImageGrid user={loggedInUser} images={displayedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} onLongPress={onLongPress} />
+            </div>
+          )
+        ) : activeTab === 'saved' ? (
+          isLoadingLikes ? (
+            <div className="flex justify-center items-center py-20">
+              <Spinner />
+            </div>
+          ) : likedImages.length === 0 ? (
+            <div className="text-center py-20 px-4">
+              <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-primary mb-1">No saved items</h3>
+              <p className="text-sm text-secondary max-w-sm mx-auto">
+                {isOwner ? "Curate your inspiration board! Click the Save button on any image to store it here." : "This user hasn't saved any images yet."}
+              </p>
+            </div>
+          ) : (
+            <div className="px-4 md:px-8">
+              <ImageGrid user={loggedInUser} images={displayedLikedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} onLongPress={onLongPress} />
+            </div>
+          )
+        ) : activeTab === 'replies' ? (
+          <div className="px-4 md:px-8 max-w-3xl mx-auto">
+            {/* Privacy Toggle Bar for Owner */}
+            {isOwner && (
+              <div className="mb-6 p-4 rounded-2xl bg-surface/60 border border-border/80 flex items-center justify-between gap-4 backdrop-blur-md shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl border ${isRepliesHidden ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-green-500/10 border-green-500/20 text-green-400'}`}>
+                    {isRepliesHidden ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-primary leading-tight">
+                      {isRepliesHidden ? "Replies are Private" : "Replies are Public"}
+                    </h4>
+                    <p className="text-xs text-secondary mt-0.5">
+                      {isRepliesHidden ? "Only you can see your replies" : "Anyone visiting your profile can see your replies"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleToggleRepliesVisibility}
+                  className={`text-xs font-bold px-4 py-2 rounded-xl transition-all active:scale-95 border cursor-pointer ${
+                    isRepliesHidden 
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30' 
+                      : 'bg-surface text-primary border-border hover:bg-neutral-800'
+                  }`}
+                >
+                  {isRepliesHidden ? "Make Public" : "Make Private"}
+                </button>
+              </div>
+            )}
+
+            {!isOwner && isRepliesHidden ? (
+              <div className="text-center py-20 px-4">
+                <div className="w-16 h-16 bg-surface rounded-2xl flex items-center justify-center mx-auto mb-4 border border-border shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-primary mb-1">Replies are private</h3>
+                <p className="text-sm text-secondary max-w-sm mx-auto">
+                  This creator has chosen to keep their replies hidden from public visitors.
+                </p>
+              </div>
+            ) : isLoadingReplies ? (
+              <div className="flex flex-col justify-center items-center py-20 gap-3">
+                <Spinner />
+                <p className="text-xs text-secondary animate-pulse">Loading replies...</p>
+              </div>
+            ) : userReplies.length === 0 ? (
+              <div className="text-center py-20 px-4">
+                <div className="w-16 h-16 bg-surface rounded-2xl flex items-center justify-center mx-auto mb-4 border border-border shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-primary mb-1">No replies yet</h3>
+                <p className="text-sm text-secondary max-w-sm mx-auto">
+                  {isOwner ? "Join the conversation! Leave comments on artworks to see them collected here." : "This user hasn't posted any replies yet."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {userReplies.map(reply => (
+                  <div
+                    key={reply.id}
+                    className="p-4 rounded-2xl bg-surface/70 border border-border/70 hover:border-border transition-all transform-gpu will-change-transform shadow-sm"
+                  >
+                    {/* Post Context Header */}
+                    {reply.post && (
+                      <div 
+                        onClick={() => reply.post && onImageClick(reply.post)}
+                        className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-border/40 cursor-pointer group active:opacity-80"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-[11px] font-bold text-accent uppercase tracking-wider">Replied on</span>
+                          <span className="text-xs font-semibold text-primary group-hover:text-accent transition-colors truncate">
+                            {reply.post.title || "Untitled Showcase"}
+                          </span>
+                        </div>
+                        {reply.post.imageUrl && (
+                          <img
+                            src={reply.post.imageUrl}
+                            alt={reply.post.title || "Post"}
+                            className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-border/60"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reply Message Body */}
+                    <p className="text-sm text-primary/90 leading-relaxed break-words whitespace-pre-wrap">
+                      {reply.content}
+                    </p>
+
+                    {/* Reply Footer info & Actions */}
+                    <div className="flex items-center justify-between gap-2 mt-3 pt-2 text-xs text-secondary">
+                      <div className="flex items-center gap-3">
+                        <span>{new Date(reply.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        {(reply.likeCount || 0) > 0 && (
+                          <span className="flex items-center gap-1 text-red-400 font-semibold">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 fill-current" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                            </svg>
+                            {reply.likeCount}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Delete action for author */}
+                      {isOwner && (
+                        <button
+                          onClick={() => setDeleteConfirmCommentId(reply.id)}
+                          className="text-secondary/70 hover:text-red-400 p-1.5 rounded-lg active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                          title="Delete reply"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          <span className="text-[11px] font-medium">Delete</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
-          <div className="px-4 md:px-8">
-            <ImageGrid user={loggedInUser} images={displayedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} onLongPress={onLongPress} />
-          </div>
-        )
-      ) : activeTab === 'saved' ? (
-        isLoadingLikes ? (
-          <div className="flex justify-center items-center py-20">
-            <Spinner />
-          </div>
-        ) : likedImages.length === 0 ? (
-          <div className="text-center py-20 px-4">
-            <div className="w-16 h-16 bg-surface rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          <CreatorDashboard 
+            images={allImages} 
+            followersCount={followersCount} 
+            followingCount={followingCount} 
+            onImageClick={onImageClick}
+          />
+        )}
+      </div>
+
+      {/* Native Delete Confirmation Bottom Sheet */}
+      {deleteConfirmCommentId && (
+        <div 
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setDeleteConfirmCommentId(null)}
+        >
+          <div 
+            className="w-full max-w-sm bg-surface border border-border rounded-3xl p-6 shadow-2xl transform-gpu animate-slide-up flex flex-col gap-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center mx-auto">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </div>
-            <h3 className="text-lg font-bold text-primary mb-1">No saved items</h3>
-            <p className="text-sm text-secondary max-w-sm mx-auto">
-              {isOwner ? "Curate your inspiration board! Click the Save button on any image to store it here." : "This user hasn't saved any images yet."}
-            </p>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-primary">Delete this reply?</h3>
+              <p className="text-xs text-secondary mt-1">
+                This reply will be permanently removed from the discussion and your profile.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setDeleteConfirmCommentId(null)}
+                className="flex-1 py-3 px-4 rounded-xl bg-neutral-800 text-secondary hover:text-primary font-semibold text-xs active:scale-95 transition-all"
+                disabled={isDeletingReply}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteConfirmCommentId && handleDeleteReply(deleteConfirmCommentId)}
+                className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5"
+                disabled={isDeletingReply}
+              >
+                {isDeletingReply ? <Spinner /> : "Yes, Delete"}
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="px-4 md:px-8">
-            <ImageGrid user={loggedInUser} images={displayedLikedImages} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={handleLocalLikeToggle} onLongPress={onLongPress} />
-          </div>
-        )
-      ) : (
-        <CreatorDashboard 
-          images={allImages} 
-          followersCount={followersCount} 
-          followingCount={followingCount} 
-          onImageClick={onImageClick}
-        />
+        </div>
       )}
 
       {isEditModalOpen && (
