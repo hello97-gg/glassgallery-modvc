@@ -54,7 +54,8 @@ const formatTime = (seconds: number): string => {
 const extractReelsFromImages = (images: ImageMeta[], userUid?: string | null, startId?: string | null): ReelItem[] => {
   const videoImages = images.filter(img => {
     const u = img.imageUrl || '';
-    return u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i) || u.toLowerCase().includes('.mp4');
+    const flags = img.flags || [];
+    return isVideoUrl(u) || flags.includes('Video') || flags.includes('Reels') || u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i);
   });
 
   let mapped: ReelItem[] = videoImages.map(img => {
@@ -74,7 +75,7 @@ const extractReelsFromImages = (images: ImageMeta[], userUid?: string | null, st
     return {
       id: img.id,
       videoUrl: img.imageUrl,
-      poster: img.imageUrl,
+      poster: (img as any).thumbnailUrl || (img as any).poster || (img as any).keyframes?.[0] || img.imageUrl,
       width: initialWidth,
       height: initialHeight,
       duration: 15,
@@ -187,7 +188,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   // Media Playback State
   const [isPlaying, setIsPlaying] = useState(true);
-  const prevActiveIndexRef = useRef(currentIndex);
+  const prevActiveIndexRef = useRef(-1);
 
   // Comments Bottom Sheet & Extended Interactions (Replies, Editing, Deletion)
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
@@ -597,7 +598,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       if (idx === currentIndex) {
         video.muted = isMuted;
         video.playbackRate = is2xHold ? 2.0 : speed;
-        if (isNewReel) {
+        if (isNewReel || video.paused) {
           video.play()
             .then(() => setIsPlaying(true))
             .catch(() => setIsPlaying(false));
@@ -1333,24 +1334,44 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   {/* HTML5 Video Element: perfectly contained centered for landscape, covered for vertical */}
                   <video
                     ref={(el) => {
-                      if (el) videoRefs.current.set(index, el);
-                      else videoRefs.current.delete(index);
+                      if (el) {
+                        videoRefs.current.set(index, el);
+                        if (index === currentIndex && el.paused) {
+                          el.play()
+                            .then(() => setIsPlaying(true))
+                            .catch(() => {});
+                        }
+                      } else {
+                        videoRefs.current.delete(index);
+                      }
                     }}
                     src={reel.videoUrl}
-                    poster={reel.poster || DARK_VIDEO_POSTER}
+                    poster={hasValidImagePoster ? reel.poster : DARK_VIDEO_POSTER}
                     playsInline
                     webkit-playsinline="true"
                     x5-playsinline="true"
                     loop
+                    autoPlay={isActive}
                     preload={isActive ? "auto" : "metadata"}
                     muted={isMuted}
-                    onLoadedMetadata={(e) => handleVideoMetadata(reel.id, e.currentTarget)}
+                    onLoadedMetadata={(e) => {
+                      handleVideoMetadata(reel.id, e.currentTarget);
+                      try {
+                        if (e.currentTarget.currentTime === 0) {
+                          e.currentTarget.currentTime = 0.001;
+                        }
+                      } catch (err) {}
+                      firstFrameMap.current.set(index, true);
+                      setFirstFrameVersion(v => v + 1);
+                    }}
                     onLoadedData={() => {
                       firstFrameMap.current.set(index, true);
                       setFirstFrameVersion(v => v + 1);
                     }}
                     onWaiting={() => handleVideoWaiting(index)}
                     onPlaying={() => {
+                      firstFrameMap.current.set(index, true);
+                      setFirstFrameVersion(v => v + 1);
                       handleVideoPlaying(index);
                       if (index === currentIndex) setIsPlaying(true);
                     }}
@@ -1362,9 +1383,9 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                       loopCountRef.current++;
                       if (index === currentIndex) setIsPlaying(false);
                     }}
-                    className={`w-full h-full pointer-events-none transition-opacity duration-300 z-10 ${
+                    className={`w-full h-full pointer-events-none z-10 ${
                       isVertical ? 'object-cover' : 'object-contain'
-                    } ${isFirstFrameReady ? 'opacity-100' : 'opacity-0'}`}
+                    }`}
                   />
 
                   {/* Persistent Pause Indicator Overlay when paused */}

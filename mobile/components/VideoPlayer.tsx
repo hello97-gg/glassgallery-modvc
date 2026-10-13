@@ -676,7 +676,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             loop
             preload="metadata"
             className={`w-full h-full object-cover rounded-[16px] block pointer-events-none transition-opacity duration-300 ${
-              isFirstFrameReady ? 'opacity-100' : 'opacity-0'
+              validImagePoster && !isFirstFrameReady ? 'opacity-0' : 'opacity-100'
             }`}
           />
         )}
@@ -753,7 +753,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           loop={loop}
           autoPlay={autoPlay}
           className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
-            isFirstFrameReady ? 'opacity-100' : 'opacity-0'
+            validImagePoster && !isFirstFrameReady ? 'opacity-0' : 'opacity-100'
           }`}
         />
       ) : (
