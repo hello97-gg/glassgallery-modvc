@@ -126,10 +126,11 @@ export const getPersonalizedFeed = async (userUid: string): Promise<{ images: Im
 // Record an image view for taste profile building (fire-and-forget)
 export const recordImageView = async (imageId: string, userUid: string): Promise<void> => {
     try {
+        const baseId = imageId ? imageId.split('_loop_')[0].split('_rel_loop_')[0] : '';
         await fetch('/api/images?action=view', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageId: imageId.split('_loop_')[0], userUid })
+            body: JSON.stringify({ imageId: baseId, userUid })
         });
     } catch (error) {
         // Silent fail — view tracking is non-critical
@@ -172,7 +173,7 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
 // Real-time subscription for a single image (simulated via client polling)
 export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) => void) => {
     let active = true;
-    const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
+    const baseId = imageId ? imageId.split('_loop_')[0].split('_rel_loop_')[0] : imageId;
 
     const poll = async () => {
         if (document.visibilityState !== 'visible') return;
@@ -277,22 +278,33 @@ export const incrementDownloadCount = async (imageId: string) => {
     }
 };
 
-export const toggleImageLike = async (image: ImageMeta, user: User) => {
+export const toggleImageLike = async (
+    imageOrId: ImageMeta | string,
+    userOrUid: User | string,
+    extraUserData?: { displayName?: string; photoURL?: string }
+): Promise<{ success: boolean; hasLiked: boolean; likeCount?: number }> => {
     try {
+        const rawId = typeof imageOrId === 'string' ? imageOrId : imageOrId?.id;
+        const imageId = rawId ? String(rawId).split('_loop_')[0].split('_rel_loop_')[0] : '';
+        const userUid = typeof userOrUid === 'string' ? userOrUid : userOrUid?.uid;
+        const userName = typeof userOrUid === 'object' ? (userOrUid?.displayName || 'Someone') : (extraUserData?.displayName || 'Someone');
+        const userPhotoURL = typeof userOrUid === 'object' ? (userOrUid?.photoURL || '') : (extraUserData?.photoURL || '');
+
         const response = await fetch('/api/images?action=like', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                imageId: image.id,
-                userUid: user.uid,
-                userName: user.displayName || 'Someone',
-                userPhotoURL: user.photoURL || '',
+                imageId,
+                userUid,
+                userName,
+                userPhotoURL,
             })
         });
         const data = await response.json();
         if (!data.success) {
             throw new Error(data.error || "Failed to toggle like.");
         }
+        return data;
     } catch (error) {
         console.error("Error toggling image like: ", error);
         throw error;
@@ -486,7 +498,7 @@ export const toggleFollowUser = async (followerUid: string, followingUid: string
 
 export const getCommentsForImage = async (imageId: string): Promise<Comment[]> => {
     try {
-        const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
+        const baseId = imageId ? imageId.split('_loop_')[0].split('_rel_loop_')[0] : imageId;
         const response = await fetch(`/api/comments?imageId=${baseId}`);
         const data = await response.json();
         if (!data.success) {
@@ -506,7 +518,7 @@ export const addCommentToImage = async (
     parentId?: string | null
 ): Promise<Comment> => {
     try {
-        const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
+        const baseId = imageId ? imageId.split('_loop_')[0].split('_rel_loop_')[0] : imageId;
         const response = await fetch('/api/comments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -565,7 +577,7 @@ export const toggleCommentLike = async (commentId: string, userUid: string): Pro
     }
 };
 
-export const deleteComment = async (commentId: string, userUid: string): Promise<void> => {
+export const deleteComment = async (commentId: string, userUid: string): Promise<{ success: boolean; commentCount?: number; removedCount?: number }> => {
     try {
         const response = await fetch('/api/comments?action=delete', {
             method: 'POST',
@@ -576,6 +588,7 @@ export const deleteComment = async (commentId: string, userUid: string): Promise
         if (!data.success) {
             throw new Error(data.error || "Failed to delete comment.");
         }
+        return data;
     } catch (error) {
         console.error("Error deleting comment:", error);
         throw error;

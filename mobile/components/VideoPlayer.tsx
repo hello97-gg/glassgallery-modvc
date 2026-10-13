@@ -408,10 +408,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const active = !!document.fullscreenElement;
+      setIsFullscreen(active);
+      (window as any).__glassGalleryVideoFullscreen = active;
+      if (active) {
+        (window as any).__glassGalleryCloseVideoFullscreen = () => {
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+          setIsFullscreen(false);
+        };
+      } else {
+        (window as any).__glassGalleryCloseVideoFullscreen = null;
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      (window as any).__glassGalleryVideoFullscreen = false;
+      (window as any).__glassGalleryCloseVideoFullscreen = null;
+    };
   }, []);
 
   // Desktop Keyboard Shortcuts

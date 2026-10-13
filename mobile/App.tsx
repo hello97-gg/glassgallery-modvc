@@ -298,6 +298,7 @@ const App: React.FC = () => {
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
   const [lastView, setLastView] = useState<'home' | 'explore' | 'reels' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal'>('home');
   const [initialReelId, setInitialReelId] = useState<string | null>(null);
+  const savedPinHistoryRef = useRef<ImageMeta[]>([]);
   
   // Standalone Follow/Unfollow view variables
   const [followViewType, setFollowViewType] = useState<'followers' | 'following'>('followers');
@@ -314,6 +315,7 @@ const App: React.FC = () => {
   const dragCounter = useRef(0);
   const deepLinkUnsubscribeRef = useRef<(() => void) | null>(null);
   const isLoadingMore = useRef(false);
+  const inFlightLikesRef = useRef<Set<string>>(new Set());
 
   const [currentUserProfile, setCurrentUserProfile] = useState<ProfileUser | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -863,13 +865,22 @@ const App: React.FC = () => {
   // Sync selectedImage in pinHistory
   useEffect(() => {
     if (selectedImage && allImages.length > 0) {
-        const baseId = selectedImage.id.split('_loop_')[0].split('_rel_loop_')[0];
-        const updated = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
-        if (updated && updated !== selectedImage) {
-            setPinHistory(prev => prev.map(img => img.id === selectedImage.id ? updated : img));
+      const baseId = selectedImage.id.split('_loop_')[0].split('_rel_loop_')[0];
+      const updated = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
+      if (updated) {
+        const needsSync = 
+          updated.likeCount !== selectedImage.likeCount ||
+          updated.commentCount !== selectedImage.commentCount ||
+          updated.likedBy?.length !== selectedImage.likedBy?.length;
+        if (needsSync) {
+          setPinHistory(prev => prev.map(img => {
+            const imgBase = img.id.split('_loop_')[0].split('_rel_loop_')[0];
+            return imgBase === baseId ? { ...img, likeCount: updated.likeCount, commentCount: updated.commentCount, likedBy: updated.likedBy } : img;
+          }));
         }
+      }
     }
-  }, [allImages, selectedImage]);
+  }, [allImages, selectedImage?.id, selectedImage?.likeCount, selectedImage?.commentCount]);
 
   const loadMoreImages = useCallback(() => {
     if (imagesLoading || allImages.length === 0 || isLoadingMore.current) return;
@@ -1027,12 +1038,15 @@ const App: React.FC = () => {
       updateURL({ image: original.id });
     };
 
-    // Remove any leftover viewTransitionName to prevent duplicate name error
-    document.querySelectorAll('*').forEach((el: any) => {
-      if (el.style && el.style.viewTransitionName) {
-        el.style.removeProperty('view-transition-name');
-      }
-    });
+    // If modal is already open (e.g. clicking More Like This), push immediately without expensive full-document view transition
+    if (pinHistory.length > 0) {
+      pushPin();
+      return;
+    }
+
+    // Clean up any existing view transition names safely without querying whole document
+    const activeVTs = document.querySelectorAll('[style*="view-transition-name"]');
+    activeVTs.forEach((el: any) => el?.style?.removeProperty('view-transition-name'));
 
     // Pinterest-style shared element expansion using View Transitions API
     const cardEl = document.getElementById(`pin-card-${image.id}`);
@@ -1217,6 +1231,13 @@ const App: React.FC = () => {
       return;
     }
     if (activeView === 'reels') {
+      if (savedPinHistoryRef.current.length > 0) {
+        setPinHistory(savedPinHistoryRef.current);
+        savedPinHistoryRef.current = [];
+        setActiveView(lastView === 'reels' ? 'home' : lastView);
+        setInitialReelId(null);
+        return;
+      }
       setActiveView(lastView === 'reels' ? 'home' : lastView);
       setInitialReelId(null);
       return;
@@ -1276,11 +1297,12 @@ const App: React.FC = () => {
   };
 
   const handleOpenInReels = useCallback((videoId: string) => {
+    savedPinHistoryRef.current = pinHistory;
     setLastView(activeView);
     setInitialReelId(videoId);
     setPinHistory([]);
     setActiveView('reels');
-  }, [activeView]);
+  }, [activeView, pinHistory]);
 
   const handleOpenLegal = (tab: 'terms' | 'privacy' | 'guidelines' = 'terms') => {
       setLegalModalTab(tab);
@@ -1296,12 +1318,22 @@ const App: React.FC = () => {
     const registerBackButton = async () => {
       const listener = await CapApp.addListener('backButton', () => {
         if (!active) return;
+
+        // 1. If any video or HTML element is in native fullscreen, exit fullscreen only!
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+          return;
+        }
+        if ((window as any).__glassGalleryVideoFullscreen && (window as any).__glassGalleryCloseVideoFullscreen) {
+          (window as any).__glassGalleryCloseVideoFullscreen();
+          return;
+        }
+        if ((window as any).__glassGalleryFullscreen && (window as any).__glassGalleryCloseFullscreen) {
+          (window as any).__glassGalleryCloseFullscreen();
+          return;
+        }
+
         if (pinHistory.length > 0) {
-          // If the child detail modal is currently in fullscreen zoom mode, close that first!
-          if ((window as any).__glassGalleryFullscreen && (window as any).__glassGalleryCloseFullscreen) {
-            (window as any).__glassGalleryCloseFullscreen();
-            return;
-          }
           if ((window as any).__glassGalleryModalHasSubState && (window as any).__glassGalleryModalCloseSubState) {
             (window as any).__glassGalleryModalCloseSubState();
             return;
@@ -1350,24 +1382,32 @@ const App: React.FC = () => {
   }, [pinHistory, handlePopPin, longPressedImage, isUploadModalOpen, isLoginModalOpen, isUpdateModalOpen, updateInfo, activeView, handleBack, handleSetView]);
 
   const handleImageUpdate = (updatedImage: ImageMeta) => {
-    const baseId = updatedImage.id.split('_loop_')[0];
-    const updater = (prevImages: ImageMeta[]) => prevImages.map(img => {
-      const imgBaseId = img.id.split('_loop_')[0];
-      if (imgBaseId === baseId) {
-        // Retain the specific loop suffix ID key while updating all other properties
-        return { ...updatedImage, id: img.id };
-      }
-      return img;
-    });
+    const baseId = updatedImage.id.split('_loop_')[0].split('_rel_loop_')[0];
+    const updater = (prevImages: ImageMeta[]) => {
+      let matched = false;
+      const mapped = prevImages.map(img => {
+        const imgBaseId = img.id.split('_loop_')[0].split('_rel_loop_')[0];
+        if (imgBaseId === baseId) {
+          matched = true;
+          return { ...updatedImage, id: img.id };
+        }
+        return img;
+      });
+      return matched ? mapped : prevImages;
+    };
     setDisplayedImages(updater);
-    setAllImages(updater);
-
-    if (selectedImage) {
-      const selectedBaseId = selectedImage.id.split('_loop_')[0];
-      if (selectedBaseId === baseId) {
-         setPinHistory(prev => prev.map(img => img.id === selectedImage.id ? { ...updatedImage, id: selectedImage.id } : img));
+    setAllImages(prev => {
+      const exists = prev.some(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
+      if (!exists) {
+        return [{ ...updatedImage, id: baseId }, ...prev];
       }
-    }
+      return updater(prev);
+    });
+
+    setPinHistory(prev => prev.map(img => {
+      const imgBaseId = img.id.split('_loop_')[0].split('_rel_loop_')[0];
+      return imgBaseId === baseId ? { ...updatedImage, id: img.id } : img;
+    }));
   };
 
   const handleLikeToggle = async (image: ImageMeta) => {
@@ -1376,24 +1416,40 @@ const App: React.FC = () => {
         return;
     }
     
-    // Resolve original base image and ID
-    const baseId = image.id.split('_loop_')[0];
-    const originalImage = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
+    // Resolve canonical base image and ID
+    const baseId = image.id.split('_loop_')[0].split('_rel_loop_')[0];
+    if (inFlightLikesRef.current.has(baseId)) return;
+    inFlightLikesRef.current.add(baseId);
+
+    const originalImage = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId) || image;
     
-    const oldLikedBy = originalImage.likedBy || [];
+    const oldLikedBy = originalImage.likedBy || image.likedBy || [];
     const hasLiked = oldLikedBy.includes(user.uid);
     const newLikedBy = hasLiked
         ? oldLikedBy.filter(id => id !== user.uid)
         : [...oldLikedBy, user.uid];
 
-    const updatedImage = { ...originalImage, likedBy: newLikedBy, likeCount: newLikedBy.length };
+    const currentCount = typeof originalImage.likeCount === 'number' 
+        ? originalImage.likeCount 
+        : (typeof image.likeCount === 'number' ? image.likeCount : oldLikedBy.length);
+    const newLikeCount = hasLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
+
+    const updatedImage = { ...originalImage, id: baseId, likedBy: newLikedBy, likeCount: newLikeCount };
     handleImageUpdate(updatedImage); 
 
     try {
-        await toggleImageLike({ ...originalImage, id: baseId }, user);
+        const res = await toggleImageLike({ ...originalImage, id: baseId }, user);
+        if (res && typeof res.likeCount === 'number') {
+           const finalLikedBy = res.hasLiked 
+             ? (newLikedBy.includes(user.uid) ? newLikedBy : [...newLikedBy, user.uid])
+             : newLikedBy.filter(id => id !== user.uid);
+           handleImageUpdate({ ...updatedImage, likeCount: res.likeCount, likedBy: finalLikedBy });
+        }
     } catch (error) {
         console.error("Failed to toggle like:", error);
         handleImageUpdate(originalImage);
+    } finally {
+        inFlightLikesRef.current.delete(baseId);
     }
   };
 
@@ -1441,6 +1497,7 @@ const App: React.FC = () => {
                 onViewProfile={handleViewProfile}
                 onShare={(reel) => setLongPressedImage(reel)}
                 onLikeToggle={handleLikeToggle}
+                onImageUpdate={handleImageUpdate}
                 initialReelId={initialReelId}
                 allImages={allImages}
             />

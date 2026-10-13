@@ -134,7 +134,7 @@ export const rerankNextReels = (reels: ReelItem[], startIndex: number): ReelItem
     let scoreA = 0;
     let scoreB = 0;
     (a.tags || []).forEach(t => { scoreA += (sessionTaste[t.toLowerCase()] || 0); });
-    (b.tags || []).forEach(t => { scoreB += (sessionTaste[b.toLowerCase()] || 0); });
+    (b.tags || []).forEach(t => { scoreB += (sessionTaste[t.toLowerCase()] || 0); });
     return scoreB - scoreA;
   });
 

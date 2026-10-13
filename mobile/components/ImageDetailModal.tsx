@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser, Comment } from '../types';
 import { LICENSES, FLAGS } from '../constants';
@@ -112,6 +112,8 @@ const HeartIconOutline = () => (
     </svg>
 );
 
+
+const suggestionsCache = new Map<string, ImageMeta[]>();
 
 const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ 
   image, 
@@ -267,37 +269,56 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
 
   useEffect(() => {
-    // 1. SILENTLY track user click (action='view') in background if user is logged in
-    if (user?.uid && currentImage?.id) {
+    if (!currentImage?.id) return;
+    const baseId = currentImage.id.split('_loop_')[0].split('_rel_loop_')[0];
+
+    // Instantly scroll back to top of modal for seamless new pin viewing
+    modalRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+
+    // 1. SILENTLY track user view in background if user is logged in
+    if (user?.uid) {
       fetch('/api/images?action=view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId: currentImage.id, userUid: user.uid })
-      }).catch(err => console.error("View tracking failed:", err));
+        body: JSON.stringify({ imageId: baseId, userUid: user.uid })
+      }).catch(() => {});
     }
 
     // Record user interest locally for client taste model
     recordClickInterest(currentImage);
 
-    // 2. Fetch smart recommendations from dynamic backend
-    if (currentImage?.id) {
+    // If suggestions are cached, use them immediately with zero delay
+    if (suggestionsCache.has(baseId)) {
+      setServerSuggestions(suggestionsCache.get(baseId)!);
+      setIsLoadingSuggestions(false);
+    } else {
       setIsLoadingSuggestions(true);
-      const url = `/api/images?action=suggestions&imageId=${currentImage.id}${user?.uid ? `&userUid=${user.uid}` : ''}&limit=50`;
-      
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.images) {
-            setServerSuggestions(data.images);
-          }
-        })
-        .catch(err => {
-          console.error("Failed to fetch suggestions:", err);
-        })
-        .finally(() => {
-          setIsLoadingSuggestions(false);
-        });
     }
+
+    // 2. Fetch fresh recommendations using AbortController to cancel stale in-flight requests
+    const controller = new AbortController();
+    const url = `/api/images?action=suggestions&imageId=${baseId}${user?.uid ? `&userUid=${user.uid}` : ''}&limit=40`;
+    
+    fetch(url, { signal: controller.signal })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.images)) {
+          suggestionsCache.set(baseId, data.images);
+          setServerSuggestions(data.images);
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error("Failed to fetch suggestions:", err);
+        }
+      })
+      .finally(() => {
+        setIsLoadingSuggestions(false);
+      });
+
+    return () => {
+      controller.abort();
+    };
   }, [currentImage.id, user?.uid]);
 
   // Reset infinite scroll count when image changes
@@ -403,8 +424,27 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     });
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.map(s => s.item);
-  }, [currentImage, serverSuggestions, allImages, user?.uid]);
+
+    // Content diversity enforcement: Cap videos at ~30% of "More like this"
+    // to prevent wall-to-wall video reels taking over recommendations
+    const maxVideoRatio = 0.3;
+    const finalCandidates: ImageMeta[] = [];
+    const deferredVideos: ImageMeta[] = [];
+    let videoCount = 0;
+
+    for (const { item } of scored) {
+      const isVid = isVideoUrl(item.imageUrl);
+      const currentRatio = finalCandidates.length > 0 ? videoCount / finalCandidates.length : 0;
+      if (isVid && currentRatio >= maxVideoRatio) {
+        deferredVideos.push(item);
+      } else {
+        if (isVid) videoCount++;
+        finalCandidates.push(item);
+      }
+    }
+
+    return [...finalCandidates, ...deferredVideos];
+  }, [currentImage?.id, currentImage?.title, currentImage?.uploaderUid, currentImage?.location, serverSuggestions, allImages.length, user?.uid]);
 
   // Infinitely scrollable display generator: seamlessly loops the ranked pool with unique keys
   const displayRelated = React.useMemo(() => {
@@ -420,6 +460,20 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     }
     return results;
   }, [rankedCandidates, relatedVisibleCount]);
+
+  // Preload top recommended image assets in background off main thread
+  useEffect(() => {
+    if (rankedCandidates && rankedCandidates.length > 0) {
+      for (let i = 0; i < Math.min(3, rankedCandidates.length); i++) {
+        const item = rankedCandidates[i];
+        if (item && item.imageUrl && !isVideoUrl(item.imageUrl)) {
+          const img = new Image();
+          img.decoding = 'async';
+          img.src = item.imageUrl;
+        }
+      }
+    }
+  }, [rankedCandidates]);
 
   const loadMoreRelated = React.useCallback(() => {
     if (isLoadingMoreRelated || rankedCandidates.length === 0) return;
@@ -468,7 +522,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   };
 
   useEffect(() => {
-    const unsubscribe = subscribeToImage(image.id, (updatedImage) => {
+    const baseId = image.id.split('_loop_')[0].split('_rel_loop_')[0];
+    const unsubscribe = subscribeToImage(baseId, (updatedImage) => {
         if (updatedImage) setCurrentImage(updatedImage);
     });
     return () => unsubscribe();
@@ -542,27 +597,42 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     };
   }, [deleteConfirmCommentId, replyToId, editingCommentId]);
 
-  // Load comments when currentImage changes
-  const loadComments = async (idToLoad: string) => {
+  // Load comments when currentImage changes with AbortController protection
+  const loadComments = useCallback(async (idToLoad: string, signal?: AbortSignal) => {
     if (!idToLoad) return;
+    const baseId = idToLoad.split('_loop_')[0].split('_rel_loop_')[0];
     setIsLoadingComments(true);
     try {
-      const data = await getCommentsForImage(idToLoad);
+      const data = await getCommentsForImage(baseId);
+      if (signal?.aborted) return;
       setFlatComments(data);
-    } catch (err) {
-      console.error("Failed to load comments:", err);
+      if (typeof currentImage.commentCount !== 'number' || (data.length > 0 && currentImage.commentCount === 0)) {
+        const synced = { ...currentImage, commentCount: data.length };
+        setCurrentImage(synced);
+        onImageUpdate(synced);
+      }
+    } catch (err: any) {
+      if (!signal?.aborted) {
+        console.error("Failed to load comments:", err);
+      }
     } finally {
-      setIsLoadingComments(false);
+      if (!signal?.aborted) {
+        setIsLoadingComments(false);
+      }
     }
-  };
+  }, [currentImage, onImageUpdate]);
 
   useEffect(() => {
-    loadComments(currentImage.id);
+    const controller = new AbortController();
+    loadComments(currentImage.id, controller.signal);
     setReplyToId(null);
     setReplyText('');
     setNewCommentText('');
     setEditingCommentId(null);
-  }, [currentImage.id]);
+    return () => {
+      controller.abort();
+    };
+  }, [currentImage.id, loadComments]);
 
   const handlePostComment = async () => {
     if (!user || !newCommentText.trim() || isSubmittingComment) return;
@@ -571,6 +641,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       const newComment = await addCommentToImage(currentImage.id, user, newCommentText.trim());
       setFlatComments(prev => [newComment, ...prev]);
       setNewCommentText('');
+      const nextCount = (currentImage.commentCount || 0) + 1;
+      const updated = { ...currentImage, commentCount: nextCount };
+      setCurrentImage(updated);
+      onImageUpdate(updated);
       if (navigator.vibrate) navigator.vibrate(10);
     } catch (err) {
       console.error("Failed to post comment:", err);
@@ -587,6 +661,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       setFlatComments(prev => [...prev, newComment]);
       setReplyText('');
       setReplyToId(null);
+      const nextCount = (currentImage.commentCount || 0) + 1;
+      const updated = { ...currentImage, commentCount: nextCount };
+      setCurrentImage(updated);
+      onImageUpdate(updated);
       if (navigator.vibrate) navigator.vibrate(10);
     } catch (err) {
       console.error("Failed to post reply:", err);
@@ -636,9 +714,14 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     if (!user) return;
     setIsDeletingComment(true);
     try {
-      await deleteComment(commentId, user.uid);
-      setFlatComments(prev => prev.filter(c => c.id !== commentId));
+      const res = await deleteComment(commentId, user.uid);
+      const removedCount = res?.removedCount || 1;
+      setFlatComments(prev => prev.filter(c => c.id !== commentId && c.parentId !== commentId));
       setDeleteConfirmCommentId(null);
+      const nextCount = Math.max(0, (currentImage.commentCount || 1) - removedCount);
+      const updated = { ...currentImage, commentCount: nextCount };
+      setCurrentImage(updated);
+      onImageUpdate(updated);
       if (navigator.vibrate) navigator.vibrate([15, 50, 15]);
     } catch (err) {
       console.error("Failed to delete comment:", err);
@@ -981,6 +1064,16 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
   const handleLikeClick = () => {
       setIsLikeBtnAnimating(true);
+      if (user) {
+        const isCurrentlyLiked = Boolean(currentImage.likedBy?.includes(user.uid));
+        const nextLikedBy = isCurrentlyLiked
+          ? (currentImage.likedBy || []).filter(u => u !== user.uid)
+          : [...(currentImage.likedBy || []), user.uid];
+        const nextCount = isCurrentlyLiked
+          ? Math.max(0, (currentImage.likeCount || 1) - 1)
+          : (currentImage.likeCount || 0) + 1;
+        setCurrentImage(prev => ({ ...prev, likedBy: nextLikedBy, likeCount: nextCount }));
+      }
       onLikeToggle(currentImage);
       setTimeout(() => setIsLikeBtnAnimating(false), 400);
   };
@@ -992,7 +1085,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       if (now - lastTap.current < DOUBLE_TAP_DELAY) {
           // Double Tap: Like image
           if (!hasLiked) {
-              onLikeToggle(currentImage);
+              handleLikeClick();
           }
           setShowHeartAnimation(true);
           setIsLikeBtnAnimating(true);
@@ -1466,18 +1559,28 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                     key={img.id}
                     id={`pin-card-${img.id}`}
                     onClick={() => handleSelectRelated(img)}
+                    style={{
+                      aspectRatio: img.width && img.height ? `${img.width} / ${img.height}` : undefined,
+                      minHeight: !img.height ? '150px' : undefined
+                    }}
                     className="break-inside-avoid mb-2 group relative cursor-pointer overflow-hidden rounded-[16px] bg-[#121212] transition-transform duration-200 active:scale-[0.98]"
                   >
                     {isVideoUrl(img.imageUrl) ? (
-                      <div className="relative">
+                      <div className="relative w-full h-full">
                         <VideoPlayer 
                           src={img.imageUrl} 
                           poster={img.imageUrl}
                           width={img.width}
                           height={img.height}
                           isFeedPreview={true}
-                          onClick={() => handleSelectRelated(img)}
                         />
+                        {/* Video Pill */}
+                        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white flex items-center gap-1 shadow-md pointer-events-none">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          <span>Video</span>
+                        </div>
                         {onOpenInReels && (
                           <button
                             onClick={(e) => {
@@ -1501,6 +1604,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                         alt="" 
                         className="w-full h-auto object-cover rounded-[16px] block" 
                         loading="lazy"
+                        decoding="async"
                       />
                     )}
 

@@ -13,7 +13,9 @@ import {
   getFollowingList,
   getCommentsForImage, 
   addCommentToImage, 
-  toggleCommentLike 
+  toggleCommentLike,
+  editComment,
+  deleteComment
 } from '../services/firestoreService';
 import { DARK_VIDEO_POSTER } from './VideoPlayer';
 import Spinner from './Spinner';
@@ -24,6 +26,7 @@ interface ReelsPageProps {
   onViewProfile: (profile: ProfileUser) => void;
   onShare: (reel: ImageMeta) => void;
   onLikeToggle?: (image: ImageMeta) => void;
+  onImageUpdate?: (image: ImageMeta) => void;
   initialReelId?: string | null;
   allImages?: ImageMeta[];
 }
@@ -103,6 +106,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   onViewProfile,
   onShare,
   onLikeToggle,
+  onImageUpdate,
   initialReelId,
   allImages = []
 }) => {
@@ -175,12 +179,19 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   const [speed, setSpeed] = useState<number>(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
-  // Comments Bottom Sheet
+  // Media Playback State
+  const [isPlaying, setIsPlaying] = useState(true);
+  const prevActiveIndexRef = useRef(currentIndex);
+
+  // Comments Bottom Sheet & Extended Interactions (Replies, Editing, Deletion)
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const [replyToComment, setReplyToComment] = useState<{ id: string; userName: string } | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState('');
 
   // Description expansion state
   const [expandedDescIndex, setExpandedDescIndex] = useState<number | null>(null);
@@ -227,6 +238,28 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       }).catch(() => {});
     }
   }, [user?.uid]);
+
+  // Sync likes and comment counts from main feed / allImages in real time
+  useEffect(() => {
+    if (!allImages || allImages.length === 0) return;
+    setReels(prev => {
+      let changed = false;
+      const next = prev.map(reel => {
+        const baseId = reel.id.split('_loop_')[0].split('_rel_loop_')[0];
+        const match = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
+        if (!match) return reel;
+        const hasLiked = !!(user && match.likedBy?.includes(user.uid));
+        const likeCount = typeof match.likeCount === 'number' ? match.likeCount : (match.likedBy?.length || 0);
+        const commentCount = typeof match.commentCount === 'number' ? match.commentCount : reel.commentCount;
+        if (reel.hasLiked !== hasLiked || reel.likeCount !== likeCount || reel.commentCount !== commentCount) {
+          changed = true;
+          return { ...reel, hasLiked, likeCount, commentCount };
+        }
+        return reel;
+      });
+      return changed ? next : prev;
+    });
+  }, [allImages, user?.uid]);
 
   // Handle hardware back button closing the comments drawer
   useEffect(() => {
@@ -497,11 +530,18 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   // Active Video Playback Synchronization
   useEffect(() => {
+    const isNewReel = prevActiveIndexRef.current !== currentIndex;
+    prevActiveIndexRef.current = currentIndex;
+
     videoRefs.current.forEach((video, idx) => {
       if (idx === currentIndex) {
         video.muted = isMuted;
         video.playbackRate = is2xHold ? 2.0 : speed;
-        video.play().catch(() => {});
+        if (isNewReel) {
+          video.play()
+            .then(() => setIsPlaying(true))
+            .catch(() => setIsPlaying(false));
+        }
       } else {
         video.pause();
         if (Math.abs(idx - currentIndex) > 1) {
@@ -516,9 +556,14 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     const handleVisChange = () => {
       if (document.visibilityState === 'hidden') {
         videoRefs.current.forEach(v => v.pause());
+        setIsPlaying(false);
       } else {
         const active = videoRefs.current.get(currentIndex);
-        if (active) active.play().catch(() => {});
+        if (active) {
+          active.play()
+            .then(() => setIsPlaying(true))
+            .catch(() => setIsPlaying(false));
+        }
       }
     };
 
@@ -528,6 +573,45 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       videoRefs.current.forEach(v => v.pause());
     };
   }, [currentIndex]);
+
+  // Manual Play / Pause Toggle Control
+  const togglePlayPause = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const activeVideo = videoRefs.current.get(currentIndex);
+    if (!activeVideo) return;
+
+    if (activeVideo.paused) {
+      activeVideo.play()
+        .then(() => {
+          setIsPlaying(true);
+          showCenterAnimation('play');
+        })
+        .catch(err => {
+          console.warn("Playback interrupted or blocked:", err);
+          setIsPlaying(false);
+        });
+    } else {
+      activeVideo.pause();
+      setIsPlaying(false);
+      showCenterAnimation('pause');
+    }
+  }, [currentIndex]);
+
+  // Spacebar keyboard support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        togglePlayPause();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlayPause]);
 
   // High-performance requestAnimationFrame Progress Bar loop
   useEffect(() => {
@@ -561,7 +645,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }, 450);
   };
 
-  // Like Reel (Optimistic with Rollback)
+  // Like Reel (Optimistic with Rollback and Single Authoritative Flow)
   const handleLikeReel = useCallback(async (reel: ReelItem) => {
     if (!user) {
       alert("Please log in to like this reel!");
@@ -577,21 +661,23 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       likeCount: Math.max(0, r.likeCount + deltaCount)
     } : r));
 
-    if (onLikeToggle) {
-      onLikeToggle({
-        id: reel.id,
-        imageUrl: reel.videoUrl,
-        uploaderUid: reel.uploaderUid,
-        uploaderName: reel.uploaderName,
-        uploaderPhotoURL: reel.uploaderPhotoURL || '',
-        license: 'CC0',
-        flags: reel.tags,
-        uploadedAt: reel.uploadedAt
-      } as ImageMeta);
-    }
-
     try {
-      await toggleImageLike(reel.id, user.uid);
+      if (onLikeToggle) {
+        await onLikeToggle({
+          id: reel.id,
+          imageUrl: reel.videoUrl,
+          uploaderUid: reel.uploaderUid,
+          uploaderName: reel.uploaderName,
+          uploaderPhotoURL: reel.uploaderPhotoURL || '',
+          license: 'CC0',
+          flags: reel.tags,
+          uploadedAt: reel.uploadedAt,
+          likedBy: wasLiked ? [user.uid] : [],
+          likeCount: reel.likeCount
+        } as ImageMeta);
+      } else {
+        await toggleImageLike(reel.id, user);
+      }
     } catch (err) {
       setReels(prev => prev.map(r => r.id === reel.id ? {
         ...r,
@@ -603,6 +689,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   // Robust Tap & Double-Tap Gesture Handler (works across touch and mouse)
   const triggerDoubleTapHeart = useCallback((clientX: number, clientY: number) => {
+    // Immediately cancel any pending single-tap play/pause action and clear icons
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
+    }
+    setCenterIconState(null);
+
     const now = Date.now();
     const rotation = (Math.random() - 0.5) * 32;
 
@@ -621,8 +714,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   const handleTap = useCallback((clientX: number, clientY: number) => {
     const now = Date.now();
-    const DOUBLE_TAP_MAX_GAP = 360;
-    const DOUBLE_TAP_MAX_DISTANCE = 65;
+    const DOUBLE_TAP_MAX_GAP = 350;
+    const DOUBLE_TAP_MAX_DISTANCE = 150; // Generous tolerance for mobile thumb taps
 
     const last = lastTapRef.current;
     const timeDiff = now - last.time;
@@ -647,9 +740,11 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       if (activeVideo.paused) {
         activeVideo.play().catch(() => {});
         showCenterAnimation('play');
+        setIsPlaying(true);
       } else {
         activeVideo.pause();
         showCenterAnimation('pause');
+        setIsPlaying(false);
       }
       tapTimeoutRef.current = null;
     }, DOUBLE_TAP_MAX_GAP);
@@ -694,7 +789,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   };
 
   const handleContainerClick = (e: React.MouseEvent) => {
-    if ('ontouchstart' in window && e.detail === 0) return;
+    // If this click was triggered after a touchstart/touchend sequence within 1200ms, ignore synthetic click
+    if (touchStartTimeRef.current > 0 && Date.now() - touchStartTimeRef.current < 1200) return;
     handleTap(e.clientX, e.clientY);
   };
 
@@ -786,6 +882,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   const handleOpenComments = async (reel: ReelItem) => {
     setIsCommentsOpen(true);
     setIsLoadingComments(true);
+    setReplyToComment(null);
+    setEditingCommentId(null);
     try {
       const data = await getCommentsForImage(reel.id);
       setComments(data);
@@ -801,15 +899,100 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     if (!user || !commentText.trim() || !currentReel || isPostingComment) return;
     setIsPostingComment(true);
     try {
-      const newComment = await addCommentToImage(currentReel.id, user, commentText.trim());
-      setComments(prev => [newComment, ...prev]);
+      const parentId = replyToComment?.id || null;
+      const newComment = await addCommentToImage(currentReel.id, user, commentText.trim(), parentId);
+      setComments(prev => [...prev, newComment]);
       setCommentText('');
-      setReels(prev => prev.map(r => r.id === currentReel.id ? { ...r, commentCount: r.commentCount + 1 } : r));
+      setReplyToComment(null);
+      const nextCount = currentReel.commentCount + 1;
+      setReels(prev => prev.map(r => r.id === currentReel.id ? { ...r, commentCount: nextCount } : r));
+      const baseId = currentReel.id.split('_loop_')[0].split('_rel_loop_')[0];
+      const match = allImages?.find(i => i.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
+      if (match) {
+        match.commentCount = nextCount;
+      }
+      if (onImageUpdate) {
+        const itemToUpdate = match ? { ...match, commentCount: nextCount } : {
+          id: baseId,
+          imageUrl: currentReel.videoUrl,
+          uploaderUid: currentReel.uploaderUid,
+          uploaderName: currentReel.uploaderName,
+          uploaderPhotoURL: currentReel.uploaderPhotoURL || '',
+          license: 'CC0',
+          flags: currentReel.tags,
+          uploadedAt: currentReel.uploadedAt,
+          commentCount: nextCount
+        } as ImageMeta;
+        onImageUpdate(itemToUpdate);
+      }
     } catch (err) {
       console.error("Failed to post comment:", err);
     } finally {
       setIsPostingComment(false);
     }
+  };
+
+  const handleEditCommentSubmit = async (commentId: string) => {
+    if (!user || !editCommentText.trim() || isPostingComment) return;
+    setIsPostingComment(true);
+    try {
+      await editComment(commentId, user.uid, editCommentText.trim());
+      setComments(prev => prev.map(c => c.id === commentId ? { ...c, content: editCommentText.trim() } : c));
+      setEditingCommentId(null);
+      setEditCommentText('');
+    } catch (err) {
+      console.error("Failed to edit comment:", err);
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    const currentReel = reels[currentIndex];
+    if (!user || !currentReel) return;
+    try {
+      const res = await deleteComment(commentId, user.uid);
+      const removedCount = res?.removedCount || 1;
+      setComments(prev => prev.filter(c => c.id !== commentId && c.parentId !== commentId));
+      const nextCount = Math.max(0, currentReel.commentCount - removedCount);
+      setReels(prev => prev.map(r => r.id === currentReel.id ? { ...r, commentCount: nextCount } : r));
+      const baseId = currentReel.id.split('_loop_')[0].split('_rel_loop_')[0];
+      const match = allImages?.find(i => i.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
+      if (match) {
+        match.commentCount = nextCount;
+      }
+      if (onImageUpdate) {
+        const itemToUpdate = match ? { ...match, commentCount: nextCount } : {
+          id: baseId,
+          imageUrl: currentReel.videoUrl,
+          uploaderUid: currentReel.uploaderUid,
+          uploaderName: currentReel.uploaderName,
+          uploaderPhotoURL: currentReel.uploaderPhotoURL || '',
+          license: 'CC0',
+          flags: currentReel.tags,
+          uploadedAt: currentReel.uploadedAt,
+          commentCount: nextCount
+        } as ImageMeta;
+        onImageUpdate(itemToUpdate);
+      }
+    } catch (err) {
+      console.error("Failed to delete comment:", err);
+    }
+  };
+
+  const buildCommentTree = (flat: Comment[]): Comment[] => {
+    const map = new Map<string, Comment>();
+    const roots: Comment[] = [];
+    flat.forEach(c => map.set(c.id, { ...c, replies: [] }));
+    flat.forEach(c => {
+      const node = map.get(c.id)!;
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.replies!.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+    return roots;
   };
 
   const handleCommentLikeToggle = async (commentId: string) => {
@@ -914,6 +1097,24 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
               </div>
             )}
           </div>
+
+          {/* Play / Pause Toggle Button */}
+          <button
+            onClick={togglePlayPause}
+            className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-95 transition-transform shadow-lg"
+            title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+            aria-label={isPlaying ? "Pause video" : "Play video"}
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 01.75.75v12a.75.75 0 01-1.5 0v-12a.75.75 0 01.75-.75zm10.5 0a.75.75 0 01.75.75v12a.75.75 0 01-1.5 0v-12a.75.75 0 01.75-.75z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 pl-0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
 
           {/* Mute Button */}
           <button
@@ -1048,15 +1249,33 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                       setFirstFrameVersion(v => v + 1);
                     }}
                     onWaiting={() => handleVideoWaiting(index)}
-                    onPlaying={() => handleVideoPlaying(index)}
+                    onPlaying={() => {
+                      handleVideoPlaying(index);
+                      if (index === currentIndex) setIsPlaying(true);
+                    }}
+                    onPause={() => {
+                      if (index === currentIndex) setIsPlaying(false);
+                    }}
                     onError={() => handleVideoError(index)}
                     onEnded={() => {
                       loopCountRef.current++;
+                      if (index === currentIndex) setIsPlaying(false);
                     }}
                     className={`w-full h-full pointer-events-none transition-opacity duration-300 z-10 ${
                       isVertical ? 'object-cover' : 'object-contain'
                     } ${isFirstFrameReady ? 'opacity-100' : 'opacity-0'}`}
                   />
+
+                  {/* Persistent Pause Indicator Overlay when paused */}
+                  {isActive && !isPlaying && centerIconState === null && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                      <div className="w-16 h-16 rounded-full bg-black/45 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-2xl animate-fade-in">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 pl-1" viewBox="0 0 24 24" fill="currentColor">
+                          <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Buffering Spinner (appears only if buffering lasts > 300ms) */}
                   {isActive && isBuffering && (
@@ -1348,50 +1567,138 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   <p className="text-[11px] text-neutral-500">Be the first to share your thoughts!</p>
                 </div>
               ) : (
-                comments.map(c => {
-                  const isCommentLiked = user ? (c.likedBy?.includes(user.uid) || false) : false;
-                  return (
-                    <div key={c.id} className="flex gap-3 items-start border-b border-white/5 pb-3 last:border-0 last:pb-0">
-                      <img 
-                        src={c.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${c.userName}`} 
-                        alt={c.userName} 
-                        className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-white/10"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-white leading-tight">{c.userName}</span>
-                          <span className="text-[10px] text-neutral-500">
-                            {new Date(c.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                          </span>
-                        </div>
-                        <p className="text-xs text-neutral-200 mt-1 leading-relaxed break-words whitespace-pre-wrap">{c.content}</p>
-                      </div>
+                <div className="space-y-3">
+                  {buildCommentTree(comments).map(c => {
+                    const isCommentLiked = user ? (c.likedBy?.includes(user.uid) || false) : false;
+                    const isAuthor = user?.uid === c.userUid;
+                    const currentReel = reels[currentIndex];
+                    const canDelete = isAuthor || user?.uid === currentReel?.uploaderUid;
 
-                      {/* Comment Like Button */}
-                      <button
-                        onClick={() => handleCommentLikeToggle(c.id)}
-                        className={`flex flex-col items-center gap-0.5 pt-1 flex-shrink-0 active:scale-95 transition-transform ${
-                          isCommentLiked ? 'text-red-500' : 'text-neutral-500 hover:text-white'
-                        }`}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={isCommentLiked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                        </svg>
-                        {(c.likeCount || 0) > 0 && (
-                          <span className="text-[9px] font-bold">{c.likeCount}</span>
-                        )}
-                      </button>
-                    </div>
-                  );
-                })
+                    const renderNode = (node: Comment, depth = 0) => {
+                      const isNodeLiked = user ? (node.likedBy?.includes(user.uid) || false) : false;
+                      const isNodeAuthor = user?.uid === node.userUid;
+                      const canDeleteNode = isNodeAuthor || user?.uid === currentReel?.uploaderUid;
+
+                      return (
+                        <div key={node.id} className={`flex flex-col gap-1.5 ${depth > 0 ? 'mt-2 pl-3 border-l border-white/10 ml-2' : 'border-b border-white/5 pb-3 last:border-0 last:pb-0'}`}>
+                          <div className="flex gap-2.5 items-start">
+                            <img 
+                              src={node.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${node.userName}`} 
+                              alt={node.userName} 
+                              className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-white/10"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-xs text-white leading-tight">{node.userName}</span>
+                                <span className="text-[10px] text-neutral-500">
+                                  {new Date(node.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </span>
+                              </div>
+
+                              {editingCommentId === node.id ? (
+                                <div className="mt-1 flex flex-col gap-1.5">
+                                  <textarea
+                                    value={editCommentText}
+                                    onChange={(e) => setEditCommentText(e.target.value)}
+                                    className="w-full bg-white/5 border border-white/20 rounded-xl px-2.5 py-1.5 text-xs text-white resize-none focus:outline-none"
+                                    rows={2}
+                                    autoFocus
+                                  />
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      onClick={() => { setEditingCommentId(null); setEditCommentText(''); }}
+                                      className="text-[10px] text-neutral-400 hover:text-white px-2 py-0.5"
+                                      disabled={isPostingComment}
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditCommentSubmit(node.id)}
+                                      disabled={!editCommentText.trim() || isPostingComment}
+                                      className="bg-white text-black px-3 py-0.5 rounded-full text-[10px] font-bold"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-neutral-200 mt-0.5 leading-relaxed break-words whitespace-pre-wrap">{node.content}</p>
+                              )}
+
+                              {/* Comment Action Bar */}
+                              <div className="flex items-center gap-3 mt-1 text-[10px] text-neutral-400 font-medium">
+                                <button
+                                  onClick={() => handleCommentLikeToggle(node.id)}
+                                  className={`flex items-center gap-0.5 active:scale-95 transition-transform ${isNodeLiked ? 'text-red-500' : 'hover:text-white'}`}
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill={isNodeLiked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                  </svg>
+                                  {(node.likeCount || 0) > 0 && <span>{node.likeCount}</span>}
+                                </button>
+
+                                {user && (
+                                  <button
+                                    onClick={() => setReplyToComment({ id: node.id, userName: node.userName })}
+                                    className="hover:text-white active:scale-95 transition-transform"
+                                  >
+                                    Reply
+                                  </button>
+                                )}
+
+                                {isNodeAuthor && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingCommentId(node.id);
+                                      setEditCommentText(node.content);
+                                    }}
+                                    className="hover:text-white active:scale-95 transition-transform"
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+
+                                {canDeleteNode && (
+                                  <button
+                                    onClick={() => handleDeleteComment(node.id)}
+                                    className="hover:text-red-400 ml-auto active:scale-95 transition-transform"
+                                    title="Delete"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {node.replies && node.replies.length > 0 && (
+                            <div className="space-y-2 mt-1">
+                              {node.replies.map(reply => renderNode(reply, depth + 1))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    };
+
+                    return renderNode(c);
+                  })}
+                </div>
               )}
             </div>
+
+            {/* If replying to a comment, show pill */}
+            {replyToComment && (
+              <div className="px-3.5 py-1.5 bg-white/5 border-t border-white/10 flex items-center justify-between text-[11px] text-neutral-300">
+                <span>Replying to <b className="text-white">@{replyToComment.userName}</b></span>
+                <button onClick={() => setReplyToComment(null)} className="text-neutral-400 hover:text-white font-bold">&times; Cancel</button>
+              </div>
+            )}
 
             {/* Comment Composer */}
             <div className="p-3.5 border-t border-white/10 flex items-center gap-2 bg-[#121212]">
               <input
                 type="text"
-                placeholder={user ? "Add a comment..." : "Log in to comment"}
+                placeholder={user ? (replyToComment ? `Reply to @${replyToComment.userName}...` : "Add a comment...") : "Log in to comment"}
                 disabled={!user || isPostingComment}
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
