@@ -27,7 +27,7 @@ interface ImageDetailModalProps {
 }
 
 const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <span className="inline-block bg-border text-secondary text-xs font-medium mr-2 px-2.5 py-1 rounded-full">
+    <span className="inline-block bg-white/5 border border-white/10 text-neutral-300 text-xs font-medium mr-2 px-2.5 py-1 rounded-full">
         {children}
     </span>
 );
@@ -65,29 +65,29 @@ const AttributionModal: React.FC<{ image: ImageMeta, onClose: () => void }> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-surface border border-border rounded-2xl shadow-lg w-full max-w-md flex flex-col items-start p-6 relative animate-fade-in"
+        className="bg-[#121212] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md flex flex-col items-start p-6 relative animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={onClose} className="absolute top-4 right-4 text-3xl font-light text-secondary hover:text-primary">&times;</button>
+        <button onClick={onClose} className="absolute top-4 right-4 text-2xl font-light text-neutral-400 hover:text-white">&times;</button>
         <div className="flex items-start gap-4 w-full">
-          <img src={image.imageUrl} alt="thumbnail" className="w-20 h-20 object-cover rounded-lg flex-shrink-0" />
-          <div className="flex-grow">
-            <h2 className="text-xl font-bold text-primary">Say thanks!</h2>
-            <p className="text-sm text-secondary mt-1">{shoutoutText}</p>
+          <img src={image.imageUrl} alt="thumbnail" className="w-16 h-16 object-cover rounded-xl flex-shrink-0 border border-white/10" />
+          <div className="flex-grow min-w-0">
+            <h2 className="text-lg font-bold text-white">Say thanks!</h2>
+            <p className="text-xs text-neutral-400 mt-1">{shoutoutText}</p>
           </div>
         </div>
         
-        <div className="w-full mt-4 p-3 bg-background border border-border rounded-lg text-sm text-primary relative flex justify-between items-center">
-          <span className="pr-10">{attributionText}</span>
-          <button onClick={handleCopy} className="p-1.5 text-secondary hover:text-primary bg-border rounded-md flex-shrink-0">
+        <div className="w-full mt-4 p-3 bg-black/60 border border-white/10 rounded-xl text-xs text-neutral-300 relative flex justify-between items-center">
+          <span className="pr-8 truncate">{attributionText}</span>
+          <button onClick={handleCopy} className="p-1.5 text-neutral-300 hover:text-white bg-white/10 rounded-lg flex-shrink-0 active:scale-95 transition-all">
             {copied ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
               </svg>
             ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
                 <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h6a2 2 0 00-2-2H5z" />
               </svg>
@@ -1006,6 +1006,32 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       lastTap.current = now;
   };
 
+  const handleShareRelated = async (img: ImageMeta) => {
+    const shareUrl = `https://gg.modvc.org/image/${img.id}`;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Share.share({
+          title: img.title || 'Glass Art',
+          text: `Check out "${img.title || 'Masterpiece'}" on Glass Gallery!`,
+          url: shareUrl,
+          dialogTitle: 'Share Pin'
+        });
+      } catch (err) {}
+    } else if (navigator.share) {
+      try {
+        await navigator.share({
+          title: img.title || 'Glass Art',
+          text: `Check out "${img.title || 'Masterpiece'}" on Glass Gallery!`,
+          url: shareUrl,
+        });
+      } catch (err) {}
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+      } catch (err) {}
+    }
+  };
+
   const renderDetails = () => {
     if (isEditing) {
       return (
@@ -1083,7 +1109,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex md:items-center md:justify-center p-0 md:p-4 bg-background md:bg-black/80 md:backdrop-blur-md animate-fade-in" onClick={onClose}>
+    <div 
+      className="fixed inset-0 z-[60] flex items-center justify-center p-0 md:p-4 bg-[#0a0a0a] md:bg-black/85 md:backdrop-blur-md animate-fade-in" 
+      onClick={onClose}
+    >
       <SEOHead 
         title={currentImage.title || `Image by ${currentImage.uploaderName}`}
         description={currentImage.description || `Check out this amazing image.`}
@@ -1093,173 +1122,166 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         author={currentImage.uploaderName}
       />
 
+      {/* Floating Top Soft Gradient for Readability */}
+      <div 
+        className="fixed top-0 left-0 right-0 h-28 pointer-events-none z-40 bg-gradient-to-b from-black/80 via-black/35 to-transparent"
+      />
+
+      {/* Floating Circular Back Button with safe-area offset (no background bar, no borders) */}
+      <button 
+        onClick={onClose} 
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)', left: '16px' }}
+        className="fixed z-50 w-10 h-10 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all cursor-pointer hover:bg-black/70" 
+        title="Back"
+        aria-label="Back"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+
       <div 
         ref={modalRef}
-        className="bg-background md:bg-surface border-0 md:border border-border w-full md:max-w-6xl h-full md:h-[92vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative shadow-none md:shadow-2xl md:rounded-none md:rounded-3xl" 
+        className="bg-[#0a0a0a] w-full md:max-w-6xl h-full md:h-[92vh] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative shadow-none md:shadow-2xl md:rounded-3xl border-0" 
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Left Column: Pin details panel */}
+        {/* Left Column: Pin image & details */}
         <div 
           ref={leftPanelRef}
-          className="w-full md:w-[45%] flex flex-col md:h-full border-b border-border/20 md:border-b-0 md:border-r border-border md:overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 bg-background/5"
+          className="w-full md:w-[48%] flex flex-col md:h-full bg-[#0a0a0a] md:overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10 border-0"
         >
-          {/* Action Bar Header with Pull-Down Gesture indicator */}
-          <div 
-            onTouchStart={(e) => { headerTouchStartYRef.current = e.touches[0].clientY; }}
-            onTouchEnd={(e) => {
-              if (headerTouchStartYRef.current !== null) {
-                const deltaY = e.changedTouches[0].clientY - headerTouchStartYRef.current;
-                headerTouchStartYRef.current = null;
-                if (deltaY > 60) {
-                  if (navigator.vibrate) navigator.vibrate(10);
-                  onClose();
-                }
-              }
-            }}
-            className="sticky top-0 z-30 bg-surface/90 backdrop-blur-md px-4 py-2.5 flex items-center justify-between border-b border-border/40 flex-shrink-0 touch-pan-y"
-          >
-            <button 
-              onClick={onClose} 
-              className="p-2 rounded-full hover:bg-border/70 text-secondary hover:text-primary transition-all flex items-center justify-center active:scale-95" 
-              title="Close Modal"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </button>
-            <div className="flex items-center gap-2">
-              {/* Like/Heart Button */}
-              <button 
-                onClick={handleLikeClick} 
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-semibold transition-all text-sm ${hasLiked ? 'bg-red-500/20 text-red-500' : 'bg-border/60 hover:bg-border text-secondary hover:text-primary'}`}
-              >
-                <div className={isLikeBtnAnimating ? 'animate-like-bounce' : ''}>
-                  {hasLiked ? <HeartIconSolid /> : <HeartIconOutline />}
-                </div>
-                <span>{currentImage.likeCount || 0}</span>
-              </button>
-
-              {/* Share Button */}
-              <button 
-                onClick={handleShare} 
-                title="Share Image" 
-                className="p-2 rounded-full hover:bg-border/60 text-secondary hover:text-primary transition-all"
-              >
-                {shareCopied ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                )}
-              </button>
-
-              {/* Download Button */}
-              <button 
-                onClick={handleDownload} 
-                title="Download Image" 
-                className="p-2 rounded-full hover:bg-border/60 text-secondary hover:text-primary transition-all"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </button>
-
-              {/* Credit/Attribution button */}
-              <button 
-                onClick={() => setShowAttribution(true)} 
-                className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-1.5 rounded-full text-xs transition-all shadow-md active:scale-95 ml-1"
-              >
-                Credit
-              </button>
-            </div>
-          </div>
-
-          {/* Main Image Container - Fullbleed cover on mobile, contained on desktop */}
-          <div className="bg-background flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative group select-none min-h-[300px] w-full">
+          {/* Main Hero Image Container - Edge-to-edge on mobile, contained on desktop */}
+          <div className="bg-[#0a0a0a] flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative select-none w-full min-h-[260px]">
             <img 
+              id="hero-detail-image"
               src={currentImage.imageUrl} 
               alt={currentImage.title || 'Pinterest Pin'} 
-              className={`w-full h-[60vh] md:h-auto md:max-h-[48vh] object-cover md:object-contain md:rounded-2xl shadow-md md:shadow-lg transition-transform duration-300 hover:scale-[1.01] ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
+              style={{ viewTransitionName: 'pin-active' }}
+              className={`w-full max-h-[72vh] md:max-h-[80vh] object-contain rounded-b-[20px] md:rounded-2xl transition-transform duration-300 ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
               onClick={isFlagged && !revealed ? undefined : handleImageTap}
             />
+
             {isFlagged && !revealed && (
-              <div className="absolute inset-0 bg-black/75 backdrop-blur-lg z-20 flex flex-col items-center justify-center p-6 text-center rounded-2xl transition-all duration-300">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-red-500 mb-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="absolute inset-0 bg-black/85 backdrop-blur-lg z-20 flex flex-col items-center justify-center p-6 text-center rounded-2xl transition-all duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-neutral-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
-                <h4 className="text-white text-base font-bold uppercase tracking-wider mb-2">Sensitive Content Warning</h4>
-                <p className="text-white/80 text-sm max-w-xs mb-4">This image has been flagged by automated content safety moderation.</p>
+                <h4 className="text-white text-sm font-bold uppercase tracking-wider mb-1">Sensitive Content</h4>
+                <p className="text-neutral-400 text-xs max-w-xs mb-4">This image has been flagged by content moderation.</p>
                 <button 
                   onClick={() => setRevealed(true)}
-                  className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-full text-sm transition-all shadow-md active:scale-95"
+                  className="bg-white/10 hover:bg-white/20 text-white font-semibold px-5 py-2 rounded-full text-xs transition-all active:scale-95 border border-white/10"
                 >
                   Reveal Image
                 </button>
               </div>
             )}
+
             {showHeartAnimation && !isFlagged && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 animate-like-bounce">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-28 w-28 text-white drop-shadow-2xl opacity-90" viewBox="0 0 20 20" fill="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-white drop-shadow-2xl opacity-90" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
                 </svg>
               </div>
             )}
           </div>
 
-          {/* Details Pane */}
-          <div className="p-6 flex flex-col space-y-4">
-            {/* Title & Description at the very top of details */}
-            {(currentImage.title || currentImage.description) && (
-               <div className="mb-2">
-                    {currentImage.title && <h1 className="text-2xl font-bold text-primary mb-1">{currentImage.title}</h1>}
-                    {currentImage.description && <p className="text-primary/80 text-sm whitespace-pre-wrap leading-relaxed">{currentImage.description}</p>}
-               </div>
-            )}
-
-            {/* Pinterest Creator Row with Prominent Red Save Button */}
-            <div className="flex items-center justify-between gap-4 py-3.5 border-t border-b border-border/40 my-1">
+          {/* Staggered Detail Content Container (~150ms delay, 200ms fade) */}
+          <div className="animate-detail-content px-4 py-3 sm:px-6 sm:py-4 flex flex-col space-y-4">
+            {/* Minimalist Action & Creator Row */}
+            <div className="flex items-center justify-between gap-3 py-1">
+              {/* Creator info */}
               <button 
                 onClick={handleProfileClick} 
-                className="flex items-center gap-3 text-left group/creator"
+                className="flex items-center gap-3 text-left group/creator min-w-0"
               >
                 <img 
                   src={currentImage.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentImage.uploaderName}`} 
                   alt={currentImage.uploaderName} 
-                  className="w-11 h-11 rounded-full object-cover border border-border shadow-sm group-hover/creator:scale-105 transition-transform" 
+                  className="w-10 h-10 rounded-full object-cover border border-white/10 shadow-sm group-hover/creator:scale-105 transition-transform flex-shrink-0" 
                 />
-                <div>
-                  <p className="font-semibold text-sm leading-tight text-primary">{currentImage.uploaderName}</p>
-                  <p className="text-xs text-secondary mt-0.5">
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm leading-tight text-white truncate">{currentImage.uploaderName}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
                     {currentImage.likeCount || 0} saves
                   </p>
                 </div>
               </button>
 
-              {/* Iconic Pinterest Big Red Save Button */}
-              <button 
-                onClick={handleLikeClick} 
-                className={`px-6 py-2.5 rounded-full font-bold transition-all text-sm active:scale-95 shadow-md flex items-center justify-center gap-1.5 ${hasLiked ? 'bg-neutral-800 text-white hover:bg-neutral-700' : 'bg-[#E60023] hover:bg-[#AD0018] text-white'}`}
-              >
-                {hasLiked ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              {/* Monochrome Action Buttons Row */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Credit Button (monochrome text pill) */}
+                <button 
+                  onClick={() => setShowAttribution(true)} 
+                  className="px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-neutral-200 hover:text-white text-xs font-semibold border border-white/10 transition-all active:scale-95"
+                  title="Credit"
+                >
+                  Credit
+                </button>
+
+                {/* Share Button (monochrome icon) */}
+                <button 
+                  onClick={handleShare} 
+                  title="Share" 
+                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all active:scale-95"
+                >
+                  {shareCopied ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                  )}
+                </button>
+
+                {/* Download Button (monochrome icon) */}
+                <button 
+                  onClick={handleDownload} 
+                  title="Download" 
+                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all active:scale-95"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                ) : null}
-                <span>{hasLiked ? 'Saved' : 'Save'}</span>
-              </button>
+                </button>
+
+                {/* Save / Saved Button (clean monochrome pill) */}
+                <button 
+                  onClick={handleLikeClick} 
+                  className={`px-5 py-2 rounded-full font-bold text-sm transition-all active:scale-95 shadow-sm flex items-center justify-center gap-1.5 ${
+                    hasLiked 
+                      ? 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700' 
+                      : 'bg-white text-black hover:bg-neutral-200'
+                  }`}
+                >
+                  {hasLiked ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-neutral-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : null}
+                  <span>{hasLiked ? 'Saved' : 'Save'}</span>
+                </button>
+              </div>
             </div>
 
-            {/* Additional details (location, tags, downloads, license) */}
-            <div className="space-y-4 pt-1">
+            {/* Title & Description */}
+            {(currentImage.title || currentImage.description) && (
+              <div className="pt-1">
+                {currentImage.title && <h1 className="text-xl sm:text-2xl font-bold text-white mb-1.5">{currentImage.title}</h1>}
+                {currentImage.description && <p className="text-neutral-300 text-sm whitespace-pre-wrap leading-relaxed">{currentImage.description}</p>}
+              </div>
+            )}
+
+            {/* Additional details (location, tags) */}
+            <div className="space-y-3 pt-1">
               {renderDetails()}
             </div>
 
             {/* Owner Operations (Delete / Edit) */}
             {isOwner && (
-              <div className="pt-4 border-t border-border flex justify-end items-center gap-3 mt-4">
+              <div className="pt-3 flex justify-end items-center gap-2">
                 {isEditing ? (
                   <>
                     <Button onClick={handleEditToggle} variant="secondary" disabled={isSaving}>
@@ -1271,27 +1293,30 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   </>
                 ) : (
                   <>
-                    <Button 
+                    <button 
                       onClick={handleDeleteClick} 
-                      variant="secondary" 
-                      className="!bg-red-900/50 !text-red-400 hover:!bg-red-800/50" 
+                      className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white text-xs font-semibold transition-all active:scale-95"
                       disabled={isDeleting}
                     >
                       {isDeleting ? <Spinner/> : 'Delete'}
-                    </Button>
-                    <Button onClick={handleEditToggle} variant="secondary">
+                    </button>
+                    <button 
+                      onClick={handleEditToggle} 
+                      className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-all active:scale-95"
+                    >
                       Edit
-                    </Button>
+                    </button>
                   </>
                 )}
               </div>
             )}
-            {/* Comments & Community Discussion Section */}
-            <div className="pt-4 border-t border-border/40 mt-4">
+
+            {/* Comments & Discussion */}
+            <div className="pt-2">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-2">
                   <span>Comments</span>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-border/60 text-secondary font-medium">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-neutral-300">
                     {flatComments.length}
                   </span>
                 </h3>
@@ -1299,7 +1324,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                 {flatComments.length > 0 && (
                   <button
                     onClick={() => setIsCommentsSectionHidden(prev => !prev)}
-                    className="text-xs text-secondary hover:text-primary flex items-center gap-1 active:scale-95 transition-transform"
+                    className="text-xs text-neutral-400 hover:text-white flex items-center gap-1 active:scale-95 transition-transform"
                   >
                     {isCommentsSectionHidden ? "Show comments" : "Hide comments"}
                   </button>
@@ -1312,7 +1337,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   <img
                     src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'User'}`}
                     alt="Current user"
-                    className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border"
+                    className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-white/10"
                   />
                   <div className="flex-1 flex flex-col gap-2">
                     <textarea
@@ -1320,13 +1345,13 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                       value={newCommentText}
                       onChange={(e) => setNewCommentText(e.target.value)}
                       rows={2}
-                      className="w-full bg-background border border-border/80 focus:border-accent/60 rounded-xl py-2 px-3 text-xs text-primary placeholder-secondary focus:outline-none resize-none"
+                      className="w-full bg-[#121212] border border-white/10 focus:border-white/30 rounded-xl py-2 px-3 text-xs text-white placeholder-neutral-500 focus:outline-none resize-none"
                     />
                     <div className="flex justify-end">
                       <button
                         onClick={handlePostComment}
                         disabled={!newCommentText.trim() || isSubmittingComment}
-                        className="bg-accent hover:opacity-90 disabled:opacity-50 text-surface font-semibold px-3.5 py-1.5 rounded-full text-xs active:scale-95 transition-all shadow-md flex items-center gap-1.5"
+                        className="bg-white text-black font-semibold px-3.5 py-1.5 rounded-full text-xs active:scale-95 transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-40"
                       >
                         {isSubmittingComment ? <Spinner /> : 'Comment'}
                       </button>
@@ -1334,8 +1359,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="p-3 bg-surface/50 border border-border/60 rounded-xl text-center mb-4">
-                  <p className="text-xs text-secondary">Log in to like and join the conversation!</p>
+                <div className="p-3 bg-[#121212] border border-white/5 rounded-xl text-center mb-4">
+                  <p className="text-xs text-neutral-400">Log in to like and join the conversation!</p>
                 </div>
               )}
 
@@ -1343,15 +1368,15 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               {isCommentsSectionHidden ? (
                 <div 
                   onClick={() => setIsCommentsSectionHidden(false)}
-                  className="py-3 px-4 bg-background/50 border border-dashed border-border rounded-xl text-center cursor-pointer hover:border-accent/40 transition-colors my-2 active:scale-[0.99]"
+                  className="py-2.5 px-4 bg-[#121212] rounded-xl text-center cursor-pointer hover:bg-neutral-900 transition-colors my-2 active:scale-[0.99]"
                 >
-                  <p className="text-xs text-secondary flex items-center justify-center gap-1.5">
-                    <span>Comments hidden</span>
-                    <span className="text-accent font-semibold underline">Tap to view ({flatComments.length})</span>
+                  <p className="text-xs text-neutral-400">
+                    <span>Comments hidden. </span>
+                    <span className="text-white font-medium underline">Tap to view ({flatComments.length})</span>
                   </p>
                 </div>
               ) : isLoadingComments ? (
-                <div className="flex justify-center py-6">
+                <div className="flex justify-center py-4">
                   <Spinner />
                 </div>
               ) : treeComments.length > 0 ? (
@@ -1359,132 +1384,87 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                   {treeComments.map(comment => renderCommentNode(comment))}
                 </div>
               ) : (
-                <p className="text-xs text-secondary text-center py-6 italic">No comments yet. Be the first to share your thoughts!</p>
+                <p className="text-xs text-neutral-500 text-center py-4 italic">No comments yet.</p>
               )}
             </div>
-
-            {/* Native Delete Confirmation Bottom Sheet */}
-            {deleteConfirmCommentId && (
-              <div 
-                className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in"
-                onClick={() => setDeleteConfirmCommentId(null)}
-              >
-                <div 
-                  className="w-full max-w-sm bg-surface border border-border rounded-3xl p-6 shadow-2xl transform-gpu animate-slide-up flex flex-col gap-4"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center mx-auto">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-base font-bold text-primary">Delete this comment?</h3>
-                    <p className="text-xs text-secondary mt-1">
-                      This comment will be permanently removed from the discussion.
-                    </p>
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={() => setDeleteConfirmCommentId(null)}
-                      className="flex-1 py-3 px-4 rounded-xl bg-neutral-800 text-secondary hover:text-primary font-semibold text-xs active:scale-95 transition-all"
-                      disabled={isDeletingComment}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => deleteConfirmCommentId && handleDeleteComment(deleteConfirmCommentId)}
-                      className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs active:scale-95 transition-all shadow-md flex items-center justify-center gap-1.5"
-                      disabled={isDeletingComment}
-                    >
-                      {isDeletingComment ? <Spinner /> : "Yes, Delete"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Right Column: "More Like This" Masonry Feed */}
+        {/* Right Column: "More like this" Pinterest Grid Feed */}
         <div 
           ref={rightPanelRef}
-          className="w-full md:w-[55%] flex flex-col md:h-full bg-background overflow-visible md:overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-secondary/50 px-3 sm:px-4 md:p-8 pt-4 md:pt-8"
+          className="w-full md:w-[52%] flex flex-col md:h-full bg-[#0a0a0a] overflow-visible md:overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10 px-3 sm:px-4 md:p-6 pt-4 border-0"
         >
-          {/* Normal non-sticky heading that scrolls away with content on flat black background */}
-          <div className="flex items-center mb-5 pt-2 flex-shrink-0">
-            <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
+          {/* Small simple label flowing directly into the grid - No icon, no counter, no divider line */}
+          <div className="mb-3 px-1 flex-shrink-0">
+            <h3 className="text-sm font-semibold text-neutral-400">
               More like this
             </h3>
           </div>
 
           {isLoadingSuggestions && displayRelated.length === 0 ? (
-            <div className="columns-2 sm:columns-3 gap-4 animate-pulse">
+            <div className="columns-2 gap-2 animate-pulse">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="break-inside-avoid mb-4 h-[180px] rounded-2xl bg-border/40 border border-border/20 backdrop-blur-md" />
+                <div key={i} className="break-inside-avoid mb-2 h-[180px] rounded-[16px] bg-neutral-900/60" />
               ))}
             </div>
           ) : displayRelated.length > 0 ? (
             <>
-              <div className="columns-2 gap-4 animate-fade-in">
+              {/* Uniform grid tiles: rounded-[16px], 8px gutters (gap-2, mb-2), no avatar, no title, image-first */}
+              <div className="columns-2 gap-2 animate-fade-in">
                 {displayRelated.map(img => (
                   <div 
                     key={img.id}
+                    id={`pin-card-${img.id}`}
                     onClick={() => handleSelectRelated(img)}
-                    className="break-inside-avoid mb-6 group cursor-pointer flex flex-col bg-transparent overflow-hidden transition-all duration-300 hover:scale-[1.02] transform-gpu will-change-transform"
+                    className="break-inside-avoid mb-2 group relative cursor-pointer overflow-hidden rounded-[16px] bg-[#121212] transition-transform duration-200 active:scale-[0.98]"
                   >
-                    {/* Pinterest Pin Rounded Image Container with organic aspect height */}
-                    <div className="relative overflow-hidden w-full rounded-2xl bg-neutral-900/10 dark:bg-white/5 shadow-sm group-hover:shadow-md transition-all duration-300">
-                      {isVideoUrl(img.imageUrl) ? (
-                        <video 
-                          src={img.imageUrl} 
-                          muted 
-                          autoPlay 
-                          loop 
-                          playsInline 
-                          className="w-full h-auto object-contain pointer-events-none transition-transform duration-500 group-hover:scale-[1.02]" 
-                        />
-                      ) : (
-                        <img 
-                          src={img.imageUrl} 
-                          alt={img.title || 'Related photo'} 
-                          className="w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.02]" 
-                          loading="lazy"
-                        />
-                      )}
-                    </div>
-                    {/* Pinterest Minimalist Metadata Row */}
-                    <div className="pt-2 px-1 flex flex-col gap-1">
-                      <p className="text-xs font-semibold text-primary truncate leading-tight group-hover:text-accent transition-colors">
-                        {img.title || 'Untitled'}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <img 
-                          src={img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName}`} 
-                          alt={img.uploaderName} 
-                          className="w-4 h-4 rounded-full object-cover shadow-sm" 
-                        />
-                        <p className="text-[10px] font-medium text-secondary truncate">
-                          {img.uploaderName}
-                        </p>
-                      </div>
-                    </div>
+                    {isVideoUrl(img.imageUrl) ? (
+                      <video 
+                        src={img.imageUrl} 
+                        muted 
+                        autoPlay 
+                        loop 
+                        playsInline 
+                        className="w-full h-auto object-cover rounded-[16px] block pointer-events-none" 
+                      />
+                    ) : (
+                      <img 
+                        src={img.imageUrl} 
+                        alt="" 
+                        className="w-full h-auto object-cover rounded-[16px] block" 
+                        loading="lazy"
+                      />
+                    )}
+
+                    {/* Small '...' options button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleShareRelated(img);
+                      }}
+                      className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Options"
+                      aria-label="Options"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <circle cx="5" cy="12" r="2" />
+                        <circle cx="12" cy="12" r="2" />
+                        <circle cx="19" cy="12" r="2" />
+                      </svg>
+                    </button>
                   </div>
                 ))}
               </div>
 
               {/* Seamless Infinite Scroll Loading Indicator */}
-              <div className="w-full py-8 flex flex-col items-center justify-center text-secondary/60 gap-2">
-                <div className="w-5 h-5 border-2 border-accent/40 border-t-accent rounded-full animate-spin" />
-                <span className="text-[11px] font-medium tracking-wide">Loading more recommendations...</span>
+              <div className="w-full py-8 flex flex-col items-center justify-center text-neutral-500 gap-2">
+                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               </div>
             </>
           ) : (
-            <div className="flex-grow flex flex-col items-center justify-center py-12 text-secondary">
-              <p className="text-sm">No related images found.</p>
+            <div className="flex-grow flex flex-col items-center justify-center py-12 text-neutral-500">
+              <p className="text-xs">No related images found.</p>
             </div>
           )}
         </div>
@@ -1492,21 +1472,21 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         {/* Delete Confirmation Overlay */}
         {showDeleteConfirm && (
           <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-surface border border-border rounded-xl p-6 max-w-sm w-full shadow-2xl transform scale-100 animate-fade-in text-center">
-              <div className="w-12 h-12 rounded-full bg-red-900/30 text-red-500 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-[#121212] border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl transform scale-100 animate-fade-in text-center">
+              <div className="w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center mx-auto mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold text-primary mb-2">Delete Image</h3>
-              <p className="text-secondary text-sm mb-6">
+              <h3 className="text-lg font-bold text-white mb-2">Delete Image</h3>
+              <p className="text-neutral-400 text-xs mb-6">
                 Are you sure you want to permanently delete this image? This action cannot be undone.
               </p>
               <div className="flex gap-3 justify-center">
                 <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)} disabled={isDeleting}>
                   Cancel
                 </Button>
-                <Button onClick={handleConfirmDelete} className="!bg-red-600 hover:!bg-red-700 text-white" disabled={isDeleting}>
+                <Button onClick={handleConfirmDelete} className="!bg-white !text-black hover:!bg-neutral-200" disabled={isDeleting}>
                   {isDeleting ? <Spinner /> : 'Delete Forever'}
                 </Button>
               </div>

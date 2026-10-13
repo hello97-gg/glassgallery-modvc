@@ -82,13 +82,13 @@
         theme: {
           extend: {
             colors: {
-              'background': '#181818', // Dark charcoal
-              'surface': '#282828',    // Lighter gray for cards/modals
-              'primary': '#e5e5e5',    // Off-white for primary text
-              'secondary': '#a0a0a0',   // Muted gray for secondary text
-              'accent': '#f5c3b8',      // Soft, cute pink/peach accent
-              'accent-hover': '#f2b2a4',
-              'border': '#383838',      // Dark border color
+              'background': '#0a0a0a', // Flat black
+              'surface': '#0a0a0a',    // Flat black to eliminate stacked gray sections
+              'primary': '#f0f0f0',    // Clean off-white
+              'secondary': '#8e8e8e',   // Muted gray
+              'accent': '#ffffff',      // Monochrome accent
+              'accent-hover': '#e5e5e5',
+              'border': '#161616',      // Minimal border
             },
             keyframes: {
               'fade-in': {
@@ -137,11 +137,42 @@
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;
         min-height: 100%;
+        background-color: #0a0a0a;
       }
       
       /* Target all overflow-y scroll panels in the app for momentum scrolling */
       .overflow-y-auto {
         -webkit-overflow-scrolling: touch !important;
+      }
+
+      /* View Transitions for Pinterest-Style Shared Element Expansion */
+      @media (prefers-reduced-motion: no-preference) {
+        ::view-transition-group(pin-active) {
+          animation-duration: 320ms;
+          animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+        }
+        ::view-transition-old(pin-active),
+        ::view-transition-new(pin-active) {
+          animation-duration: 320ms;
+          animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+          mix-blend-mode: normal;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        ::view-transition-group(pin-active),
+        ::view-transition-old(pin-active),
+        ::view-transition-new(pin-active) {
+          animation-duration: 160ms;
+          animation-timing-function: ease-out;
+        }
+      }
+
+      @keyframes detailContentFadeIn {
+        0% { opacity: 0; transform: translateY(8px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      .animate-detail-content {
+        animation: detailContentFadeIn 250ms cubic-bezier(0.2, 0, 0, 1) 150ms both;
       }
     </style>
 </head>

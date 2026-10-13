@@ -294,7 +294,8 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
+  const [pinHistory, setPinHistory] = useState<ImageMeta[]>([]);
+  const selectedImage = pinHistory.length > 0 ? pinHistory[pinHistory.length - 1] : null;
   const [longPressedImage, setLongPressedImage] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
@@ -604,12 +605,15 @@ const App: React.FC = () => {
         }
         const unsubscribe = subscribeToImage(imageId, (img) => {
           if (img) {
-            setSelectedImage(img);
+            setPinHistory(prev => {
+              if (prev.length > 0 && prev[prev.length - 1].id === img.id) return prev;
+              return [...prev, img];
+            });
           }
         });
         deepLinkUnsubscribeRef.current = unsubscribe;
       } else {
-        setSelectedImage(null);
+        setPinHistory([]);
         if (deepLinkUnsubscribeRef.current) {
           deepLinkUnsubscribeRef.current();
           deepLinkUnsubscribeRef.current = null;
@@ -868,13 +872,13 @@ const App: React.FC = () => {
     };
   }, [activeView, currentUserProfile, isOnline]);
 
-  // Sync selectedImage
+  // Sync selectedImage in pinHistory
   useEffect(() => {
     if (selectedImage && allImages.length > 0) {
-        const baseId = selectedImage.id.split('_loop_')[0];
-        const updated = allImages.find(img => img.id.split('_loop_')[0] === baseId);
+        const baseId = selectedImage.id.split('_loop_')[0].split('_rel_loop_')[0];
+        const updated = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId);
         if (updated && updated !== selectedImage) {
-            setSelectedImage(updated);
+            setPinHistory(prev => prev.map(img => img.id === selectedImage.id ? updated : img));
         }
     }
   }, [allImages, selectedImage]);
@@ -1027,10 +1031,29 @@ const App: React.FC = () => {
   }, [handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
   const handleImageClick = (image: ImageMeta) => {
-    const baseId = image.id.split('_loop_')[0];
-    const original = allImages.find(img => img.id.split('_loop_')[0] === baseId) || image;
-    setSelectedImage(original);
-    updateURL({ image: original.id });
+    const baseId = image.id.split('_loop_')[0].split('_rel_loop_')[0];
+    const original = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId) || image;
+
+    const pushPin = () => {
+      setPinHistory(prev => [...prev, original]);
+      updateURL({ image: original.id });
+    };
+
+    // Pinterest-style shared element expansion using View Transitions API
+    const cardEl = document.getElementById(`pin-card-${image.id}`);
+    if (cardEl && (document as any).startViewTransition) {
+      const imgEl = cardEl.querySelector('img') || cardEl;
+      imgEl.style.setProperty('view-transition-name', 'pin-active');
+      const transition = (document as any).startViewTransition(() => {
+        pushPin();
+      });
+      transition.finished.finally(() => {
+        imgEl.style.removeProperty('view-transition-name');
+      });
+    } else {
+      pushPin();
+    }
+
     // Record view for server-side taste profile (fire-and-forget)
     if (user) {
       recordImageView(original.id, user.uid);
@@ -1038,12 +1061,66 @@ const App: React.FC = () => {
     // Record click interest for client-side personalization (localStorage)
     recordClickInterest(original);
   };
+
+  const handlePopPin = useCallback(() => {
+    if (pinHistory.length === 0) return;
+
+    const popPin = () => {
+      if (pinHistory.length > 1) {
+        // Pop pin B -> pin A
+        const nextHistory = pinHistory.slice(0, -1);
+        const prevPin = nextHistory[nextHistory.length - 1];
+        setPinHistory(nextHistory);
+        updateURL({ image: prevPin.id });
+      } else {
+        // Pop pin A -> feed
+        setPinHistory([]);
+        if (deepLinkUnsubscribeRef.current) {
+          deepLinkUnsubscribeRef.current();
+          deepLinkUnsubscribeRef.current = null;
+        }
+        if (activeView === 'profile' && profileUser) {
+          updateURL({ user: profileUser.uploaderUid });
+        } else if (activeView === 'explore' && exploreSearchTerm) {
+          updateURL({ search: exploreSearchTerm });
+        } else if (activeView === 'api') {
+          updateURL({ view: 'api' });
+        } else {
+          updateURL(null);
+        }
+      }
+    };
+
+    const currentPin = pinHistory[pinHistory.length - 1];
+    const targetCardId = pinHistory.length > 1 
+      ? `pin-card-${pinHistory[pinHistory.length - 2].id}`
+      : `pin-card-${currentPin.id}`;
+
+    const targetEl = document.getElementById(targetCardId);
+    if ((document as any).startViewTransition) {
+      const heroEl = document.getElementById('hero-detail-image');
+      if (heroEl) {
+        heroEl.style.setProperty('view-transition-name', 'pin-active');
+      }
+      const transition = (document as any).startViewTransition(() => {
+        popPin();
+      });
+      transition.finished.finally(() => {
+        if (heroEl) heroEl.style.removeProperty('view-transition-name');
+        if (targetEl) {
+          const img = targetEl.querySelector('img') || targetEl;
+          img.style.removeProperty('view-transition-name');
+        }
+      });
+    } else {
+      popPin();
+    }
+  }, [pinHistory, activeView, profileUser, exploreSearchTerm]);
   
   const handleImageClickFromNotification = (partialImage: Partial<ImageMeta>) => {
     const fullImage = allImages.find(i => i.id === partialImage.id);
     if (fullImage) {
-        setSelectedImage(fullImage);
-        updateURL({ image: fullImage.id });
+        handleImageClick(fullImage);
     } else if (partialImage.id) {
         updateURL({ image: partialImage.id });
     }
@@ -1053,8 +1130,8 @@ const App: React.FC = () => {
       setExploreSearchTerm(location);
       setActiveView('explore');
       updateURL({ search: location });
-      setSelectedImage(null);
-  }
+      setPinHistory([]);
+  };
 
   const refetchImages = () => {
     setImagesLoading(true);
@@ -1106,7 +1183,7 @@ const App: React.FC = () => {
     }
     setProfileUser(userToView);
     setActiveView('profile');
-    setSelectedImage(null);
+    setPinHistory([]);
     const cleanUsername = userToView.uploaderName ? userToView.uploaderName.replace(/\s+/g, '').toLowerCase() : '';
     if (cleanUsername && cleanUsername !== 'loading...') {
       updateURL({ username: cleanUsername });
@@ -1200,7 +1277,7 @@ const App: React.FC = () => {
     const registerBackButton = async () => {
       const listener = await CapApp.addListener('backButton', () => {
         if (!active) return;
-        if (selectedImage) {
+        if (pinHistory.length > 0) {
           // If the child detail modal is currently in fullscreen zoom mode, close that first!
           if ((window as any).__glassGalleryFullscreen && (window as any).__glassGalleryCloseFullscreen) {
             (window as any).__glassGalleryCloseFullscreen();
@@ -1210,7 +1287,8 @@ const App: React.FC = () => {
             (window as any).__glassGalleryModalCloseSubState();
             return;
           }
-          setSelectedImage(null);
+          handlePopPin();
+          return;
         } else if (longPressedImage) {
           setLongPressedImage(null);
         } else if (isUploadModalOpen) {
@@ -1246,7 +1324,7 @@ const App: React.FC = () => {
         }
       });
     };
-  }, [selectedImage, longPressedImage, isUploadModalOpen, activeView]);
+  }, [pinHistory, handlePopPin, longPressedImage, isUploadModalOpen, isLoginModalOpen, isUpdateModalOpen, updateInfo, activeView, handleBack, handleSetView]);
 
   const handleImageUpdate = (updatedImage: ImageMeta) => {
     const baseId = updatedImage.id.split('_loop_')[0];
@@ -1547,7 +1625,9 @@ const App: React.FC = () => {
 
       {/* Dynamic main wrapper padding: accommodates safe-area status bar on all mobile screens */}
       <main 
-        className="flex-1 min-w-0 px-2 sm:px-4 md:p-8 pb-24 md:pb-8"
+        className={`flex-1 min-w-0 px-2 sm:px-4 md:p-8 pb-24 md:pb-8 transition-opacity duration-300 ${
+          selectedImage ? 'opacity-25 pointer-events-none' : 'opacity-100'
+        }`}
         style={{
           paddingTop: activeView === 'home' && !profileUser 
             ? 'calc(3.5rem + env(safe-area-inset-top, 0px))' 
@@ -1672,22 +1752,7 @@ const App: React.FC = () => {
           image={selectedImage}
           user={user}
           allImages={allImages}
-          onClose={() => {
-            setSelectedImage(null);
-            if (deepLinkUnsubscribeRef.current) {
-                deepLinkUnsubscribeRef.current();
-                deepLinkUnsubscribeRef.current = null;
-            }
-            if (activeView === 'profile' && profileUser) {
-                updateURL({ user: profileUser.uploaderUid });
-            } else if (activeView === 'explore' && exploreSearchTerm) {
-                updateURL({ search: exploreSearchTerm });
-            } else if (activeView === 'api') {
-                updateURL({ view: 'api' });
-            } else {
-                updateURL(null);
-            }
-          }}
+          onClose={handlePopPin}
           onViewProfile={handleViewProfile}
           onImageUpdate={handleImageUpdate}
           onImageDelete={handleImageDelete}
