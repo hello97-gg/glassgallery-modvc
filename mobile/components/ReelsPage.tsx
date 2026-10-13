@@ -564,29 +564,70 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
   }, [reels, isMuted, loadMore]);
 
-  // Scroll listener on vertical pager to detect active reel
-  const handleScroll = useCallback(() => {
+  // Smooth scroll listener on vertical pager to detect active reel on settle
+  const scrollSettleTimerRef = useRef<any>(null);
+
+  const checkScrollSettle = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     const height = container.clientHeight || window.innerHeight;
+    if (height <= 0) return;
     const scrollY = container.scrollTop;
     const newIndex = Math.round(scrollY / height);
 
-    if (newIndex !== currentIndex && newIndex >= 0 && newIndex < reels.length) {
-      handleReelTransition(currentIndex, newIndex);
-      setCurrentIndex(newIndex);
+    if (newIndex >= 0 && newIndex < reels.length) {
+      setCurrentIndex(prev => {
+        if (prev !== newIndex) {
+          handleReelTransition(prev, newIndex);
+          return newIndex;
+        }
+        return prev;
+      });
     }
-  }, [currentIndex, reels.length, handleReelTransition]);
+  }, [reels.length, handleReelTransition]);
 
-  // Restore scroll position on initial index or container mount
+  const handleScroll = useCallback(() => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (scrollSettleTimerRef.current) {
+      clearTimeout(scrollSettleTimerRef.current);
+    }
+    // Debounce settle check during scroll glide/inertia
+    scrollSettleTimerRef.current = setTimeout(checkScrollSettle, 100);
+  }, [checkScrollSettle]);
+
+  // Bind native 'scrollend' for instant zero-latency snap settle
   useEffect(() => {
     const container = containerRef.current;
-    if (container && currentIndex > 0 && reels.length > currentIndex) {
-      const timer = setTimeout(() => {
-        const height = container.clientHeight || window.innerHeight;
-        container.scrollTo({ top: currentIndex * height, behavior: 'instant' });
-      }, 50);
-      return () => clearTimeout(timer);
+    if (!container) return;
+
+    const handleScrollEnd = () => {
+      if (scrollSettleTimerRef.current) {
+        clearTimeout(scrollSettleTimerRef.current);
+        scrollSettleTimerRef.current = null;
+      }
+      checkScrollSettle();
+    };
+
+    container.addEventListener('scrollend', handleScrollEnd as any, { passive: true });
+    return () => {
+      container.removeEventListener('scrollend', handleScrollEnd as any);
+      if (scrollSettleTimerRef.current) {
+        clearTimeout(scrollSettleTimerRef.current);
+      }
+    };
+  }, [checkScrollSettle]);
+
+  // Restore scroll position on initial index or container mount ONCE
+  const initialScrollRestoredRef = useRef(false);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container && currentIndex > 0 && reels.length > currentIndex && !initialScrollRestoredRef.current) {
+      initialScrollRestoredRef.current = true;
+      const height = container.clientHeight || window.innerHeight;
+      container.scrollTo({ top: currentIndex * height, behavior: 'instant' });
     }
   }, [reels.length, currentIndex]);
 
@@ -599,10 +640,18 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       if (idx === currentIndex) {
         video.muted = isMuted;
         video.playbackRate = is2xHold ? 2.0 : speed;
-        if (isNewReel || video.paused) {
+        if (isNewReel) {
+          // When entering a new reel, start playing
           video.play()
             .then(() => setIsPlaying(true))
             .catch(() => setIsPlaying(false));
+        } else {
+          // Same reel: strictly respect user's explicit play/pause intent
+          if (isPlaying && video.paused) {
+            video.play().catch(() => {});
+          } else if (!isPlaying && !video.paused) {
+            video.pause();
+          }
         }
       } else {
         video.pause();
@@ -611,7 +660,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         }
       }
     });
-  }, [currentIndex, isMuted, is2xHold, speed]);
+  }, [currentIndex, isMuted, is2xHold, speed, isPlaying]);
 
   // Stop everything on unmount / visibility change
   useEffect(() => {
@@ -776,8 +825,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   const handleTap = useCallback((clientX: number, clientY: number) => {
     const now = Date.now();
-    const DOUBLE_TAP_MAX_GAP = 350;
-    const DOUBLE_TAP_MAX_DISTANCE = 150; // Generous tolerance for mobile thumb taps
+    const DOUBLE_TAP_MAX_GAP = 260; // Snappy tap response
+    const DOUBLE_TAP_MAX_DISTANCE = 120; // Mobile thumb tolerance
 
     const last = lastTapRef.current;
     const timeDiff = now - last.time;
@@ -800,13 +849,16 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       if (!activeVideo) return;
 
       if (activeVideo.paused) {
-        activeVideo.play().catch(() => {});
-        showCenterAnimation('play');
-        setIsPlaying(true);
+        activeVideo.play()
+          .then(() => {
+            setIsPlaying(true);
+            showCenterAnimation('play');
+          })
+          .catch(() => setIsPlaying(false));
       } else {
         activeVideo.pause();
-        showCenterAnimation('pause');
         setIsPlaying(false);
+        showCenterAnimation('pause');
       }
       tapTimeoutRef.current = null;
     }, DOUBLE_TAP_MAX_GAP);
@@ -1337,11 +1389,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     ref={(el) => {
                       if (el) {
                         videoRefs.current.set(index, el);
-                        if (index === currentIndex && el.paused) {
-                          el.play()
-                            .then(() => setIsPlaying(true))
-                            .catch(() => {});
-                        }
                       } else {
                         videoRefs.current.delete(index);
                       }
@@ -1352,8 +1399,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     webkit-playsinline="true"
                     x5-playsinline="true"
                     loop
-                    autoPlay={isActive}
-                    preload={isActive ? "auto" : "metadata"}
+                    autoPlay={false}
+                    preload={isActive ? "auto" : "none"}
                     muted={isMuted}
                     onLoadedMetadata={(e) => {
                       handleVideoMetadata(reel.id, e.currentTarget);
