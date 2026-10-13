@@ -498,9 +498,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             {!profileData.backgroundImageURL && <div className="absolute inset-0 bg-gradient-to-r from-surface via-border to-surface opacity-50" />}
             
             {/* Back Button overlay on banner */}
-            <div className="absolute top-4 left-4 z-10">
-                 <button onClick={onBack} className="bg-black/40 backdrop-blur-sm p-2 rounded-full text-white hover:bg-black/60 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+            <div 
+              className="absolute left-4 z-10"
+              style={{ top: 'max(env(safe-area-inset-top, 0px), 1rem)' }}
+            >
+                 <button onClick={onBack} className="bg-black/60 backdrop-blur-md p-2.5 rounded-full text-white hover:bg-black/80 active:scale-90 transition-all shadow-md flex items-center justify-center" aria-label="Back">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                  </button>

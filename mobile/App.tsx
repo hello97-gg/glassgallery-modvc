@@ -256,6 +256,44 @@ const App: React.FC = () => {
     };
   }, []);
   
+  // Virtual Keyboard & Input Focus Detection for Mobile Devices
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const handleViewportChange = () => {
+      if (window.visualViewport) {
+        // If the visual viewport shrinks below 82% of window.innerHeight, the virtual keyboard is up
+        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.82;
+        setIsKeyboardVisible(isKeyboard);
+      }
+    };
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        setIsKeyboardVisible(true);
+      }
+    };
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (!active || (active.tagName !== 'INPUT' && active.tagName !== 'TEXTAREA')) {
+          if (!window.visualViewport || window.visualViewport.height >= window.innerHeight * 0.82) {
+            setIsKeyboardVisible(false);
+          }
+        }
+      }, 150);
+    };
+
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
+    };
+  }, []);
+
   const [selectedImage, setSelectedImage] = useState<ImageMeta | null>(null);
   const [longPressedImage, setLongPressedImage] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
@@ -1161,6 +1199,14 @@ const App: React.FC = () => {
           setLongPressedImage(null);
         } else if (isUploadModalOpen) {
           setUploadModalOpen(false);
+        } else if (isLoginModalOpen) {
+          setLoginModalOpen(false);
+        } else if (isUpdateModalOpen && updateInfo && !updateInfo.forceUpdate) {
+          setIsUpdateModalOpen(false);
+        } else if (activeView === 'followers_following') {
+          handleBack();
+        } else if (activeView === 'legal') {
+          handleBack();
         } else if (activeView === 'notifications') {
           handleBack();
         } else if (activeView === 'profile') {
@@ -1347,6 +1393,7 @@ const App: React.FC = () => {
                     initialSearchTerm={exploreSearchTerm}
                     onNavigateToApi={() => handleSetView('api')}
                     onLongPress={setLongPressedImage}
+                    onSearchChange={setExploreSearchTerm}
                 />
             </>
         );
@@ -1389,14 +1436,23 @@ const App: React.FC = () => {
     <div className="flex flex-col md:flex-row min-h-screen w-full bg-background text-primary font-sans">
       {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
       {activeView === 'home' && !profileUser && (
-        <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-[#0a0a0a]/95 border-b border-white/5 flex items-center justify-between px-5 backdrop-blur-md md:hidden select-none">
-          {/* Left Side: Logo & App Name */}
-          <div className="flex items-center gap-2" onClick={() => handleSetView('home')}>
-            <div className="w-8 h-8 bg-gradient-to-tr from-red-600 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/10">
-              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <path d="M19 10V19C19 20.1 18.1 21 17 21H7C5.9 21 5 20.1 5 19V10"/>
-                <path d="M12 2L2 9L12 16L22 9L12 2Z" fill="currentColor"/>
-              </svg>
+        <header 
+          className="fixed top-0 left-0 right-0 z-40 bg-[#0a0a0a]/95 border-b border-white/5 flex items-center justify-between px-5 backdrop-blur-md md:hidden select-none"
+          style={{ 
+            paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
+            height: 'calc(3.75rem + max(env(safe-area-inset-top, 0px), 12px))'
+          }}
+        >
+          {/* Left Side: Logo & App Name with authentic web favicon */}
+          <div className="flex items-center gap-2.5 cursor-pointer active:scale-95 transition-transform" onClick={() => handleSetView('home')}>
+            <div className="w-9 h-9 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden p-1">
+              <img 
+                src="/favicon-96x96.png?v=2" 
+                className="w-6 h-6 object-contain" 
+                alt="Glass Gallery Logo"
+                width={24}
+                height={24}
+              />
             </div>
             <span className="text-white font-bold tracking-tight text-lg">Glass Gallery</span>
           </div>
@@ -1457,8 +1513,15 @@ const App: React.FC = () => {
           />
       </div>
 
-      {/* Dynamic main wrapper padding: pt-20 on Home feed to accommodate header, pt-4 on Explore/Profile as top headers are removed */}
-      <main className={`flex-1 min-w-0 p-4 md:p-8 ${activeView === 'home' && !profileUser ? 'pt-20' : 'pt-4'} md:pt-8 pb-20 md:pb-8`}>
+      {/* Dynamic main wrapper padding: accommodates safe-area status bar on all mobile screens */}
+      <main 
+        className="flex-1 min-w-0 p-4 md:p-8 pb-24 md:pb-8"
+        style={{
+          paddingTop: activeView === 'home' && !profileUser 
+            ? 'calc(4.75rem + max(env(safe-area-inset-top, 0px), 12px))' 
+            : 'max(env(safe-area-inset-top, 0px), 16px)'
+        }}
+      >
         {renderContent()}
       </main>
 
@@ -1470,6 +1533,7 @@ const App: React.FC = () => {
         setView={handleSetView}
         onViewProfile={handleViewProfile}
         notifications={notifications}
+        visible={!isKeyboardVisible && !(activeView === 'explore' && exploreSearchTerm.trim().length > 0)}
         onNotificationsClick={() => {
           if (user) {
             handleSetView('notifications');

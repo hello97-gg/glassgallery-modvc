@@ -217,12 +217,13 @@ const LoginModal: React.FC<LoginModalProps> = ({ onClose, onOpenLegal }) => {
                 
                 {/* Logo & Welcomer (only show if not writing inputs to keep screen clean) */}
                 {view === 'social' && (
-                    <div className="space-y-2 text-center select-none">
-                        <div className="w-14 h-14 bg-gradient-to-tr from-rose-500 to-amber-500 rounded-3xl mx-auto flex items-center justify-center shadow-xl shadow-rose-500/20 border border-white/15 animate-bounce">
-                            <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M19 10V19C19 20.1 18.1 21 17 21H7C5.9 21 5 20.1 5 19V10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                                <path d="M12 2L2 9L12 16L22 9L12 2Z" fill="currentColor"/>
-                            </svg>
+                    <div className="space-y-3 text-center select-none">
+                        <div className="w-16 h-16 rounded-2xl bg-surface border border-border/60 mx-auto flex items-center justify-center shadow-xl shadow-black/40 p-2.5 animate-bounce">
+                            <img 
+                                src="/favicon-96x96.png?v=2" 
+                                className="w-11 h-11 object-contain" 
+                                alt="Glass Gallery Logo"
+                            />
                         </div>
                         
                         <h1 className="text-3xl font-extrabold tracking-tight text-white pt-1 bg-clip-text bg-gradient-to-b from-white to-neutral-300">

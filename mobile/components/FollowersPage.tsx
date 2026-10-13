@@ -111,13 +111,17 @@ const FollowersPage: React.FC<FollowersPageProps> = ({
 
   return (
     <div className="animate-fade-in w-full min-h-screen pb-20 select-none">
-      {/* Top Header Navigation */}
-      <div className="flex items-center gap-4 py-4 px-2 border-b border-white/5 mb-6">
+      {/* Top Header Navigation with Safe-Area Status Bar Clearance */}
+      <div 
+        className="flex items-center gap-3.5 pb-4 px-3 border-b border-white/5 mb-6 sticky top-0 bg-background/95 backdrop-blur-md z-30"
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)' }}
+      >
         <button 
           onClick={onBack} 
-          className="p-2 hover:bg-white/5 rounded-full text-secondary hover:text-primary transition-colors duration-150 active:scale-95 flex items-center justify-center"
+          className="p-2.5 bg-surface/60 hover:bg-surface border border-white/10 rounded-full text-secondary hover:text-primary transition-all duration-150 active:scale-90 flex items-center justify-center shadow-sm"
+          aria-label="Back"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
         </button>

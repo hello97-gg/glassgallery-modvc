@@ -15,6 +15,7 @@ interface ExplorePageProps {
   initialSearchTerm?: string;
   onNavigateToApi?: () => void;
   onLongPress?: (image: ImageMeta) => void;
+  onSearchChange?: (query: string) => void;
 }
 
 const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => void }> = ({ flag, image, onClick }) => {
@@ -54,12 +55,19 @@ const CategoryCard: React.FC<{ flag: string, image: ImageMeta, onClick: () => vo
   );
 };
 
-const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, initialSearchTerm = '', onNavigateToApi, onLongPress }) => {
+const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, onViewProfile, onLikeToggle, initialSearchTerm = '', onNavigateToApi, onLongPress, onSearchChange }) => {
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchTerm);
 
+  const handleQueryChange = (val: string) => {
+    setSearchQuery(val);
+    if (onSearchChange) {
+      onSearchChange(val);
+    }
+  };
+
   useEffect(() => {
-    if (initialSearchTerm) {
+    if (initialSearchTerm !== searchQuery) {
         setSearchQuery(initialSearchTerm);
     }
   }, [initialSearchTerm]);
@@ -128,12 +136,12 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
                         type="text"
                         placeholder="Search tags, users, locations..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => handleQueryChange(e.target.value)}
                         autoFocus
                         className="block w-full pl-10 pr-16 py-2 border border-border rounded-full leading-5 bg-surface text-primary placeholder-secondary focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent sm:text-sm transition-all shadow-sm"
                     />
                      {searchQuery && (
-                        <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-12 pr-2 flex items-center text-secondary hover:text-primary">
+                        <button onClick={() => handleQueryChange('')} className="absolute inset-y-0 right-12 pr-2 flex items-center text-secondary hover:text-primary">
                            &times;
                         </button>
                     )}
@@ -154,7 +162,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
                     </svg>
                     <h3 className="mt-2 text-sm font-medium text-primary">No matches found</h3>
                     <p className="mt-1 text-sm text-secondary">Try searching for something else like "Tokyo" or "Abstract".</p>
-                    <Button onClick={() => setSearchQuery('')} variant="secondary" size="sm" className="mt-4">Clear Search</Button>
+                    <Button onClick={() => handleQueryChange('')} variant="secondary" size="sm" className="mt-4">Clear Search</Button>
                 </div>
             )}
         </div>
@@ -228,7 +236,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
                     type="text"
                     placeholder="Search images, tags, users, locations..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => handleQueryChange(e.target.value)}
                     className="block w-full pl-10 pr-16 py-2 border border-border rounded-full leading-5 bg-surface text-primary placeholder-secondary focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent sm:text-sm transition-all shadow-sm"
                 />
                 <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
