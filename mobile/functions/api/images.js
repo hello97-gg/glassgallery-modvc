@@ -1,4 +1,5 @@
 import { getDb } from "./lib/turso.js";
+import { submitToIndexNow } from "./lib/indexnow.js";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon";
 
@@ -17,6 +18,19 @@ const cacheHeaders = {
 export async function onRequest(context) {
   const request = context.request;
   const env = context.env;
+
+  // Patch fetch to support duplex: 'half' for AWS SDK v3 streaming
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url, init) => {
+    console.log("[FETCH URL]", url);
+    console.log("[FETCH INIT HEADERS]", init?.headers);
+    if (init && init.body) {
+       console.log("[FETCH INIT BODY TYPE]", typeof init.body, Object.prototype.toString.call(init.body));
+       // Attempt to always add duplex half if body is present
+       init.duplex = 'half';
+    }
+    return originalFetch(url, init);
+  };
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -39,8 +53,6 @@ export async function onRequest(context) {
         if (!targetId) {
           return Response.json({ success: false, error: "Missing imageId or id parameter." }, { status: 400, headers: corsHeaders });
         }
-
-
 
         // 1. Check if image exists and fetch the CDN URL
         const targetRes = await db.execute({
@@ -115,7 +127,7 @@ export async function onRequest(context) {
         // JSON format: return metadata + URL for programmatic use
         if (format === 'json') {
           let parsedFlags = [];
-          try { parsedFlags = targetImage.flags ? JSON.parse(targetImage.flags) : []; } catch {}
+          try { parsedFlags = targetImage.flags ? JSON.parse(targetImage.flags) : []; } catch { }
           return Response.json({
             success: true,
             image: {
@@ -144,7 +156,7 @@ export async function onRequest(context) {
         }
 
         const targetRes = await db.execute({
-          sql: "SELECT * FROM images WHERE id = ?",
+          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id = ?",
           args: [targetId]
         });
 
@@ -161,8 +173,8 @@ export async function onRequest(context) {
 
         let parsedFlags = [];
         let parsedConcepts = [];
-        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch {}
-        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
+        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
         const image = {
           id: row.id,
@@ -180,6 +192,8 @@ export async function onRequest(context) {
           location: row.location || '',
           likeCount: parseInt(row.likeCount || 0),
           downloadCount: parseInt(row.downloadCount || 0),
+          commentCount: parseInt(row.commentCount || 0),
+          viewCount: parseInt(row.viewCount || 0),
           flags: parsedFlags,
           tags: parsedFlags,
           aiConcepts: parsedConcepts,
@@ -206,8 +220,8 @@ export async function onRequest(context) {
         const target = targetRes.rows[0];
         let targetFlags = [];
         let targetConcepts = [];
-        try { targetFlags = target.flags ? JSON.parse(target.flags) : []; } catch {}
-        try { targetConcepts = target.aiConcepts ? JSON.parse(target.aiConcepts) : []; } catch {}
+        try { targetFlags = target.flags ? JSON.parse(target.flags) : []; } catch { }
+        try { targetConcepts = target.aiConcepts ? JSON.parse(target.aiConcepts) : []; } catch { }
 
         if (targetConcepts.length === 0 && !targetFlags.includes("Flagged")) {
           // Cloudflare Pages Functions run in the request lifecycle. 
@@ -267,8 +281,8 @@ export async function onRequest(context) {
             });
             userUploads.rows.forEach(row => {
               let fl = []; let co = [];
-              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 1.5; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 1.5; });
             });
@@ -278,8 +292,8 @@ export async function onRequest(context) {
             });
             userLikes.rows.forEach(row => {
               let fl = []; let co = [];
-              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 1.0; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 1.0; });
             });
@@ -289,8 +303,8 @@ export async function onRequest(context) {
             });
             userViews.rows.forEach(row => {
               let fl = []; let co = [];
-              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+              try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+              try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
               fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + 0.5; });
               co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + 0.5; });
             });
@@ -300,14 +314,14 @@ export async function onRequest(context) {
             if (maxWeight > 0) {
               for (const key in tasteProfile) { tasteProfile[key] = tasteProfile[key] / maxWeight; }
             }
-          } catch (err) {}
+          } catch (err) { }
         }
 
         const followerCountMap = {};
         try {
           const countsRes = await db.execute("SELECT followingUid, COUNT(*) as cnt FROM follows GROUP BY followingUid");
           countsRes.rows.forEach(r => { followerCountMap[r.followingUid] = parseInt(r.cnt || 0); });
-        } catch (err) {}
+        } catch (err) { }
 
         const targetFollowing = new Set();
         const targetFollowers = new Set();
@@ -320,7 +334,7 @@ export async function onRequest(context) {
             if (r.followerUid === target.uploaderUid) targetFollowing.add(r.followingUid);
             if (r.followingUid === target.uploaderUid) targetFollowers.add(r.followerUid);
           });
-        } catch (err) {}
+        } catch (err) { }
 
         const followingUids = new Set();
         const secondDegreeUids = new Set();
@@ -346,14 +360,14 @@ export async function onRequest(context) {
                 if (!followingUids.has(r.followingUid)) secondDegreeUids.add(r.followingUid);
               });
             }
-          } catch (err) {}
+          } catch (err) { }
         }
 
         const scoredImages = allImagesRes.rows.map(row => {
           const id = row.id;
           let fl = []; let co = [];
-          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
           let conceptOverlap = 0;
           const targetWords = new Set();
@@ -372,14 +386,14 @@ export async function onRequest(context) {
           let metadataMatch = 0;
           const targetText = `${target.title || ''} ${target.description || ''} ${target.location || ''}`.toLowerCase();
           const candidateText = `${row.title || ''} ${row.description || ''} ${row.location || ''}`.toLowerCase();
-          
+
           const tokens = targetText.split(/\s+/).filter(t => t.length > 3);
           tokens.forEach(tok => { if (candidateText.includes(tok)) metadataMatch += 0.5; });
 
           let tasteScore = 0;
           fl.forEach(f => { if (tasteProfile[f]) tasteScore += tasteProfile[f]; });
           co.forEach(c => { if (tasteProfile[c]) tasteScore += tasteProfile[c]; });
-          tasteScore = Math.min(tasteScore, 2.0);
+          tasteScore = Math.min(tasteScore, 3.0);
 
           let followBoostScore = 0;
           const candidateUploader = row.uploaderUid;
@@ -395,11 +409,24 @@ export async function onRequest(context) {
           }
 
           const uploaderFollowers = followerCountMap[candidateUploader] || 0;
-          const globalFollowerBoost = Math.min(uploaderFollowers * 0.2, 3.0);
+          const globalFollowerBoost = Math.min(uploaderFollowers * 0.2, 2.0);
 
-          const popularity = (row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05;
+          // "More from this creator" — surface the same author's other work in the related panel
+          const sameCreatorBoost = (candidateUploader && candidateUploader === target.uploaderUid) ? 4.0 : 0;
 
-          const totalScore = (conceptOverlap * 4.0) + (tagOverlap * 3.0) + (metadataMatch * 3.0) + (tasteScore * 2.0) + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost;
+          // Generic popularity, capped so an off-topic viral item can't crowd out on-topic matches
+          const popularity = Math.min((row.likeCount || 0) * 0.1 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.2, 3.0);
+
+          const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl);
+          let videoBoost = 0;
+          if (isVideo) {
+            const ageInHours = (Date.now() - (row.uploadedAt ? new Date(row.uploadedAt).getTime() : Date.now())) / (1000 * 60 * 60);
+            videoBoost = ageInHours < 168 ? 5.0 : 1.5;
+          }
+
+          // Related-panel score: on-topic relevance (concepts/tags/metadata) + same-creator lead,
+          // personalized to the viewer's taste; generic popularity is a minor tiebreaker.
+          const totalScore = (conceptOverlap * 5.0) + (tagOverlap * 4.5) + (metadataMatch * 3.0) + (tasteScore * 3.0) + sameCreatorBoost + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
 
           return {
             image: {
@@ -417,6 +444,8 @@ export async function onRequest(context) {
               location: row.location || '',
               likeCount: parseInt(row.likeCount || 0),
               downloadCount: parseInt(row.downloadCount || 0),
+              commentCount: parseInt(row.commentCount || 0),
+              viewCount: parseInt(row.viewCount || 0),
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[id] || [],
@@ -436,7 +465,7 @@ export async function onRequest(context) {
         const searchTerms = url.searchParams.get('searchTerms') || ''; // Client-side search history
 
         // Optimized: Combined taste profile query (uploads + likes + views in one UNION ALL) — reduces 7→5 DB calls
-        const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes] = await Promise.all([
+        const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes, viewsCountRes] = await Promise.all([
           db.execute("SELECT * FROM images ORDER BY uploadedAt DESC"),
           db.execute("SELECT * FROM likes"),
           db.execute({ sql: "SELECT followedTags FROM users WHERE uploaderUid = ?", args: [userUid] }),
@@ -452,6 +481,7 @@ export async function onRequest(context) {
             args: [userUid, userUid, userUid]
           }),
           db.execute({ sql: "SELECT followingUid FROM follows WHERE followerUid = ?", args: [userUid] }),
+          db.execute("SELECT imageId, COUNT(*) as count FROM views GROUP BY imageId")
         ]);
 
         // Build likes map
@@ -459,6 +489,12 @@ export async function onRequest(context) {
         likesRes.rows.forEach(like => {
           if (!likesMap[like.imageId]) likesMap[like.imageId] = [];
           likesMap[like.imageId].push(like.userUid);
+        });
+
+        // Build views map
+        const viewsMap = {};
+        viewsCountRes.rows.forEach(v => {
+          viewsMap[v.imageId] = parseInt(v.count || 0);
         });
 
         // Build follow set
@@ -481,8 +517,8 @@ export async function onRequest(context) {
           combinedTasteRes.rows.forEach(row => {
             const weight = sourceWeights[row.source] || 0.5;
             let fl = []; let co = [];
-            try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-            try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+            try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+            try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
             fl.forEach(f => { tasteProfile[f] = (tasteProfile[f] || 0) + weight; });
             co.forEach(c => { tasteProfile[c] = (tasteProfile[c] || 0) + weight; });
           });
@@ -527,22 +563,22 @@ export async function onRequest(context) {
         // Score all images
         const scoredImages = allImagesRes.rows.map(row => {
           let fl = []; let co = [];
-          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
-          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+          try { fl = row.flags ? JSON.parse(row.flags) : []; } catch { }
+          try { co = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
           // 1. Taste affinity score
           let tasteScore = 0;
           if (hasProfile) {
             fl.forEach(f => { if (tasteProfile[f]) tasteScore += tasteProfile[f]; });
             co.forEach(c => { if (tasteProfile[c]) tasteScore += tasteProfile[c]; });
-            tasteScore = Math.min(tasteScore, 3.0);
+            tasteScore = Math.min(tasteScore, 4.0);
           }
 
-          // 2. Follow boost (direct follow)
-          let followBoost = followingUids.has(row.uploaderUid) ? 2.0 : 0;
+          // 2. Follow boost (direct follow) — strong signal
+          let followBoost = followingUids.has(row.uploaderUid) ? 3.0 : 0;
 
           // 3. Social proof: images liked by people you follow
-          let socialProof = followLikedImageIds.has(row.id) ? 1.5 : 0;
+          let socialProof = followLikedImageIds.has(row.id) ? 2.0 : 0;
 
           // 4. Search intent: match search history against image metadata
           let searchBoost = 0;
@@ -565,12 +601,18 @@ export async function onRequest(context) {
           else recencyScore = 0.3;
 
           // 6. Popularity
-          const popularity = Math.min(((row.likeCount || 0) * 0.15 + (row.downloadCount || 0) * 0.05), 2.0);
+          const popularity = Math.min(((row.likeCount || 0) * 0.15 + (row.downloadCount || 0) * 0.05 + (row.commentCount || 0) * 0.25), 2.0);
 
-          // 7. Discovery randomness
-          const randomFactor = Math.random() * 1.5;
+          // 7. Discovery randomness — reduced so demonstrated taste leads
+          const randomFactor = Math.random() * 0.8;
 
-          const totalScore = (tasteScore * 4.0) + (followBoost * 2.0) + (socialProof * 2.0) + (searchBoost * 3.0) + (recencyScore * 2.0) + popularity + randomFactor;
+          // 8. Video format boost (push newly uploaded videos)
+          const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(row.imageUrl);
+          const videoBoost = isVideo && ageInHours < 168 ? 4.0 : (isVideo ? 1.0 : 0);
+
+          // Aggressive personalization: taste + follow + social + search dominate; recency/popularity
+          // stay as freshness/quality signals; randomness is a light tiebreaker.
+          const totalScore = (tasteScore * 5.0) + (followBoost * 3.0) + (socialProof * 2.5) + (searchBoost * 3.0) + (recencyScore * 1.5) + popularity + videoBoost + randomFactor;
 
           return {
             image: {
@@ -588,6 +630,8 @@ export async function onRequest(context) {
               location: row.location || '',
               likeCount: parseInt(row.likeCount || 0),
               downloadCount: parseInt(row.downloadCount || 0),
+              commentCount: parseInt(row.commentCount || 0),
+              viewCount: viewsMap[row.id] || parseInt(row.viewCount || 0),
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[row.id] || [],
@@ -602,54 +646,88 @@ export async function onRequest(context) {
         return Response.json({ success: true, images, personalized: true }, { status: 200, headers: cacheHeaders });
       }
 
-      let imagesQuery = "SELECT * FROM images ORDER BY uploadedAt DESC";
+      const cursor = url.searchParams.get('cursor');
+      const limitParam = parseInt(url.searchParams.get('limit') || '50');
+
+      let imagesQuery = "SELECT * FROM images";
       let imagesArgs = [];
+      let conditions = [];
 
       if (uploaderUid) {
-        imagesQuery = "SELECT * FROM images WHERE uploaderUid = ? ORDER BY uploadedAt DESC";
-        imagesArgs = [uploaderUid];
+        conditions.push("uploaderUid = ?");
+        imagesArgs.push(uploaderUid);
+      }
+      if (cursor) {
+        conditions.push("uploadedAt < ?");
+        imagesArgs.push(cursor);
       }
 
-      const imagesRes = await db.execute({ sql: imagesQuery, args: imagesArgs });
-      const likesRes = await db.execute("SELECT * FROM likes");
+      if (conditions.length > 0) {
+        imagesQuery += " WHERE " + conditions.join(" AND ");
+      }
+      imagesQuery += " ORDER BY uploadedAt DESC";
 
-      const likesMap = {};
-      likesRes.rows.forEach(like => {
-        const imgId = like.imageId;
-        const uUid = like.userUid;
-        if (!likesMap[imgId]) likesMap[imgId] = [];
-        likesMap[imgId].push(uUid);
-      });
+      try {
+        if (url.searchParams.has('limit') || cursor) {
+          imagesQuery += " LIMIT ?";
+          imagesArgs.push(limitParam);
+        }
 
-      const images = imagesRes.rows.map(row => {
-        const id = row.id;
-        let parsedFlags = [];
-        let parsedConcepts = [];
-        try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch {}
-        try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch {}
+        const [defaultImagesRes, defaultLikesRes, defaultViewsRes] = await Promise.all([
+          db.execute({ sql: imagesQuery, args: imagesArgs }),
+          db.execute("SELECT * FROM likes"),
+          db.execute("SELECT imageId, COUNT(*) as count FROM views GROUP BY imageId")
+        ]);
 
-        return {
-          id: row.id,
-          imageUrl: row.imageUrl,
-          uploaderUid: row.uploaderUid,
-          uploaderName: row.uploaderName,
-          uploaderPhotoURL: row.uploaderPhotoURL || '',
-          title: row.title || '',
-          description: row.description || '',
-          license: row.license,
-          licenseUrl: row.licenseUrl || '',
-          originalWorkUrl: row.originalWorkUrl || '',
-          uploadedAt: row.uploadedAt,
-          location: row.location || '',
-          likeCount: parseInt(row.likeCount || 0),
-          downloadCount: parseInt(row.downloadCount || 0),
-          flags: parsedFlags,
-          aiConcepts: parsedConcepts,
-          likedBy: likesMap[id] || [],
-        };
-      });
+        const defaultLikesMap = {};
+        defaultLikesRes.rows.forEach(like => {
+          const imgId = like.imageId;
+          const uUid = like.userUid;
+          if (!defaultLikesMap[imgId]) defaultLikesMap[imgId] = [];
+          defaultLikesMap[imgId].push(uUid);
+        });
 
-      return Response.json({ success: true, images }, { status: 200, headers: cacheHeaders });
+        const defaultViewsMap = {};
+        defaultViewsRes.rows.forEach(v => {
+          defaultViewsMap[v.imageId] = parseInt(v.count || 0);
+        });
+
+        const fetchedImages = defaultImagesRes.rows.map(row => {
+          const id = row.id;
+          let parsedFlags = [];
+          let parsedConcepts = [];
+          try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
+          try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
+
+          return {
+            id: row.id,
+            imageUrl: row.imageUrl,
+            uploaderUid: row.uploaderUid,
+            uploaderName: row.uploaderName,
+            uploaderPhotoURL: row.uploaderPhotoURL || '',
+            title: row.title || '',
+            description: row.description || '',
+            license: row.license,
+            licenseUrl: row.licenseUrl || '',
+            originalWorkUrl: row.originalWorkUrl || '',
+            uploadedAt: row.uploadedAt,
+            location: row.location || '',
+            likeCount: parseInt(row.likeCount || 0),
+            downloadCount: parseInt(row.downloadCount || 0),
+            commentCount: parseInt(row.commentCount || 0),
+            viewCount: defaultViewsMap[id] || parseInt(row.viewCount || 0),
+            flags: parsedFlags,
+            aiConcepts: parsedConcepts,
+            likedBy: defaultLikesMap[id] || []
+          };
+        });
+
+        const nextCursor = fetchedImages.length > 0 ? fetchedImages[fetchedImages.length - 1].uploadedAt : null;
+        return Response.json({ success: true, images: fetchedImages, nextCursor }, { status: 200, headers: cacheHeaders });
+      } catch (err) {
+        console.error("Error executing default images query:", err);
+        return Response.json({ success: false, error: err.message }, { status: 500, headers: cacheHeaders });
+      }
     }
 
     // --- POST Method: Upload, Edit, Like, Download, Delete ---
@@ -669,9 +747,9 @@ export async function onRequest(context) {
 
       // Action: AI auto-tags
       if (action === 'auto_tags') {
-        const { image } = body;
-        if (!image) {
-          return Response.json({ success: false, error: "Missing required 'image' field (base64 data URL)." }, { status: 400, headers: corsHeaders });
+        const { image, images } = body;
+        if (!image && (!images || !Array.isArray(images) || images.length === 0)) {
+          return Response.json({ success: false, error: "Missing required 'image' or 'images' (array of base64 data URLs) field." }, { status: 400, headers: corsHeaders });
         }
 
         const mistralKey = env.MISTRAL_API_KEY;
@@ -679,17 +757,24 @@ export async function onRequest(context) {
           return Response.json({ success: false, error: "MISTRAL_API_KEY is not defined on the server." }, { status: 500, headers: corsHeaders });
         }
 
-        const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
-        const payload = {
-          model: "pixtral-12b-2409",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `Task: Analyze the provided image to suggest tags, title, description, and location.
-                  
+        const isVideo = Array.isArray(images) && images.length > 0;
+        const promptText = isVideo
+          ? `Task: Analyze the provided video keyframes (ordered chronologically) to suggest tags, title, description, and location.
+          
+Available tags in our app: "Natural", "Monochrome", "Street", "Landscape", "Architecture", "Abstract", "Urban", "Creative", "Night", "Macro", "Minimalist", "Portrait", "Travel".
+
+Select 1 to 5 tags from the available tags list that perfectly describe the video.
+Suggest a beautiful, highly premium title, a professional short description (1-2 sentences max) describing the visual progression across the keyframes, and a plausible city/country location if identifiable from the scenes.
+
+Return the response strictly as a JSON object with this exact format:
+{
+  "tags": ["Tag1", "Tag2"],
+  "title": "Beautiful suggested title",
+  "description": "Short description of the video progression.",
+  "location": "City, Country"
+}`
+          : `Task: Analyze the provided image to suggest tags, title, description, and location.
+          
 Available tags in our app: "Natural", "Monochrome", "Street", "Landscape", "Architecture", "Abstract", "Urban", "Creative", "Night", "Macro", "Minimalist", "Portrait", "Travel".
 
 Select 1 to 5 tags from the available tags list that perfectly describe the image.
@@ -701,10 +786,24 @@ Return the response strictly as a JSON object with this exact format:
   "title": "Beautiful suggested title",
   "description": "Short description of the photo.",
   "location": "City, Country"
-}`
-                },
-                { type: "image_url", image_url: { url: image } }
-              ]
+}`;
+
+        const content = [{ type: "text", text: promptText }];
+        if (isVideo) {
+          images.forEach(img => {
+            content.push({ type: "image_url", image_url: { url: img } });
+          });
+        } else {
+          content.push({ type: "image_url", image_url: { url: image } });
+        }
+
+        const invokeUrl = "https://api.mistral.ai/v1/chat/completions";
+        const payload = {
+          model: "pixtral-12b-2409",
+          messages: [
+            {
+              role: "user",
+              content: content
             }
           ],
           response_format: { type: "json_object" },
@@ -727,8 +826,8 @@ Return the response strictly as a JSON object with this exact format:
         }
 
         const resData = await apiRes.json();
-        const content = resData.choices[0].message.content;
-        const parsed = JSON.parse(content);
+        const responseContent = resData.choices[0].message.content;
+        const parsed = JSON.parse(responseContent);
 
         return Response.json({
           success: true,
@@ -745,9 +844,9 @@ Return the response strictly as a JSON object with this exact format:
         if (!authHeader) {
           return Response.json({ success: false, error: "Missing API Key in Authorization header or x-api-key header." }, { status: 401, headers: corsHeaders });
         }
-        
+
         let apiKeyInput = authHeader.replace(/^Bearer\s+/i, '').trim();
-        
+
         const userRes = await db.execute({
           sql: "SELECT * FROM users WHERE apiKey = ?",
           args: [apiKeyInput]
@@ -767,32 +866,54 @@ Return the response strictly as a JSON object with this exact format:
         } = body;
 
         if (!image) {
-          return Response.json({ success: false, error: "Missing required 'image' field in JSON body (base64 string or public image URL)." }, { status: 400, headers: corsHeaders });
+          return Response.json({ success: false, error: "Missing required 'image' field in JSON body (base64 string or public image/video URL)." }, { status: 400, headers: corsHeaders });
         }
 
         let buffer;
         let extension = 'jpg';
         let contentType = 'image/jpeg';
-        
+        let isVideo = false;
+
         if (image.startsWith('http://') || image.startsWith('https://')) {
           try {
             const fetchRes = await fetch(image);
             const arrayBuffer = await fetchRes.arrayBuffer();
             buffer = new Uint8Array(arrayBuffer);
+            const fetchedContentType = fetchRes.headers.get('content-type');
+            if (fetchedContentType && fetchedContentType.startsWith('video/')) {
+              isVideo = true;
+              contentType = fetchedContentType;
+              extension = fetchedContentType.split('/')[1] || 'mp4';
+            } else if (image.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i)) {
+              isVideo = true;
+              extension = image.split('.').pop().split('?')[0].toLowerCase();
+              contentType = `video/${extension}`;
+            }
           } catch (err) {
-            return Response.json({ success: false, error: `Failed to download image from URL: ${err.message}` }, { status: 400, headers: corsHeaders });
+            return Response.json({ success: false, error: `Failed to download media from URL: ${err.message}` }, { status: 400, headers: corsHeaders });
           }
         } else {
           try {
-            const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+            const match = image.match(/^data:(image|video)\/(\w+);base64,/);
+            if (match) {
+              if (match[1] === 'video') {
+                isVideo = true;
+                contentType = match[0].split(';')[0].split(':')[1];
+                extension = match[2];
+              } else {
+                contentType = match[0].split(';')[0].split(':')[1];
+                extension = match[2];
+              }
+            }
+            const base64Data = image.replace(/^data:(image|video)\/\w+;base64,/, "");
             const binaryString = atob(base64Data);
             const len = binaryString.length;
             buffer = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
-                buffer[i] = binaryString.charCodeAt(i);
+              buffer[i] = binaryString.charCodeAt(i);
             }
           } catch (err) {
-            return Response.json({ success: false, error: "Failed to parse Base64 image data." }, { status: 400, headers: corsHeaders });
+            return Response.json({ success: false, error: "Failed to parse Base64 media data." }, { status: 400, headers: corsHeaders });
           }
         }
 
@@ -801,16 +922,17 @@ Return the response strictly as a JSON object with this exact format:
           return Response.json({ success: false, error: "File exceeds maximum size of 50MB." }, { status: 400, headers: corsHeaders });
         }
 
-        // --- Image Compression Logic using Photon ---
-        try {
-          let photonImg = PhotonImage.new_from_byteslice(buffer);
-          const width = photonImg.get_width();
-          const height = photonImg.get_height();
+        // --- Image Compression Logic using Photon (Skip for Videos) ---
+        if (!isVideo) {
+          try {
+            let photonImg = PhotonImage.new_from_byteslice(buffer);
+            const width = photonImg.get_width();
+            const height = photonImg.get_height();
 
-          const MAX_WIDTH = 1920;
-          const ONE_MB = 1024 * 1024;
+            const MAX_WIDTH = 1920;
+            const ONE_MB = 1024 * 1024;
 
-          if (width > MAX_WIDTH || buffer.byteLength > ONE_MB) {
+            if (width > MAX_WIDTH || buffer.byteLength > ONE_MB) {
               if (width > MAX_WIDTH) {
                 const newHeight = Math.round(height * (MAX_WIDTH / width));
                 const resized = resize(photonImg, MAX_WIDTH, newHeight, SamplingFilter.Lanczos3);
@@ -818,10 +940,11 @@ Return the response strictly as a JSON object with this exact format:
                 photonImg = resized;
               }
               buffer = photonImg.get_bytes_jpeg(80);
+            }
+            photonImg.free();
+          } catch (photonErr) {
+            console.error("Photon compression error:", photonErr);
           }
-          photonImg.free();
-        } catch (photonErr) {
-          console.error("Photon compression error:", photonErr);
         }
 
         const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
@@ -841,7 +964,7 @@ Return the response strictly as a JSON object with this exact format:
         });
 
         const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
-        
+
         await S3.send(new PutObjectCommand({
           Bucket: R2_BUCKET,
           Key: uniqueFileName,
@@ -901,6 +1024,18 @@ Return the response strictly as a JSON object with this exact format:
           ]
         });
 
+        // Trigger IndexNow notification for newly added image
+        const indexNowUrls = [
+          `https://gg.modvc.org/image/${id}`,
+          "https://gg.modvc.org/gallery",
+          "https://gg.modvc.org/"
+        ];
+        if (context.waitUntil) {
+          context.waitUntil(submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err)));
+        } else {
+          submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err));
+        }
+
         if (isUnsafe) {
           const notifId = 'notif_' + Math.random().toString(36).substring(2, 15);
           await db.execute({
@@ -919,10 +1054,57 @@ Return the response strictly as a JSON object with this exact format:
         }, { status: 200, headers: corsHeaders });
       }
 
+      // Action: Create image entry (Step 1 of direct upload)
+      if (action === 'create') {
+        let authHeader = request.headers.get('authorization') || request.headers.get('x-api-key');
+        if (!authHeader) return Response.json({ success: false, error: "Missing API Key." }, { status: 401, headers: corsHeaders });
+
+        let apiKeyInput = authHeader.replace(/^Bearer\s+/i, '').trim();
+        const userRes = await db.execute({ sql: "SELECT * FROM users WHERE apiKey = ?", args: [apiKeyInput] });
+        if (userRes.rows.length === 0) return Response.json({ success: false, error: "Invalid API key." }, { status: 401, headers: corsHeaders });
+
+        const userRow = userRes.rows[0];
+        const uploaderUid = userRow.uploaderUid;
+        const uploaderName = userRow.uploaderName;
+        const uploaderPhotoURL = userRow.uploaderPhotoURL;
+
+        const { title, description, license, licenseUrl, originalWorkUrl, location, tags, filename } = body;
+        let extension = 'mp4';
+        if (filename) extension = filename.split('.').pop().toLowerCase();
+
+        const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
+        
+        const publicDomain = env.R2_PUBLIC_DOMAIN;
+        if (!publicDomain) {
+          throw new Error("Server Misconfiguration: R2_PUBLIC_DOMAIN environment variable is missing.");
+        }
+        const domain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
+        const imageUrl = `${domain}/${uniqueFileName}`; // Expected URL
+
+        const uploadedAt = new Date().toISOString();
+
+        await db.execute({
+          sql: `INSERT INTO images (
+            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            title, description, license, licenseUrl, flags, originalWorkUrl,
+            uploadedAt, likeCount, downloadCount, location, aiConcepts
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          args: [
+            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            title || '', description || '', license || 'CC0', licenseUrl || '',
+            JSON.stringify(tags || []), originalWorkUrl || '', uploadedAt, location || '',
+            JSON.stringify([])
+          ]
+        });
+
+        return Response.json({ success: true, imageId: id, uploadUrl: `/api/images/upload?id=${id}&filename=${uniqueFileName}` }, { status: 200, headers: corsHeaders });
+      }
+
       // Action: Add/Upload image
       if (action === 'upload') {
         const {
-          id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location,
+          id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location, keyframes
         } = body;
 
         if (!id || !imageUrl || !uploaderUid) {
@@ -935,7 +1117,7 @@ Return the response strictly as a JSON object with this exact format:
         let extremeViolations = [];
         let aiConceptsArr = [];
         try {
-          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env);
+          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env, keyframes);
           isUnsafe = safetyRes.isUnsafe;
           isExtreme = safetyRes.isExtreme;
           extremeViolations = safetyRes.extremeViolations || [];
@@ -975,6 +1157,18 @@ Return the response strictly as a JSON object with this exact format:
             JSON.stringify(aiConceptsArr)
           ]
         });
+
+        // Trigger IndexNow notification for newly added image
+        const indexNowUrls = [
+          `https://gg.modvc.org/image/${id}`,
+          "https://gg.modvc.org/gallery",
+          "https://gg.modvc.org/"
+        ];
+        if (context.waitUntil) {
+          context.waitUntil(submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err)));
+        } else {
+          submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err));
+        }
 
         if (isUnsafe) {
           const notifId = 'notif_' + Math.random().toString(36).substring(2, 15);
@@ -1120,22 +1314,203 @@ Return the response strictly as a JSON object with this exact format:
         return Response.json({ success: true, hasLiked: !hasLiked }, { status: 200, headers: corsHeaders });
       }
 
-      // Action: Register user view/click
-      if (action === 'view') {
-        const { imageId, userUid } = body;
-        if (!imageId || !userUid) return Response.json({ success: false, error: "Missing imageId or userUid." }, { status: 400, headers: corsHeaders });
+      // Action: Register user view/click or feed impression batch
+      if (action === 'view' || action === 'batch_views') {
+        const { imageId, imageIds, userUid } = body;
+        const rawIds = Array.isArray(imageIds)
+          ? imageIds
+          : (imageId ? [imageId] : []);
 
+        const targetIds = rawIds
+          .map(id => String(id || '').split('_loop_')[0].trim())
+          .filter(id => id.length > 0);
+
+        if (targetIds.length === 0) {
+          return Response.json({ success: false, error: "Missing imageId or imageIds." }, { status: 400, headers: corsHeaders });
+        }
+
+        const effectiveUid = userUid || ('anon_' + Math.random().toString(36).substring(2, 10));
         const viewedAt = new Date().toISOString();
 
-        await db.execute({
+        const statements = targetIds.slice(0, 50).map(id => ({
           sql: "INSERT OR REPLACE INTO views (userUid, imageId, viewedAt) VALUES (?, ?, ?)",
-          args: [userUid, imageId, viewedAt]
-        });
+          args: [effectiveUid, id, viewedAt]
+        }));
 
-        return Response.json({ success: true }, { status: 200, headers: corsHeaders });
+        try {
+          await db.batch(statements);
+        } catch (dbErr) {
+          console.error("[Views Batch] Error executing batch views:", dbErr);
+        }
+
+        return Response.json({ success: true, count: targetIds.length }, { status: 200, headers: corsHeaders });
       }
 
       return Response.json({ success: false, error: `Invalid action: ${action}` }, { status: 400, headers: corsHeaders });
+    }
+
+    if (request.method === 'PUT') {
+      const action = url.searchParams.get('action');
+      
+      // Action: Direct Stream Passthrough (Raw Binary)
+      if (action === 'api_upload_stream') {
+        let authHeader = request.headers.get('authorization') || request.headers.get('x-api-key');
+        if (!authHeader) {
+          return Response.json({ success: false, error: "Missing API Key." }, { status: 401, headers: corsHeaders });
+        }
+
+        let apiKeyInput = authHeader.replace(/^Bearer\s+/i, '').trim();
+        const userRes = await db.execute({
+          sql: "SELECT * FROM users WHERE apiKey = ?",
+          args: [apiKeyInput]
+        });
+
+        if (userRes.rows.length === 0) {
+          return Response.json({ success: false, error: "Invalid API key." }, { status: 401, headers: corsHeaders });
+        }
+
+        const userRow = userRes.rows[0];
+        const uploaderUid = userRow.uploaderUid;
+        const uploaderName = userRow.uploaderName;
+        const uploaderPhotoURL = userRow.uploaderPhotoURL;
+
+        // Metadata passed via headers
+        const title = request.headers.get('x-image-title') || '';
+        const description = request.headers.get('x-image-description') || '';
+        const location = request.headers.get('x-image-location') || '';
+        const license = request.headers.get('x-image-license') || 'CC0';
+        const licenseUrl = request.headers.get('x-image-license-url') || '';
+        const originalWorkUrl = request.headers.get('x-image-original-work-url') || '';
+        const filename = request.headers.get('x-file-name') || 'video.mp4';
+        let tags = [];
+        try {
+          const tagsHeader = request.headers.get('x-image-tags');
+          if (tagsHeader) tags = JSON.parse(tagsHeader);
+        } catch(e) {}
+        
+        let contentType = request.headers.get('content-type') || 'application/octet-stream';
+        let extension = filename.split('.').pop().toLowerCase();
+        if (contentType === 'video/mp4') extension = 'mp4';
+        
+        // Ensure request body exists
+        if (!request.body) {
+           return Response.json({ success: false, error: "Missing request body stream." }, { status: 400, headers: corsHeaders });
+        }
+
+        const contentLengthHeader = request.headers.get('content-length');
+        if (!contentLengthHeader) {
+          return Response.json({ success: false, error: "Length Required: Content-Length header is missing." }, { status: 411, headers: corsHeaders });
+        }
+
+        const size = parseInt(contentLengthHeader, 10);
+        const FIFTY_MB = 50 * 1024 * 1024; // 50 MB upload size limit matching web and api_upload
+        if (size > FIFTY_MB) {
+          return Response.json({ success: false, error: "Payload Too Large: Maximum allowed size is 50MB." }, { status: 413, headers: corsHeaders });
+        }
+
+        const R2_ACCOUNT_ID = "98055f2d8acb3c303f213bb401738a64";
+        const R2_BUCKET = env.R2_BUCKET_NAME || "glassgallery";
+        const publicDomain = env.R2_PUBLIC_DOMAIN;
+        if (!publicDomain) {
+          throw new Error("Server Misconfiguration: R2_PUBLIC_DOMAIN environment variable is missing.");
+        }
+
+        const { AwsClient } = await import("aws4fetch");
+        const aws = new AwsClient({
+          accessKeyId: env.R2_ACCESS_KEY_ID,
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+          service: 's3',
+          region: 'auto'
+        });
+
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
+        const s3Url = new URL(`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET}/${uniqueFileName}`);
+        
+        // Directly pipe the stream to R2 - virtually 0ms CPU time
+        const s3Res = await aws.fetch(s3Url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': contentType,
+                'Content-Length': contentLengthHeader
+            },
+            body: request.body,
+            duplex: 'half'
+        });
+
+        if (!s3Res.ok) {
+            const errText = await s3Res.text();
+            throw new Error(`R2 Upload failed: ${s3Res.status} ${errText}`);
+        }
+
+        const domain = publicDomain.endsWith('/') ? publicDomain.slice(0, -1) : publicDomain;
+        const imageUrl = `${domain}/${uniqueFileName}`;
+
+        const id = 'img_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        let updatedFlags = tags || [];
+        let isUnsafe = false;
+        let isExtreme = false;
+        let extremeViolations = [];
+        let aiConceptsArr = [];
+
+        try {
+          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env);
+          isUnsafe = safetyRes.isUnsafe;
+          isExtreme = safetyRes.isExtreme;
+          extremeViolations = safetyRes.extremeViolations || [];
+          aiConceptsArr = safetyRes.aiConcepts || [];
+        } catch (err) {
+          console.error("[API Stream Upload Content Safety] Moderation failed:", err);
+        }
+
+        // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
+        if (isExtreme) {
+          console.warn(`[Content Safety Block] Rejecting stream upload (${extremeViolations.join(', ')}). Purging from R2: ${uniqueFileName}`);
+          await deleteR2Object(uniqueFileName, env);
+          return Response.json({
+            success: false,
+            blocked: true,
+            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            violations: extremeViolations
+          }, { status: 400, headers: corsHeaders });
+        }
+
+        if (isUnsafe && !updatedFlags.includes("Flagged")) {
+          updatedFlags.push("Flagged");
+        }
+
+        const uploadedAt = new Date().toISOString();
+
+        await db.execute({
+          sql: `INSERT INTO images (
+            id, imageUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+            title, description, license, licenseUrl, flags, originalWorkUrl,
+            uploadedAt, likeCount, downloadCount, location, aiConcepts
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          args: [
+            id, imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            title || '', description || '', license || 'CC0', licenseUrl || '',
+            JSON.stringify(updatedFlags), originalWorkUrl || '', uploadedAt, location || '',
+            JSON.stringify(aiConceptsArr)
+          ]
+        });
+
+        if (isUnsafe) {
+          const notifId = 'notif_' + Math.random().toString(36).substring(2, 15);
+          await db.execute({
+            sql: `INSERT INTO notifications (id, recipientUid, actorUid, actorName, actorPhotoURL, type, imageId, imageUrl, createdAt, read)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+            args: [notifId, uploaderUid, 'system', 'System Moderator', '', 'flagged', id, imageUrl, uploadedAt]
+          }).catch(err => console.error("[Content Safety] Notification failed:", err));
+        }
+
+        return Response.json({
+          success: true,
+          imageId: id,
+          imageUrl,
+          flagged: isUnsafe,
+          aiConcepts: aiConceptsArr
+        }, { status: 200, headers: corsHeaders });
+      }
     }
 
     return Response.json({ success: false, error: "Method not allowed." }, { status: 405, headers: corsHeaders });
@@ -1180,7 +1555,7 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
 
     if (!openaiKey && !mistralKey) {
       console.warn("[Content Safety] Neither OPENAI_API_KEY nor MISTRAL_API_KEY is configured. Skipping moderation.");
-      return { isUnsafe: false, isExtreme: false, extremeViolations: [], aiConcepts: [], violatedCategories: [] };
+      return { isUnsafe: false, aiConcepts: [], violatedCategories: [] };
     }
 
     const isVideo = Boolean(imageUrl && imageUrl.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i));
@@ -1218,7 +1593,9 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
 
         // Check B: Visual content
         if (isVideo) {
+          // YouTube-style multi-frame temporal video inspection across timeline
           if (Array.isArray(keyframes) && keyframes.length > 0) {
+            // Check up to 5 sampled keyframes across video duration
             const framesToCheck = keyframes.slice(0, 5);
             for (const frame of framesToCheck) {
               moderationTasks.push(
@@ -1237,6 +1614,7 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
             }
           }
         } else if (imageUrl) {
+          // Static image moderation
           moderationTasks.push(
             fetch('https://api.openai.com/v1/moderations', {
               method: 'POST',
@@ -1338,11 +1716,7 @@ async function checkContentSafety(title, description, location, imageUrl, imageI
         if (mistralRes.ok) {
           const mData = await mistralRes.json();
           const parsed = JSON.parse(mData.choices?.[0]?.message?.content || "{}");
-          if (parsed.safety === "unsafe") {
-            isUnsafe = true;
-            isExtreme = true;
-            extremeViolations.push('extreme_content');
-          }
+          if (parsed.safety === "unsafe") isUnsafe = true;
         }
       } catch (mErr) {
         console.error("[Mistral Fallback Moderation] Error:", mErr);

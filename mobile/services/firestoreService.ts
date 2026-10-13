@@ -1,7 +1,8 @@
-import type { ImageMeta, Notification, ProfileUser } from '../types';
+import type { ImageMeta, Notification, ProfileUser, Comment } from '../types';
 import type { User } from 'firebase/auth';
 
 export const PAGE_SIZE = 8;
+export const CACHE_TIME_MS = 1000 * 60 * 5; // 5 minutes
 
 // Compatibility helper to mimic Firestore's Timestamp object
 // This avoids breaking frontend UI components that call .toDate() on dates.
@@ -28,7 +29,8 @@ export const addImageToFirestore = async (
     flags: string[], 
     originalWorkUrl?: string,
     licenseUrl?: string,
-    location?: string
+    location?: string,
+    keyframes?: string[]
 ) => {
     try {
         const id = generateImageId();
@@ -48,6 +50,7 @@ export const addImageToFirestore = async (
                 flags,
                 originalWorkUrl: originalWorkUrl || '',
                 location: location || '',
+                keyframes: keyframes || []
             })
         });
 
@@ -476,5 +479,129 @@ export const toggleFollowUser = async (followerUid: string, followingUid: string
     } catch (error) {
         console.error("Error toggling follow:", error);
         throw error;
+    }
+};
+
+// --- Comments & Replies Service API ---
+
+export const getCommentsForImage = async (imageId: string): Promise<Comment[]> => {
+    try {
+        const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
+        const response = await fetch(`/api/comments?imageId=${baseId}`);
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to fetch comments.");
+        }
+        return data.comments as Comment[];
+    } catch (error) {
+        console.error("Error getting comments for image: ", error);
+        throw error;
+    }
+};
+
+export const addCommentToImage = async (
+    imageId: string,
+    user: User,
+    content: string,
+    parentId?: string | null
+): Promise<Comment> => {
+    try {
+        const baseId = imageId ? imageId.split('_loop_')[0] : imageId;
+        const response = await fetch('/api/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                imageId: baseId,
+                userUid: user.uid,
+                userName: user.displayName || 'Anonymous',
+                userPhotoURL: user.photoURL || '',
+                content,
+                parentId: parentId || null
+            })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to post comment.");
+        }
+        return data.comment as Comment;
+    } catch (error) {
+        console.error("Error adding comment to image: ", error);
+        throw error;
+    }
+};
+
+export const editComment = async (commentId: string, userUid: string, content: string): Promise<void> => {
+    try {
+        const response = await fetch('/api/comments?action=edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commentId, userUid, content })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to edit comment.");
+        }
+    } catch (error) {
+        console.error("Error editing comment:", error);
+        throw error;
+    }
+};
+
+export const toggleCommentLike = async (commentId: string, userUid: string): Promise<{ isLiked: boolean }> => {
+    try {
+        const response = await fetch('/api/comments?action=like', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commentId, userUid })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to toggle comment like.");
+        }
+        return { isLiked: data.isLiked };
+    } catch (error) {
+        console.error("Error toggling comment like:", error);
+        throw error;
+    }
+};
+
+export const deleteComment = async (commentId: string, userUid: string): Promise<void> => {
+    try {
+        const response = await fetch('/api/comments?action=delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commentId, userUid })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to delete comment.");
+        }
+    } catch (error) {
+        console.error("Error deleting comment:", error);
+        throw error;
+    }
+};
+
+export const getUserComments = async (userUid: string, requesterUid?: string): Promise<Comment[]> => {
+    try {
+        const url = `/api/comments?userUid=${encodeURIComponent(userUid)}${requesterUid ? `&requesterUid=${encodeURIComponent(requesterUid)}` : ''}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+        }
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to fetch user comments.");
+        }
+        return (data.comments || []).map((c: any) => ({
+            ...c,
+            post: c.post ? {
+                ...c.post,
+                uploadedAt: mapTimestamp(c.post.uploadedAt)
+            } : undefined
+        })) as Comment[];
+    } catch (error) {
+        console.error("Error getting comments for user: ", error);
+        return [];
     }
 };

@@ -26,6 +26,7 @@
     "@google/genai": "^1.29.1",
     "@libsql/client": "^0.17.3",
     "@supernotes/capacitor-send-intent": "^6.1.2",
+    "aws4fetch": "^1.0.20",
     "browser-image-compression": "^2.0.2",
     "firebase": "^11.10.0",
     "jigsawstack": "^0.3.7",

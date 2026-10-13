@@ -42,14 +42,34 @@ export const recordLikeInterest = (image: ImageMeta): void => {
   const interests = getInterests();
   const tags = image.flags || [];
   const concepts = (image as any).aiConcepts || [];
-  // Likes are a stronger signal (2x)
+  // Likes are the strongest explicit signal (3x tags, 1.5x concepts)
   tags.forEach((tag: string) => {
     const key = tag.toLowerCase();
-    interests[key] = (interests[key] || 0) + 2;
+    interests[key] = (interests[key] || 0) + 3;
   });
   concepts.forEach((concept: string) => {
     const key = concept.toLowerCase();
-    interests[key] = (interests[key] || 0) + 1;
+    interests[key] = (interests[key] || 0) + 1.5;
+  });
+  saveInterests(interests);
+};
+
+export const recordWatchInterest = (image: ImageMeta, ratio: number): void => {
+  if (ratio < 0.3) return; // Only count watch if they stayed for at least 30%
+  const interests = getInterests();
+  const tags = image.flags || [];
+  const concepts = (image as any).aiConcepts || [];
+  
+  // Strong signal if watched > 50% (+2.5 weight), medium signal otherwise (+1 weight)
+  const weightMultiplier = ratio >= 0.5 ? 2.5 : 1.0;
+
+  tags.forEach((tag: string) => {
+    const key = tag.toLowerCase();
+    interests[key] = (interests[key] || 0) + weightMultiplier;
+  });
+  concepts.forEach((concept: string) => {
+    const key = concept.toLowerCase();
+    interests[key] = (interests[key] || 0) + (weightMultiplier * 0.5);
   });
   saveInterests(interests);
 };
@@ -70,14 +90,21 @@ export const getInterestBoost = (image: ImageMeta): number => {
   if (Object.keys(interests).length === 0) return 0;
 
   let score = 0;
+  // Exact tag/concept matches are the highest-confidence signal — weight them above raw text hits.
+  const tagSet = new Set((image.flags || []).map(t => t.toLowerCase()));
+  const conceptSet = new Set(((image as any).aiConcepts || []).map((c: string) => c.toLowerCase()));
   const allText = `${image.title || ''} ${image.description || ''} ${(image.flags || []).join(' ')} ${((image as any).aiConcepts || []).join(' ')} ${image.location || ''}`.toLowerCase();
 
   for (const [term, weight] of Object.entries(interests)) {
-    if (allText.includes(term)) {
-      score += Math.min(weight * 150, 800); // Cap per-term boost
+    if (tagSet.has(term) || conceptSet.has(term)) {
+      // Direct tag/concept match — aggressive boost
+      score += Math.min(weight * 300, 1600);
+    } else if (allText.includes(term)) {
+      // Softer text/metadata match
+      score += Math.min(weight * 150, 800);
     }
   }
-  return Math.min(score, 2000); // Cap total boost
+  return Math.min(score, 4000); // Cap total boost
 };
 
 // --- Cache Management (Cost Optimization) ---
@@ -95,6 +122,27 @@ export const shouldFetchPersonalizedFeed = (): boolean => {
 export const markPersonalizedFeedFetched = (): void => {
   try {
     localStorage.setItem(CACHE_KEY, Date.now().toString());
+  } catch {}
+};
+
+// --- Session Impression Fatigue Tracker (Anti-Repetition) ---
+const SEEN_IMPRESSIONS_KEY = 'gg_seen_impressions';
+
+export const getSeenImpressions = (): Record<string, number> => {
+  try {
+    return JSON.parse(sessionStorage.getItem(SEEN_IMPRESSIONS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+
+export const recordSeenImpression = (imageId: string): void => {
+  if (!imageId) return;
+  try {
+    const baseId = imageId.split('_loop_')[0];
+    const seen = getSeenImpressions();
+    seen[baseId] = (seen[baseId] || 0) + 1;
+    sessionStorage.setItem(SEEN_IMPRESSIONS_KEY, JSON.stringify(seen));
   } catch {}
 };
 
