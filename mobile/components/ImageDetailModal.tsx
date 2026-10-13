@@ -11,6 +11,7 @@ import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
 import { isVideoUrl } from '../../utils/mediaUtils';
+import { getInterestBoost, recordClickInterest } from '../services/interestTracker';
 
 interface ImageDetailModalProps {
   image: ImageMeta;
@@ -257,8 +258,10 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const rightPanelRef = useRef<HTMLDivElement>(null);
 
-  const [suggestions, setSuggestions] = useState<ImageMeta[]>([]);
+  const [serverSuggestions, setServerSuggestions] = useState<ImageMeta[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [relatedVisibleCount, setRelatedVisibleCount] = useState(12);
+  const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
 
   useEffect(() => {
     // 1. SILENTLY track user click (action='view') in background if user is logged in
@@ -270,30 +273,23 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       }).catch(err => console.error("View tracking failed:", err));
     }
 
+    // Record user interest locally for client taste model
+    recordClickInterest(currentImage);
+
     // 2. Fetch smart recommendations from dynamic backend
     if (currentImage?.id) {
       setIsLoadingSuggestions(true);
-      const url = `/api/images?action=suggestions&imageId=${currentImage.id}${user?.uid ? `&userUid=${user.uid}` : ''}`;
+      const url = `/api/images?action=suggestions&imageId=${currentImage.id}${user?.uid ? `&userUid=${user.uid}` : ''}&limit=50`;
       
       fetch(url)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.images) {
-            setSuggestions(data.images);
-          } else {
-            // Fallback to tags client-side matching if API fails
-            const clientFallback = allImages
-              .filter(img => img.id !== currentImage.id)
-              .slice(0, 12);
-            setSuggestions(clientFallback);
+            setServerSuggestions(data.images);
           }
         })
         .catch(err => {
           console.error("Failed to fetch suggestions:", err);
-          const clientFallback = allImages
-            .filter(img => img.id !== currentImage.id)
-            .slice(0, 12);
-          setSuggestions(clientFallback);
         })
         .finally(() => {
           setIsLoadingSuggestions(false);
@@ -301,12 +297,172 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     }
   }, [currentImage.id, user?.uid]);
 
-  const displayRelated = suggestions;
+  // Reset infinite scroll count when image changes
+  useEffect(() => {
+    setRelatedVisibleCount(12);
+  }, [currentImage.id]);
+
+  // User Data & Taste Algorithm + Image Similarity Match Engine
+  const rankedCandidates = React.useMemo(() => {
+    if (!currentImage?.id) return [];
+    const targetBaseId = currentImage.id.split('_loop_')[0].split('_rel_loop_')[0];
+
+    // Build map of server suggestions for quick rank lookup
+    const serverRankMap = new Map<string, number>();
+    serverSuggestions.forEach((s, idx) => {
+      const base = s.id.split('_loop_')[0].split('_rel_loop_')[0];
+      if (!serverRankMap.has(base)) serverRankMap.set(base, idx);
+    });
+
+    // Deduplicate candidate pool across server suggestions and all loaded images
+    const seenBaseIds = new Set<string>();
+    seenBaseIds.add(targetBaseId);
+
+    const candidateList: ImageMeta[] = [];
+    serverSuggestions.forEach(s => {
+      const base = s.id.split('_loop_')[0].split('_rel_loop_')[0];
+      if (!seenBaseIds.has(base)) {
+        seenBaseIds.add(base);
+        candidateList.push(s);
+      }
+    });
+
+    allImages.forEach(img => {
+      const base = img.id.split('_loop_')[0].split('_rel_loop_')[0];
+      if (!seenBaseIds.has(base)) {
+        seenBaseIds.add(base);
+        candidateList.push(img);
+      }
+    });
+
+    const targetFlags = (currentImage.flags || []).map(f => f.toLowerCase());
+    const targetConcepts = ((currentImage as any).aiConcepts || []).map((c: string) => c.toLowerCase());
+    const targetKeywords = `${currentImage.title || ''} ${currentImage.description || ''} ${currentImage.location || ''}`
+      .toLowerCase()
+      .split(/[\s,.-]+/)
+      .filter(w => w.length > 3 && !['with', 'from', 'that', 'this', 'have', 'more', 'image', 'photo', 'glass'].includes(w));
+
+    const scored = candidateList.map(cand => {
+      const candBase = cand.id.split('_loop_')[0].split('_rel_loop_')[0];
+      let score = 0;
+
+      // 1. Tag / Flag overlap (primary thematic match)
+      const candFlags = (cand.flags || []).map(f => f.toLowerCase());
+      const sharedFlags = candFlags.filter(f => targetFlags.includes(f) && f !== 'flagged');
+      score += sharedFlags.length * 600;
+
+      // 2. AI Concepts overlap
+      const candConcepts = ((cand as any).aiConcepts || []).map((c: string) => c.toLowerCase());
+      const sharedConcepts = candConcepts.filter((c: string) => targetConcepts.includes(c));
+      score += sharedConcepts.length * 550;
+
+      // 3. Keyword / semantic title & description similarity
+      if (targetKeywords.length > 0) {
+        const candText = `${cand.title || ''} ${cand.description || ''} ${cand.location || ''}`.toLowerCase();
+        let wordMatches = 0;
+        for (const word of targetKeywords) {
+          if (candText.includes(word)) wordMatches++;
+        }
+        score += Math.min(wordMatches * 220, 1100);
+      }
+
+      // 4. Same creator match
+      if (cand.uploaderUid && cand.uploaderUid === currentImage.uploaderUid) {
+        score += 850;
+      }
+
+      // 5. Location similarity
+      if (currentImage.location && cand.location && currentImage.location.toLowerCase() === cand.location.toLowerCase()) {
+        score += 500;
+      }
+
+      // 6. User Taste Profile & Data algorithm (localStorage click/search/interest history)
+      score += getInterestBoost(cand);
+
+      // 7. Liked by user
+      if (user?.uid && cand.likedBy?.includes(user.uid)) {
+        score += 300;
+      }
+
+      // 8. Server suggestion placement boost
+      if (serverRankMap.has(candBase)) {
+        const rank = serverRankMap.get(candBase)!;
+        score += Math.max(1200 - (rank * 25), 300);
+      }
+
+      // 9. Popularity & Engagement tiebreaker
+      score += Math.min((cand.likeCount || 0) * 10 + (cand.downloadCount || 0) * 4, 400);
+
+      // 10. Subtle deterministic jitter for natural organic layout
+      score += (Math.sin((candBase.charCodeAt(0) || 1) * 7) * 35);
+
+      return { item: cand, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map(s => s.item);
+  }, [currentImage, serverSuggestions, allImages, user?.uid]);
+
+  // Infinitely scrollable display generator: seamlessly loops the ranked pool with unique keys
+  const displayRelated = React.useMemo(() => {
+    if (!rankedCandidates || rankedCandidates.length === 0) return [];
+    const results: ImageMeta[] = [];
+    for (let i = 0; i < relatedVisibleCount; i++) {
+      const original = rankedCandidates[i % rankedCandidates.length];
+      const loop = Math.floor(i / rankedCandidates.length);
+      results.push({
+        ...original,
+        id: loop === 0 ? original.id : `${original.id}_rel_loop_${loop}_${i}`
+      });
+    }
+    return results;
+  }, [rankedCandidates, relatedVisibleCount]);
+
+  const loadMoreRelated = React.useCallback(() => {
+    if (isLoadingMoreRelated || rankedCandidates.length === 0) return;
+    setIsLoadingMoreRelated(true);
+    setRelatedVisibleCount(prev => prev + 10);
+    requestAnimationFrame(() => {
+      setIsLoadingMoreRelated(false);
+    });
+  }, [isLoadingMoreRelated, rankedCandidates.length]);
+
+  // Smooth Infinite Scroll Listener for both mobile (modalRef) and desktop (rightPanelRef)
+  useEffect(() => {
+    let ticking = false;
+    const handleInfiniteScroll = (e: Event) => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const target = e.target as HTMLElement;
+        if (target) {
+          const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+          if (distanceToBottom <= 650) {
+            loadMoreRelated();
+          }
+        }
+        ticking = false;
+      });
+    };
+
+    const modalEl = modalRef.current;
+    const rightEl = rightPanelRef.current;
+
+    modalEl?.addEventListener('scroll', handleInfiniteScroll, { passive: true });
+    rightEl?.addEventListener('scroll', handleInfiniteScroll, { passive: true });
+
+    return () => {
+      modalEl?.removeEventListener('scroll', handleInfiniteScroll);
+      rightEl?.removeEventListener('scroll', handleInfiniteScroll);
+    };
+  }, [loadMoreRelated]);
 
   const handleSelectRelated = (img: ImageMeta) => {
+    recordClickInterest(img);
     if (onSelectImage) {
       onSelectImage(img);
     }
+    setRelatedVisibleCount(12);
     if (modalRef.current) {
       modalRef.current.scrollTo({ top: 0, behavior: 'instant' });
     }
@@ -1262,62 +1418,73 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </svg>
               More like this
             </h3>
-            <span className="text-xs text-secondary font-medium">{displayRelated.length} related pins</span>
+            <div className="flex items-center gap-1.5 text-xs text-secondary font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Personalized</span>
+            </div>
           </div>
 
-          {isLoadingSuggestions ? (
+          {isLoadingSuggestions && displayRelated.length === 0 ? (
             <div className="columns-2 sm:columns-3 gap-4 animate-pulse">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="break-inside-avoid mb-4 h-[180px] rounded-2xl bg-border/40 border border-border/20 backdrop-blur-md" />
               ))}
             </div>
           ) : displayRelated.length > 0 ? (
-            <div className="columns-2 gap-4 animate-fade-in">
-              {displayRelated.map(img => (
-                <div 
-                  key={img.id}
-                  onClick={() => handleSelectRelated(img)}
-                  className="break-inside-avoid mb-6 group cursor-pointer flex flex-col bg-transparent overflow-hidden transition-all duration-300 hover:scale-[1.02]"
-                >
-                  {/* Pinterest Pin Rounded Image Container with organic aspect height */}
-                  <div className="relative overflow-hidden w-full rounded-2xl bg-neutral-900/10 dark:bg-white/5 shadow-sm group-hover:shadow-md transition-all duration-300">
-                    {isVideoUrl(img.imageUrl) ? (
-                      <video 
-                        src={img.imageUrl} 
-                        muted 
-                        autoPlay 
-                        loop 
-                        playsInline 
-                        className="w-full h-auto object-contain pointer-events-none transition-transform duration-500 group-hover:scale-[1.02]" 
-                      />
-                    ) : (
-                      <img 
-                        src={img.imageUrl} 
-                        alt={img.title || 'Related photo'} 
-                        className="w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.02]" 
-                        loading="lazy"
-                      />
-                    )}
-                  </div>
-                  {/* Pinterest Minimalist Metadata Row */}
-                  <div className="pt-2 px-1 flex flex-col gap-1">
-                    <p className="text-xs font-semibold text-primary truncate leading-tight group-hover:text-accent transition-colors">
-                      {img.title || 'Untitled'}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <img 
-                        src={img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName}`} 
-                        alt={img.uploaderName} 
-                        className="w-4 h-4 rounded-full object-cover shadow-sm" 
-                      />
-                      <p className="text-[10px] font-medium text-secondary truncate">
-                        {img.uploaderName}
+            <>
+              <div className="columns-2 gap-4 animate-fade-in">
+                {displayRelated.map(img => (
+                  <div 
+                    key={img.id}
+                    onClick={() => handleSelectRelated(img)}
+                    className="break-inside-avoid mb-6 group cursor-pointer flex flex-col bg-transparent overflow-hidden transition-all duration-300 hover:scale-[1.02] transform-gpu will-change-transform"
+                  >
+                    {/* Pinterest Pin Rounded Image Container with organic aspect height */}
+                    <div className="relative overflow-hidden w-full rounded-2xl bg-neutral-900/10 dark:bg-white/5 shadow-sm group-hover:shadow-md transition-all duration-300">
+                      {isVideoUrl(img.imageUrl) ? (
+                        <video 
+                          src={img.imageUrl} 
+                          muted 
+                          autoPlay 
+                          loop 
+                          playsInline 
+                          className="w-full h-auto object-contain pointer-events-none transition-transform duration-500 group-hover:scale-[1.02]" 
+                        />
+                      ) : (
+                        <img 
+                          src={img.imageUrl} 
+                          alt={img.title || 'Related photo'} 
+                          className="w-full h-auto object-contain transition-transform duration-500 group-hover:scale-[1.02]" 
+                          loading="lazy"
+                        />
+                      )}
+                    </div>
+                    {/* Pinterest Minimalist Metadata Row */}
+                    <div className="pt-2 px-1 flex flex-col gap-1">
+                      <p className="text-xs font-semibold text-primary truncate leading-tight group-hover:text-accent transition-colors">
+                        {img.title || 'Untitled'}
                       </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <img 
+                          src={img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName}`} 
+                          alt={img.uploaderName} 
+                          className="w-4 h-4 rounded-full object-cover shadow-sm" 
+                        />
+                        <p className="text-[10px] font-medium text-secondary truncate">
+                          {img.uploaderName}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+
+              {/* Seamless Infinite Scroll Loading Indicator */}
+              <div className="w-full py-8 flex flex-col items-center justify-center text-secondary/60 gap-2">
+                <div className="w-5 h-5 border-2 border-accent/40 border-t-accent rounded-full animate-spin" />
+                <span className="text-[11px] font-medium tracking-wide">Loading more recommendations...</span>
+              </div>
+            </>
           ) : (
             <div className="flex-grow flex flex-col items-center justify-center py-12 text-secondary">
               <p className="text-sm">No related images found.</p>

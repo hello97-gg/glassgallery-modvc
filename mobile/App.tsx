@@ -299,6 +299,10 @@ const App: React.FC = () => {
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
 
+  // Mobile Top Header Visibility (hide on scroll down, show on scroll up)
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
+
   // Legal Tab State
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
@@ -921,9 +925,21 @@ const App: React.FC = () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
+        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+
+        // Toggle mobile header visibility: hide on scroll down, show on scroll up
+        const scrollDelta = scrollY - lastScrollYRef.current;
+        if (scrollY <= 20) {
+          setIsHeaderVisible(true);
+        } else if (scrollDelta > 8 && scrollY > 60) {
+          setIsHeaderVisible(false); // scrolling down
+        } else if (scrollDelta < -8) {
+          setIsHeaderVisible(true);  // scrolling up
+        }
+        lastScrollYRef.current = scrollY;
+
         if (activeView === 'home' && !isLoadingMore.current) {
             const scrollThreshold = 800;
-            const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
             const isNearBottom = (window.innerHeight + scrollY >= document.documentElement.offsetHeight - scrollThreshold);
             
             if (isNearBottom) {
@@ -1437,15 +1453,32 @@ const App: React.FC = () => {
       {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
       {activeView === 'home' && !profileUser && (
         <header 
-          className="fixed top-0 left-0 right-0 z-40 bg-[#0a0a0a]/95 border-b border-white/5 flex items-center justify-between px-5 backdrop-blur-md md:hidden select-none"
+          className={`fixed top-0 left-0 right-0 z-40 bg-transparent flex items-center justify-between px-4 sm:px-5 md:hidden select-none transition-transform duration-300 ease-in-out pointer-events-none ${
+            isHeaderVisible ? 'translate-y-0' : '-translate-y-full'
+          }`}
           style={{ 
             paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
-            height: 'calc(3.75rem + max(env(safe-area-inset-top, 0px), 12px))'
+            height: 'calc(3.5rem + max(env(safe-area-inset-top, 0px), 12px))'
           }}
         >
-          {/* Left Side: Logo & App Name with authentic web favicon */}
-          <div className="flex items-center gap-2.5 cursor-pointer active:scale-95 transition-transform" onClick={() => handleSetView('home')}>
-            <div className="w-9 h-9 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden p-1">
+          {/* Soft gradient fade behind the header: black at ~80% opacity at top fading to fully transparent at the bottom (~24px tall) */}
+          <div 
+            className="absolute inset-x-0 top-0 pointer-events-none -z-10"
+            style={{
+              height: 'calc(100% + 24px)',
+              background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 60%, rgba(0, 0, 0, 0) 100%)'
+            }}
+          />
+
+          {/* Left Side: Authentic Web Icon Only (No 'Glass Gallery' text) */}
+          <div 
+            className="pointer-events-auto flex items-center cursor-pointer active:scale-95 transition-transform" 
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              handleSetView('home');
+            }}
+          >
+            <div className="w-10 h-10 rounded-full bg-surface/50 backdrop-blur-md border border-white/10 flex-shrink-0 flex items-center justify-center shadow-lg p-1.5">
               <img 
                 src="/favicon-96x96.png?v=2" 
                 className="w-6 h-6 object-contain" 
@@ -1454,11 +1487,10 @@ const App: React.FC = () => {
                 height={24}
               />
             </div>
-            <span className="text-white font-bold tracking-tight text-lg">Glass Gallery</span>
           </div>
 
-          {/* Right Side: [+] Upload & Bell Notifications with Premium Glassmorphism & Correct SVG Sizes */}
-          <div className="flex items-center gap-3">
+          {/* Right Side: [+] Upload & Bell Notifications with Premium Glassmorphism */}
+          <div className="pointer-events-auto flex items-center gap-2.5">
             {/* [+] Upload Button */}
             <button 
               onClick={() => {
@@ -1468,10 +1500,10 @@ const App: React.FC = () => {
                   setLoginModalOpen(true);
                 }
               }}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-full transition-all duration-150 active:scale-90 flex items-center justify-center"
+              className="w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-white rounded-full transition-all duration-150 active:scale-90 flex items-center justify-center shadow-lg"
               title="Upload Glass Art"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
@@ -1485,10 +1517,10 @@ const App: React.FC = () => {
                   setLoginModalOpen(true);
                 }
               }}
-              className="p-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white rounded-full transition-all duration-150 active:scale-90 flex items-center justify-center relative"
+              className="w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-white rounded-full transition-all duration-150 active:scale-90 flex items-center justify-center relative shadow-lg"
               title="Notifications"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
               {notifications.filter(n => !n.read).length > 0 && (
@@ -1515,10 +1547,10 @@ const App: React.FC = () => {
 
       {/* Dynamic main wrapper padding: accommodates safe-area status bar on all mobile screens */}
       <main 
-        className="flex-1 min-w-0 p-4 md:p-8 pb-24 md:pb-8"
+        className="flex-1 min-w-0 px-2 sm:px-4 md:p-8 pb-24 md:pb-8"
         style={{
           paddingTop: activeView === 'home' && !profileUser 
-            ? 'calc(4.75rem + max(env(safe-area-inset-top, 0px), 12px))' 
+            ? 'calc(3.5rem + max(env(safe-area-inset-top, 0px), 12px) + 6px)' 
             : 'max(env(safe-area-inset-top, 0px), 16px)'
         }}
       >
