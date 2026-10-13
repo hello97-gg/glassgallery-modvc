@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
+import { isVideoUrl } from '../../utils/mediaUtils';
+import VideoPlayer from './VideoPlayer';
 
 interface ImageCardProps {
   image: ImageMeta;
@@ -136,9 +138,17 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
         <div className="absolute inset-0 bg-surface/60 min-h-[150px] transition-opacity duration-300" />
       )}
       
-      {/* Anchor tag wraps the image for proper Google Images indexation */}
+      {/* Anchor tag wraps the image/video for proper navigation and indexing */}
       <a href={`/image/${image.id}`} className="block w-full h-full" onClick={(e) => e.preventDefault()}>
-        {hasError ? (
+        {isVideoUrl(image.imageUrl) ? (
+          <VideoPlayer
+            src={image.imageUrl}
+            poster={image.imageUrl}
+            width={image.width}
+            height={image.height}
+            isFeedPreview={true}
+          />
+        ) : hasError ? (
           <div className="w-full min-h-[150px] aspect-[4/3] bg-gradient-to-br from-neutral-800 to-neutral-900 flex flex-col items-center justify-center p-4 text-center border border-white/5">
             <svg className="w-8 h-8 text-neutral-600 mb-2" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />

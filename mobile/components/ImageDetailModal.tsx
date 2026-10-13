@@ -10,6 +10,7 @@ import { App as CapApp } from '@capacitor/app';
 import Button from './Button';
 import Spinner from './Spinner';
 import SEOHead from './SEOHead';
+import VideoPlayer from './VideoPlayer';
 import { isVideoUrl } from '../../utils/mediaUtils';
 import { getInterestBoost, recordClickInterest } from '../services/interestTracker';
 
@@ -1152,14 +1153,28 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
         >
           {/* Main Hero Image Container - Edge-to-edge on mobile, contained on desktop */}
           <div className="bg-[#0a0a0a] flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative select-none w-full min-h-[260px]">
-            <img 
-              id="hero-detail-image"
-              src={currentImage.imageUrl} 
-              alt={currentImage.title || 'Pinterest Pin'} 
-              style={{ viewTransitionName: 'pin-active' }}
-              className={`w-full max-h-[72vh] md:max-h-[80vh] object-contain rounded-b-[20px] md:rounded-2xl transition-transform duration-300 ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
-              onClick={isFlagged && !revealed ? undefined : handleImageTap}
-            />
+            {isVideoUrl(currentImage.imageUrl) ? (
+              <VideoPlayer 
+                src={currentImage.imageUrl}
+                poster={currentImage.imageUrl}
+                width={currentImage.width}
+                height={currentImage.height}
+                title={currentImage.title}
+                autoPlay={true}
+                loop={true}
+                onDoubleTapLike={handleLikeClick}
+                className="w-full"
+              />
+            ) : (
+              <img 
+                id="hero-detail-image"
+                src={currentImage.imageUrl} 
+                alt={currentImage.title || 'Pinterest Pin'} 
+                style={{ viewTransitionName: 'pin-active' }}
+                className={`w-full max-h-[72vh] md:max-h-[80vh] object-contain rounded-b-[20px] md:rounded-2xl transition-transform duration-300 ${isFlagged && !revealed ? 'blur-3xl scale-[1.03]' : 'cursor-zoom-in'}`}
+                onClick={isFlagged && !revealed ? undefined : handleImageTap}
+              />
+            )}
 
             {isFlagged && !revealed && (
               <div className="absolute inset-0 bg-black/85 backdrop-blur-lg z-20 flex flex-col items-center justify-center p-6 text-center rounded-2xl transition-all duration-300">
@@ -1420,13 +1435,13 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
                     className="break-inside-avoid mb-2 group relative cursor-pointer overflow-hidden rounded-[16px] bg-[#121212] transition-transform duration-200 active:scale-[0.98]"
                   >
                     {isVideoUrl(img.imageUrl) ? (
-                      <video 
+                      <VideoPlayer 
                         src={img.imageUrl} 
-                        muted 
-                        autoPlay 
-                        loop 
-                        playsInline 
-                        className="w-full h-auto object-cover rounded-[16px] block pointer-events-none" 
+                        poster={img.imageUrl}
+                        width={img.width}
+                        height={img.height}
+                        isFeedPreview={true}
+                        onClick={() => handleSelectRelated(img)}
                       />
                     ) : (
                       <img 

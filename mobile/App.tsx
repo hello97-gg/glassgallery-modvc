@@ -68,26 +68,40 @@ const API_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
 
 
 // --- Skeleton Components for Initial Load ---
-const SKELETON_HEIGHTS = ['min-h-[200px]', 'min-h-[280px]', 'min-h-[360px]', 'min-h-[240px]'];
+const SKELETON_HEIGHTS = [
+  'h-[220px]', 'h-[310px]', 'h-[180px]', 'h-[270px]',
+  'h-[340px]', 'h-[200px]', 'h-[290px]', 'h-[240px]',
+  'h-[320px]', 'h-[190px]', 'h-[280px]', 'h-[230px]'
+];
 
-const SkeletonCard: React.FC = () => {
-  const heightClass = SKELETON_HEIGHTS[Math.floor(Math.random() * SKELETON_HEIGHTS.length)];
+const SkeletonCard: React.FC<{ index: number }> = ({ index }) => {
+  const heightClass = SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length];
   
   return (
     <div 
       className={`
-        bg-surface/50 rounded-xl mb-4 md:mb-6 break-inside-avoid
+        relative w-full rounded-[16px] mb-2 break-inside-avoid overflow-hidden
+        bg-[#181818] border border-white/5 animate-pulse
         ${heightClass}
       `}
-    />
+    >
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+      <div 
+        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent pointer-events-none"
+        style={{
+          backgroundSize: '200% 100%',
+          animation: 'shimmer 2s infinite linear',
+        }}
+      />
+    </div>
   );
 };
 
 const SkeletonGrid: React.FC = () => {
   return (
-    <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2 md:gap-4 animate-fade-in">
-      {Array.from({ length: 15 }).map((_, index) => (
-        <SkeletonCard key={index} />
+    <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2 px-1 md:px-2 animate-fade-in">
+      {Array.from({ length: 12 }).map((_, index) => (
+        <SkeletonCard key={index} index={index} />
       ))}
     </div>
   );
@@ -1342,7 +1356,7 @@ const App: React.FC = () => {
     if (selectedImage) {
       const selectedBaseId = selectedImage.id.split('_loop_')[0];
       if (selectedBaseId === baseId) {
-         setSelectedImage({ ...updatedImage, id: selectedImage.id });
+         setPinHistory(prev => prev.map(img => img.id === selectedImage.id ? { ...updatedImage, id: selectedImage.id } : img));
       }
     }
   };
@@ -1377,7 +1391,7 @@ const App: React.FC = () => {
   const handleImageDelete = async (imageId: string) => {
     try {
         await deleteImageFromFirestore(imageId);
-        setSelectedImage(null);
+        setPinHistory([]);
         updateURL(null);
     } catch (error) {
         console.error("Failed to delete image:", error);
@@ -1513,6 +1527,10 @@ const App: React.FC = () => {
     }
 
     // HOME
+    if (displayedImages.length === 0) {
+      return <SkeletonGrid />;
+    }
+
     return (
         <>
             <SEOHead 
