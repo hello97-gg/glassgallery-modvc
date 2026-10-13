@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { User } from 'firebase/auth';
 import type { ProfileUser, ImageMeta, Comment } from '../types';
 import { 
   fetchReelsFeed, 
   reelsTracker, 
   rerankNextReels, 
-  type ReelItem, 
-  isReelsDebugEnabled 
+  type ReelItem 
 } from '../services/reelsService';
 import { 
   toggleImageLike, 
   toggleFollowUser, 
+  getFollowingList,
   getCommentsForImage, 
   addCommentToImage, 
   toggleCommentLike 
@@ -42,6 +42,61 @@ const formatTime = (seconds: number): string => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
+// Synchronous video extractor from preloaded allImages / localStorage cache
+const extractReelsFromImages = (images: ImageMeta[], userUid?: string | null, startId?: string | null): ReelItem[] => {
+  const videoImages = images.filter(img => {
+    const u = img.imageUrl || '';
+    return u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i) || u.toLowerCase().includes('.mp4');
+  });
+
+  let mapped: ReelItem[] = videoImages.map(img => {
+    const tags = img.flags || [];
+    const isTagLandscape = tags.some(t => {
+      const lower = t.toLowerCase();
+      return lower.includes('16:9') || lower.includes('landscape') || lower.includes('horizontal');
+    });
+    const isTagVertical = tags.some(t => {
+      const lower = t.toLowerCase();
+      return lower.includes('9:16') || lower.includes('vertical');
+    });
+
+    const initialWidth = (img as any).width || (isTagLandscape ? 1920 : 1080);
+    const initialHeight = (img as any).height || (isTagLandscape ? 1080 : 1920);
+
+    return {
+      id: img.id,
+      videoUrl: img.imageUrl,
+      poster: img.imageUrl,
+      width: initialWidth,
+      height: initialHeight,
+      duration: 15,
+      title: img.title || 'Reels',
+      description: img.description || '',
+      uploaderUid: img.uploaderUid,
+      uploaderName: img.uploaderName || 'Creator',
+      uploaderPhotoURL: img.uploaderPhotoURL,
+      tags: tags,
+      concepts: (img as any).aiConcepts || [],
+      likeCount: img.likeCount || 0,
+      commentCount: img.commentCount || 0,
+      shareCount: 0,
+      hasLiked: userUid ? (img.likedBy?.includes(userUid) || false) : false,
+      hasSaved: userUid ? (img.likedBy?.includes(userUid) || false) : false,
+      isFollowing: false,
+      uploadedAt: img.uploadedAt
+    };
+  });
+
+  if (startId) {
+    const target = mapped.find(v => v.id === startId);
+    if (target) {
+      mapped = [target, ...mapped.filter(v => v.id !== startId)];
+    }
+  }
+
+  return mapped;
+};
+
 export const ReelsPage: React.FC<ReelsPageProps> = ({
   user,
   onBack,
@@ -53,9 +108,22 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Reels list & pagination
-  const [reels, setReels] = useState<ReelItem[]>([]);
+  // Instant hydration: populate reels immediately from allImages or localStorage cache so there is NO waiting spinner!
+  const [reels, setReels] = useState<ReelItem[]>(() => {
+    const initialFromAll = extractReelsFromImages(allImages, user?.uid, initialReelId);
+    if (initialFromAll.length > 0) return initialFromAll;
+    try {
+      const cached = localStorage.getItem('cached_reels_feed');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
   const [currentIndex, setCurrentIndex] = useState(() => {
+    if (initialReelId) return 0;
     try {
       const saved = sessionStorage.getItem('gg_reels_last_index');
       return saved ? parseInt(saved, 10) || 0 : 0;
@@ -63,11 +131,17 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       return 0;
     }
   });
-  const [isLoading, setIsLoading] = useState(true);
+
+  // If reels were already hydrated, don't block the screen with a spinner!
+  const [isLoading, setIsLoading] = useState(() => reels.length === 0);
   const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Real-time aspect ratio map detected from video elements (id -> isVertical)
+  const detectedAspectMap = useRef<Map<string, boolean>>(new Map());
+  const [aspectVersion, setAspectVersion] = useState(0);
 
   // Global sound setting from localStorage
   const [isMuted, setIsMuted] = useState<boolean>(() => {
@@ -79,10 +153,15 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
   });
 
+  // Synced Set of followed creator UIDs
+  const [followedCreatorsSet, setFollowedCreatorsSet] = useState<Set<string>>(new Set());
+
   // Floating hearts for double-tap
   const [hearts, setHearts] = useState<FloatingHeart[]>([]);
   const tapTimeoutRef = useRef<any>(null);
-  const lastTapTimeRef = useRef<number>(0);
+  const touchStartTimeRef = useRef<number>(0);
+  const touchStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
 
   // Center play/pause indicator animation
   const [centerIconState, setCenterIconState] = useState<'play' | 'pause' | null>(null);
@@ -116,7 +195,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   // Watch metrics tracking per reel
   const watchStartTimeRef = useRef<number>(Date.now());
-  const watchDurationRef = useRef<number>(0);
   const loopCountRef = useRef<number>(0);
 
   // Progress Bar References
@@ -139,6 +217,30 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     toastTimerRef.current = setTimeout(() => setToastMessage(null), 2500);
   }, []);
 
+  // Sync follow list for logged-in user
+  useEffect(() => {
+    if (user?.uid) {
+      getFollowingList(user.uid).then(list => {
+        if (Array.isArray(list)) {
+          setFollowedCreatorsSet(new Set(list.map(u => u.uploaderUid)));
+        }
+      }).catch(() => {});
+    }
+  }, [user?.uid]);
+
+  // Handle hardware back button closing the comments drawer
+  useEffect(() => {
+    if (isCommentsOpen) {
+      (window as any).__glassGalleryCloseReelsComments = () => setIsCommentsOpen(false);
+    } else {
+      (window as any).__glassGalleryCloseReelsComments = null;
+    }
+    return () => {
+      (window as any).__glassGalleryCloseReelsComments = null;
+    };
+  }, [isCommentsOpen]);
+
+  // Video buffering event handlers
   const handleVideoWaiting = useCallback((idx: number) => {
     if (idx !== currentIndex) return;
     if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
@@ -161,7 +263,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     const failedReel = reels[idx];
     console.warn("Video failed to play:", failedReel?.videoUrl);
     
-    // Report failed video playback to backend
     if (failedReel) {
       fetch('/reels/events', {
         method: 'POST',
@@ -179,7 +280,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
     showToast("Video unavailable, skipping to next...");
     
-    // Auto-skip to next reel
     if (currentIndex < reels.length - 1) {
       const nextIdx = currentIndex + 1;
       const container = containerRef.current;
@@ -189,6 +289,41 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       }
     }
   }, [currentIndex, reels, showToast]);
+
+  // Video intrinsic dimension detector (Prevents stretching or cropping)
+  const handleVideoMetadata = useCallback((reelId: string, video: HTMLVideoElement) => {
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      // If height/width >= 1.35 it's vertical 9:16. If < 1.35 it's landscape/square/4:3!
+      const isVertical = (video.videoHeight / video.videoWidth) >= 1.35;
+      detectedAspectMap.current.set(reelId, isVertical);
+      setAspectVersion(v => v + 1);
+    }
+  }, []);
+
+  // Determine aspect ratio for any reel safely
+  const isReelVertical = useCallback((reel: ReelItem): boolean => {
+    const detected = detectedAspectMap.current.get(reel.id);
+    if (detected !== undefined) return detected;
+
+    const tags = (reel.tags || []).map(t => t.toLowerCase());
+    const isTagLandscape = tags.some(t => 
+      t.includes('16:9') || t.includes('landscape') || t.includes('horizontal') || t.includes('wide')
+    );
+    if (isTagLandscape) return false;
+
+    const isTagVertical = tags.some(t => 
+      t.includes('9:16') || t.includes('vertical') || t.includes('reel') || t.includes('shorts')
+    );
+    if (isTagVertical) return true;
+
+    if (reel.width && reel.height) {
+      if (reel.width > reel.height) return false;
+      return (reel.height / reel.width >= 1.35);
+    }
+
+    // Default to safe contain over blurred ambient background so no landscape video is EVER stretched!
+    return false;
+  }, []);
 
   // Update tracker with userUid
   useEffect(() => {
@@ -209,7 +344,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     });
   }, [currentIndex]);
 
-  // Initial feed fetch
+  // Asynchronous background feed fetch (SWR)
   useEffect(() => {
     let active = true;
     if (initialReelId) {
@@ -220,7 +355,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
 
     const loadInitial = async () => {
-      setIsLoading(true);
       setError(null);
       try {
         const res = await fetchReelsFeed({
@@ -232,78 +366,30 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
         if (!active) return;
         if (res.reels.length > 0) {
-          setReels(res.reels);
+          setReels(prev => {
+            if (prev.length === 0) return res.reels;
+            const currentItem = prev[currentIndex];
+            const incoming = res.reels;
+            const uniqueMap = new Map<string, ReelItem>();
+            if (currentItem) uniqueMap.set(currentItem.id, currentItem);
+            incoming.forEach(r => {
+              if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
+            });
+            prev.forEach(r => {
+              if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
+            });
+            const merged = Array.from(uniqueMap.values());
+            try {
+              localStorage.setItem('cached_reels_feed', JSON.stringify(merged.slice(0, 15)));
+            } catch {}
+            return merged;
+          });
           setNextCursor(res.nextCursor);
           setHasMore(res.hasMore);
-        } else {
-          // If Turso backend has no dedicated reels yet, extract videos from preloaded feed images
-          let fallbackVideos = allImages.filter(img => {
-            const u = img.imageUrl || '';
-            return u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i) || u.toLowerCase().includes('.mp4');
-          }).map(img => ({
-            id: img.id,
-            videoUrl: img.imageUrl,
-            poster: img.imageUrl,
-            width: (img as any).width || 1080,
-            height: (img as any).height || 1920,
-            duration: 15,
-            title: img.title || 'Reels',
-            description: img.description || '',
-            uploaderUid: img.uploaderUid,
-            uploaderName: img.uploaderName || 'Creator',
-            uploaderPhotoURL: img.uploaderPhotoURL,
-            tags: img.flags || [],
-            concepts: (img as any).aiConcepts || [],
-            likeCount: img.likeCount || 0,
-            commentCount: img.commentCount || 0,
-            shareCount: 0,
-            hasLiked: user ? img.likedBy?.includes(user.uid) || false : false,
-            hasSaved: user ? img.likedBy?.includes(user.uid) || false : false,
-            isFollowing: false,
-            uploadedAt: img.uploadedAt
-          }));
-
-          if (initialReelId) {
-            const target = fallbackVideos.find(v => v.id === initialReelId);
-            if (target) {
-              fallbackVideos = [target, ...fallbackVideos.filter(v => v.id !== initialReelId)];
-            }
-          }
-
-          setReels(fallbackVideos);
-          setHasMore(false);
         }
       } catch (err: any) {
         if (!active) return;
-        console.warn("Failed to load reels feed from server:", err);
-        // Fallback to local videos if network fails
-        const fallbackVideos = allImages.filter(img => {
-          const u = img.imageUrl || '';
-          return u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i) || u.toLowerCase().includes('.mp4');
-        }).map(img => ({
-          id: img.id,
-          videoUrl: img.imageUrl,
-          poster: img.imageUrl,
-          width: (img as any).width || 1080,
-          height: (img as any).height || 1920,
-          duration: 15,
-          title: img.title || 'Reels',
-          description: img.description || '',
-          uploaderUid: img.uploaderUid,
-          uploaderName: img.uploaderName || 'Creator',
-          uploaderPhotoURL: img.uploaderPhotoURL,
-          tags: img.flags || [],
-          concepts: (img as any).aiConcepts || [],
-          likeCount: img.likeCount || 0,
-          commentCount: img.commentCount || 0,
-          shareCount: 0,
-          hasLiked: user ? img.likedBy?.includes(user.uid) || false : false,
-          hasSaved: user ? img.likedBy?.includes(user.uid) || false : false,
-          isFollowing: false,
-          uploadedAt: img.uploadedAt
-        }));
-        setReels(fallbackVideos);
-        if (fallbackVideos.length === 0) setError("No video reels available yet.");
+        console.warn("Reels network feed fetch warning:", err);
       } finally {
         if (active) setIsLoading(false);
       }
@@ -328,7 +414,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
           const existingIds = new Set(prev.map(r => r.id));
           const fresh = res.reels.filter(r => !existingIds.has(r.id));
           const merged = [...prev, ...fresh];
-          // Re-rank next queued items using in-session local taste
           return rerankNextReels(merged, currentIndex);
         });
         setNextCursor(res.nextCursor);
@@ -345,6 +430,12 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   // Flush metrics for leaving reel and start tracking entering reel
   const handleReelTransition = useCallback((prevIdx: number, nextIdx: number) => {
+    if (bufferingTimerRef.current) {
+      clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
+    }
+    setIsBuffering(false);
+
     const prevReel = reels[prevIdx];
     if (prevReel) {
       const activeVideo = videoRefs.current.get(prevIdx);
@@ -373,7 +464,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       sessionStorage.setItem('gg_reels_last_index', nextIdx.toString());
     } catch {}
 
-    // Check if we need to load more reels
     if (nextIdx >= reels.length - 3) {
       loadMore();
     }
@@ -414,7 +504,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         video.play().catch(() => {});
       } else {
         video.pause();
-        // If outside previous/current/next, reset time
         if (Math.abs(idx - currentIndex) > 1) {
           video.currentTime = 0;
         }
@@ -464,58 +553,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     };
   }, [currentIndex, isScrubbing]);
 
-  // Tap & Double-Tap Gesture Handler
-  const handleContainerClick = (e: React.MouseEvent) => {
-    const now = Date.now();
-    const DOUBLE_TAP_GAP = 260;
-
-    if (now - lastTapTimeRef.current < DOUBLE_TAP_GAP) {
-      // DOUBLE TAP: Spawn heart + like reel
-      if (tapTimeoutRef.current) {
-        clearTimeout(tapTimeoutRef.current);
-        tapTimeoutRef.current = null;
-      }
-
-      const rect = containerRef.current?.getBoundingClientRect();
-      const x = e.clientX - (rect?.left || 0);
-      const y = e.clientY - (rect?.top || 0);
-      const rotation = (Math.random() - 0.5) * 30; // -15 to +15 deg
-
-      setHearts(prev => [...prev.slice(-4), { id: now, x, y, rotation }]);
-      setTimeout(() => {
-        setHearts(prev => prev.filter(h => h.id !== now));
-      }, 700);
-
-      if (navigator.vibrate) navigator.vibrate(10);
-
-      // Trigger like
-      const currentReel = reels[currentIndex];
-      if (currentReel && !currentReel.hasLiked) {
-        handleLikeReel(currentReel);
-      }
-
-      lastTapTimeRef.current = 0;
-      return;
-    }
-
-    lastTapTimeRef.current = now;
-
-    // Single Tap: Toggle play / pause after debounce
-    tapTimeoutRef.current = setTimeout(() => {
-      const activeVideo = videoRefs.current.get(currentIndex);
-      if (!activeVideo) return;
-
-      if (activeVideo.paused) {
-        activeVideo.play().catch(() => {});
-        showCenterAnimation('play');
-      } else {
-        activeVideo.pause();
-        showCenterAnimation('pause');
-      }
-      tapTimeoutRef.current = null;
-    }, DOUBLE_TAP_GAP);
-  };
-
   const showCenterAnimation = (type: 'play' | 'pause') => {
     setCenterIconState(type);
     if (centerIconTimerRef.current) clearTimeout(centerIconTimerRef.current);
@@ -524,28 +561,9 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }, 450);
   };
 
-  // Press-and-hold for 2x playback speed
-  const handleTouchStart = () => {
-    holdTimerRef.current = setTimeout(() => {
-      const activeVideo = videoRefs.current.get(currentIndex);
-      if (activeVideo && !activeVideo.paused) {
-        setIs2xHold(true);
-        if (navigator.vibrate) navigator.vibrate(15);
-      }
-    }, 380);
-  };
-
-  const handleTouchEnd = () => {
-    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-    if (is2xHold) {
-      setIs2xHold(false);
-    }
-  };
-
   // Like Reel (Optimistic with Rollback)
-  const handleLikeReel = async (reel: ReelItem) => {
+  const handleLikeReel = useCallback(async (reel: ReelItem) => {
     if (!user) {
-      // In mobile app, prompt login or trigger login modal
       alert("Please log in to like this reel!");
       return;
     }
@@ -553,7 +571,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     const wasLiked = reel.hasLiked;
     const deltaCount = wasLiked ? -1 : 1;
 
-    // Optimistic update
     setReels(prev => prev.map(r => r.id === reel.id ? {
       ...r,
       hasLiked: !wasLiked,
@@ -576,34 +593,147 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     try {
       await toggleImageLike(reel.id, user.uid);
     } catch (err) {
-      // Rollback on error
       setReels(prev => prev.map(r => r.id === reel.id ? {
         ...r,
         hasLiked: wasLiked,
         likeCount: Math.max(0, r.likeCount - deltaCount)
       } : r));
     }
+  }, [user, onLikeToggle]);
+
+  // Robust Tap & Double-Tap Gesture Handler (works across touch and mouse)
+  const triggerDoubleTapHeart = useCallback((clientX: number, clientY: number) => {
+    const now = Date.now();
+    const rotation = (Math.random() - 0.5) * 32;
+
+    setHearts(prev => [...prev.slice(-4), { id: now, x: clientX, y: clientY, rotation }]);
+    setTimeout(() => {
+      setHearts(prev => prev.filter(h => h.id !== now));
+    }, 750);
+
+    if (navigator.vibrate) navigator.vibrate(12);
+
+    const currentReel = reels[currentIndex];
+    if (currentReel && !currentReel.hasLiked) {
+      handleLikeReel(currentReel);
+    }
+  }, [currentIndex, reels, handleLikeReel]);
+
+  const handleTap = useCallback((clientX: number, clientY: number) => {
+    const now = Date.now();
+    const DOUBLE_TAP_MAX_GAP = 360;
+    const DOUBLE_TAP_MAX_DISTANCE = 65;
+
+    const last = lastTapRef.current;
+    const timeDiff = now - last.time;
+    const dist = Math.hypot(clientX - last.x, clientY - last.y);
+
+    if (timeDiff > 40 && timeDiff < DOUBLE_TAP_MAX_GAP && dist < DOUBLE_TAP_MAX_DISTANCE) {
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+        tapTimeoutRef.current = null;
+      }
+      lastTapRef.current = { time: 0, x: 0, y: 0 };
+      triggerDoubleTapHeart(clientX, clientY);
+      return;
+    }
+
+    lastTapRef.current = { time: now, x: clientX, y: clientY };
+
+    tapTimeoutRef.current = setTimeout(() => {
+      const activeVideo = videoRefs.current.get(currentIndex);
+      if (!activeVideo) return;
+
+      if (activeVideo.paused) {
+        activeVideo.play().catch(() => {});
+        showCenterAnimation('play');
+      } else {
+        activeVideo.pause();
+        showCenterAnimation('pause');
+      }
+      tapTimeoutRef.current = null;
+    }, DOUBLE_TAP_MAX_GAP);
+  }, [currentIndex, triggerDoubleTapHeart]);
+
+  // Touch handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (touch) {
+      touchStartTimeRef.current = Date.now();
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+
+    holdTimerRef.current = setTimeout(() => {
+      const activeVideo = videoRefs.current.get(currentIndex);
+      if (activeVideo && !activeVideo.paused) {
+        setIs2xHold(true);
+        if (navigator.vibrate) navigator.vibrate(15);
+      }
+    }, 420);
   };
 
-  // Follow Creator (Optimistic with Rollback)
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    if (is2xHold) {
+      setIs2xHold(false);
+      return;
+    }
+
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+
+    const moveDist = Math.hypot(
+      touch.clientX - touchStartPosRef.current.x,
+      touch.clientY - touchStartPosRef.current.y
+    );
+    if (moveDist > 16) {
+      return; // Finger was swiping/scrolling between reels
+    }
+
+    handleTap(touch.clientX, touch.clientY);
+  };
+
+  const handleContainerClick = (e: React.MouseEvent) => {
+    if ('ontouchstart' in window && e.detail === 0) return;
+    handleTap(e.clientX, e.clientY);
+  };
+
+  // Follow Creator (Optimistic with sync to followedCreatorsSet)
   const handleFollowCreator = async (reel: ReelItem) => {
     if (!user) {
       alert("Please log in to follow creators!");
       return;
     }
-    const wasFollowing = reel.isFollowing;
-    setReels(prev => prev.map(r => r.uploaderUid === reel.uploaderUid ? {
-      ...r,
-      isFollowing: !wasFollowing
-    } : r));
+
+    const isCurrentlyFollowing = followedCreatorsSet.has(reel.uploaderUid);
+
+    setFollowedCreatorsSet(prev => {
+      const next = new Set(prev);
+      if (isCurrentlyFollowing) next.delete(reel.uploaderUid);
+      else next.add(reel.uploaderUid);
+      return next;
+    });
 
     try {
-      await toggleFollowUser(user.uid, reel.uploaderUid);
+      const res = await toggleFollowUser(
+        user.uid,
+        reel.uploaderUid,
+        user.displayName || 'User',
+        user.photoURL || ''
+      );
+      setFollowedCreatorsSet(prev => {
+        const next = new Set(prev);
+        if (res.isFollowing) next.add(reel.uploaderUid);
+        else next.delete(reel.uploaderUid);
+        return next;
+      });
     } catch (err) {
-      setReels(prev => prev.map(r => r.uploaderUid === reel.uploaderUid ? {
-        ...r,
-        isFollowing: wasFollowing
-      } : r));
+      setFollowedCreatorsSet(prev => {
+        const next = new Set(prev);
+        if (isCurrentlyFollowing) next.add(reel.uploaderUid);
+        else next.delete(reel.uploaderUid);
+        return next;
+      });
     }
   };
 
@@ -682,10 +812,34 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
   };
 
-  if (isLoading) {
+  const handleCommentLikeToggle = async (commentId: string) => {
+    if (!user) {
+      alert("Please log in to like comments!");
+      return;
+    }
+    setComments(prev => prev.map(c => {
+      if (c.id === commentId) {
+        const isLiked = c.likedBy?.includes(user.uid);
+        return {
+          ...c,
+          likeCount: isLiked ? Math.max(0, (c.likeCount || 0) - 1) : (c.likeCount || 0) + 1,
+          likedBy: isLiked ? (c.likedBy || []).filter(uid => uid !== user.uid) : [...(c.likedBy || []), user.uid]
+        };
+      }
+      return c;
+    }));
+    try {
+      await toggleCommentLike(commentId, user.uid);
+      if (navigator.vibrate) navigator.vibrate(10);
+    } catch (err) {
+      console.error("Failed to toggle comment like:", err);
+    }
+  };
+
+  if (isLoading && reels.length === 0) {
     return (
       <div className="fixed inset-0 z-40 bg-black flex flex-col items-center justify-center text-white select-none">
-        <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-white animate-spin mb-4" />
+        <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin mb-4" />
         <span className="text-xs font-semibold text-neutral-400 tracking-wider uppercase">Loading Reels...</span>
       </div>
     );
@@ -699,10 +853,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
             <path d="M8 5v14l11-7z" />
           </svg>
         </div>
-        <h2 className="text-lg font-bold text-white mb-2">No Reels Available Yet</h2>
-        <p className="text-xs text-neutral-400 max-w-xs mb-6">Be the first to share an inspiring video on Glass Gallery!</p>
-        <button onClick={onBack} className="px-6 py-2.5 rounded-full bg-white text-black font-bold text-xs active:scale-95 transition-transform">
-          Go Back
+        <h3 className="text-base font-bold text-white mb-1">No Video Reels Available</h3>
+        <p className="text-xs text-neutral-400 max-w-xs mb-6">Explore the photo feed or check back once creators upload new video pins!</p>
+        <button
+          onClick={onBack}
+          className="px-6 py-2.5 rounded-full bg-white text-black text-xs font-bold active:scale-95 transition-transform"
+        >
+          Back to Feed
         </button>
       </div>
     );
@@ -710,12 +867,11 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
   const currentReel = reels[currentIndex] || reels[0];
   const activeVideoEl = videoRefs.current.get(currentIndex);
-  const activeDuration = activeVideoEl?.duration || currentReel.duration || 15;
-  const activeCurrentTime = activeVideoEl?.currentTime || 0;
+  const activeDuration = activeVideoEl?.duration || currentReel?.duration || 15;
 
   return (
-    <div className="fixed inset-0 z-40 bg-black text-white select-none overflow-hidden touch-manipulation">
-      {/* Top Floating Bar: Back Button, Title, Mute, Speed */}
+    <div className="fixed inset-0 z-40 bg-black flex flex-col overflow-hidden text-white select-none touch-manipulation">
+      {/* Top Floating Transparent Header */}
       <div 
         className="absolute top-0 left-0 right-0 z-30 pointer-events-none flex items-center justify-between px-4 pb-6 bg-gradient-to-b from-black/80 via-black/35 to-transparent"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 16px) + 8px)' }}
@@ -839,25 +995,24 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         onClick={handleContainerClick}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="w-full h-[100dvh] overflow-y-scroll snap-y snap-mandatory select-none no-scrollbar"
+        className="w-full h-[100dvh] overflow-y-scroll snap-y snap-mandatory select-none no-scrollbar touch-manipulation"
         style={{ scrollSnapType: 'y mandatory', WebkitOverflowScrolling: 'touch' }}
       >
         {reels.map((reel, index) => {
-          // Virtual recycling: Mount ONLY previous, current, and next (window of 3)
           const isMounted = Math.abs(index - currentIndex) <= 1;
           const isActive = index === currentIndex;
-          const is9x16 = (reel.height && reel.width) ? (reel.height / reel.width >= 1.5) : true;
+          const isVertical = isReelVertical(reel);
           const isFirstFrameReady = firstFrameMap.current.get(index) || false;
 
           return (
             <div
               key={reel.id}
-              className="w-full h-[100dvh] snap-start snap-always relative overflow-hidden bg-black flex items-center justify-center flex-shrink-0"
+              className="w-full h-[100dvh] snap-start snap-always relative overflow-hidden bg-black flex items-center justify-center flex-shrink-0 touch-manipulation"
             >
               {isMounted ? (
                 <>
-                  {/* Ambient Blurred Background for non-9:16 videos (square, landscape, etc.) */}
-                  {!is9x16 && (
+                  {/* Ambient Blurred Background for non-9:16 videos (square, landscape 16:9, etc.) */}
+                  {!isVertical && (
                     <div
                       className="absolute inset-0 bg-cover bg-center filter blur-3xl brightness-40 scale-125 pointer-events-none transition-all duration-700"
                       style={{ backgroundImage: `url(${reel.poster || reel.videoUrl})` }}
@@ -869,11 +1024,11 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     src={reel.poster || reel.videoUrl}
                     alt=""
                     className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-300 z-10 ${
-                      is9x16 ? 'object-cover' : 'object-contain'
+                      isVertical ? 'object-cover' : 'object-contain'
                     } ${isFirstFrameReady ? 'opacity-0' : 'opacity-100'}`}
                   />
 
-                  {/* HTML5 Video Element */}
+                  {/* HTML5 Video Element: perfectly contained centered for landscape, covered for vertical */}
                   <video
                     ref={(el) => {
                       if (el) videoRefs.current.set(index, el);
@@ -887,6 +1042,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     loop
                     preload={isActive ? "auto" : "metadata"}
                     muted={isMuted}
+                    onLoadedMetadata={(e) => handleVideoMetadata(reel.id, e.currentTarget)}
                     onLoadedData={() => {
                       firstFrameMap.current.set(index, true);
                       setFirstFrameVersion(v => v + 1);
@@ -898,9 +1054,10 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                       loopCountRef.current++;
                     }}
                     className={`w-full h-full pointer-events-none transition-opacity duration-300 z-10 ${
-                      is9x16 ? 'object-cover' : 'object-contain'
+                      isVertical ? 'object-cover' : 'object-contain'
                     } ${isFirstFrameReady ? 'opacity-100' : 'opacity-0'}`}
                   />
+
                   {/* Buffering Spinner (appears only if buffering lasts > 300ms) */}
                   {isActive && isBuffering && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
@@ -909,7 +1066,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   )}
                 </>
               ) : (
-                // Unmounted empty slot maintaining scroll physics
                 <div className="w-full h-full bg-[#0a0a0a]" />
               )}
             </div>
@@ -953,42 +1109,56 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
               {user?.uid !== currentReel.uploaderUid && (
                 <button
-                  onClick={() => handleFollowCreator(currentReel)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleFollowCreator(currentReel);
+                  }}
                   className={`px-3 py-1 rounded-full text-xs font-bold transition-all active:scale-95 border ${
-                    currentReel.isFollowing
+                    followedCreatorsSet.has(currentReel.uploaderUid)
                       ? 'bg-white/10 text-neutral-300 border-white/20'
                       : 'bg-white text-black border-white hover:bg-neutral-200'
                   }`}
                 >
-                  {currentReel.isFollowing ? 'Following' : 'Follow'}
+                  {followedCreatorsSet.has(currentReel.uploaderUid) ? 'Following' : 'Follow'}
                 </button>
               )}
             </div>
 
-            {/* Title */}
-            {currentReel.title && (
-              <h3 className="font-bold text-sm text-white drop-shadow mb-1 leading-snug truncate">
-                {currentReel.title}
-              </h3>
-            )}
+            {/* Title & Description: Clicking either title or description toggles expanded state */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                if (currentReel.description) {
+                  setExpandedDescIndex(prev => prev === currentIndex ? null : currentIndex);
+                }
+              }}
+              className="cursor-pointer mb-1.5"
+            >
+              {currentReel.title && (
+                <h3 className="font-bold text-sm text-white drop-shadow mb-1 leading-snug">
+                  {currentReel.title}
+                </h3>
+              )}
 
-            {/* Description (Expandable on tap) */}
-            {currentReel.description && (
-              <p
-                onClick={() => setExpandedDescIndex(prev => prev === currentIndex ? null : currentIndex)}
-                className={`text-xs text-neutral-300 drop-shadow cursor-pointer transition-all ${
-                  expandedDescIndex === currentIndex ? 'whitespace-pre-wrap' : 'line-clamp-2'
-                }`}
-              >
-                {currentReel.description}
-              </p>
-            )}
+              {currentReel.description && (
+                <p
+                  className={`text-xs text-neutral-300 drop-shadow transition-all ${
+                    expandedDescIndex === currentIndex ? 'whitespace-pre-wrap' : 'line-clamp-2'
+                  }`}
+                >
+                  {currentReel.description}
+                </p>
+              )}
+            </div>
 
             {/* Tags */}
             {currentReel.tags && currentReel.tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
-                {currentReel.tags.slice(0, 4).map(tag => (
-                  <span key={tag} className="text-[10px] font-semibold text-white/80 bg-white/10 px-2 py-0.5 rounded-full border border-white/10">
+                {currentReel.tags.slice(0, 4).map((tag, tIdx) => (
+                  <span
+                    key={tIdx}
+                    className="px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-md text-[10px] text-neutral-300 font-medium border border-white/5"
+                  >
                     #{tag}
                   </span>
                 ))}
@@ -997,27 +1167,33 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
           </div>
 
           {/* Right Action Stack: Like, Comment, Share, Save, Menu */}
-          <div className="flex flex-col items-center gap-5 pointer-events-auto flex-shrink-0 mb-1">
+          <div className="flex flex-col items-center gap-4 flex-shrink-0 pointer-events-auto pb-1">
             {/* Like Button */}
             <button
               onClick={() => handleLikeReel(currentReel)}
-              className="flex flex-col items-center gap-1 active:scale-80 transition-transform"
+              className="flex flex-col items-center gap-1 group active:scale-75 transition-transform"
               title="Like"
             >
-              <div className={`p-2.5 rounded-full ${currentReel.hasLiked ? 'text-red-500' : 'text-white'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 drop-shadow" fill={currentReel.hasLiked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                </svg>
+              <div className={`p-2.5 rounded-full transition-colors ${currentReel.hasLiked ? 'text-red-500' : 'text-white'}`}>
+                {currentReel.hasLiked ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 drop-shadow fill-current animate-like-bounce" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                )}
               </div>
-              <span className="text-[11px] font-bold text-white drop-shadow">
-                {currentReel.likeCount || 0}
+              <span className="text-[11px] font-bold text-white drop-shadow -mt-1.5">
+                {currentReel.likeCount}
               </span>
             </button>
 
             {/* Comment Button */}
             <button
               onClick={() => handleOpenComments(currentReel)}
-              className="flex flex-col items-center gap-1 active:scale-80 transition-transform"
+              className="flex flex-col items-center gap-1 active:scale-75 transition-transform"
               title="Comments"
             >
               <div className="p-2.5 text-white">
@@ -1025,28 +1201,41 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-bold text-white drop-shadow">
-                {currentReel.commentCount || 0}
+              <span className="text-[11px] font-bold text-white drop-shadow -mt-1.5">
+                {currentReel.commentCount}
               </span>
             </button>
 
-            {/* Share Button */}
+            {/* Share Button (Reuses existing share modal) */}
             <button
-              onClick={() => onShare({
-                id: currentReel.id,
-                imageUrl: currentReel.videoUrl,
-                title: currentReel.title,
-                uploaderName: currentReel.uploaderName
-              } as ImageMeta)}
-              className="flex flex-col items-center gap-1 active:scale-80 transition-transform text-white"
+              onClick={() => {
+                onShare({
+                  id: currentReel.id,
+                  imageUrl: currentReel.videoUrl,
+                  title: currentReel.title,
+                  uploaderName: currentReel.uploaderName
+                } as ImageMeta);
+              }}
+              className="flex flex-col items-center gap-1 active:scale-75 transition-transform"
               title="Share"
             >
-              <div className="p-2.5">
+              <div className="p-2.5 text-white">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-bold text-white drop-shadow">Share</span>
+              <span className="text-[11px] font-bold text-white drop-shadow -mt-1.5">Share</span>
+            </button>
+
+            {/* Save Button */}
+            <button
+              onClick={() => handleLikeReel(currentReel)}
+              className="p-2.5 text-white active:scale-75 transition-transform"
+              title="Save"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 drop-shadow" fill={currentReel.hasLiked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
             </button>
 
             {/* More / Credit Options Button */}
@@ -1088,12 +1277,10 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
         {/* Track Line */}
         <div className={`w-full bg-white/20 relative transition-all duration-150 ${isScrubbing ? 'h-1.5' : 'h-[2.5px]'}`}>
-          {/* Buffered Fill */}
           <div
             ref={bufferFillRef}
             className="absolute inset-0 bg-white/30 origin-left pointer-events-none transform scale-x-0"
           />
-          {/* Played Fill */}
           <div
             ref={progressFillRef}
             className="absolute inset-0 bg-white origin-left pointer-events-none transform scale-x-0"
@@ -1101,62 +1288,107 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         </div>
       </div>
 
-      {/* Comments Bottom Sheet Drawer (~65% screen height) */}
+      {/* Comments Bottom Sheet Drawer (~65% screen height with Back & Close Button) */}
       {isCommentsOpen && (
         <div 
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end justify-center animate-fade-in"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end justify-center animate-fade-in"
           onClick={() => setIsCommentsOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-[#141414] rounded-t-[32px] border-t border-white/10 shadow-2xl flex flex-col h-[65vh] animate-slide-up select-none"
+            className="w-full max-w-lg bg-[#141414] rounded-t-[32px] border-t border-white/10 shadow-2xl flex flex-col h-[65vh] animate-slide-up select-none overflow-hidden"
           >
-            {/* Drawer Handle */}
-            <div className="w-full flex items-center justify-center pt-3 pb-2 cursor-pointer" onClick={() => setIsCommentsOpen(false)}>
+            {/* Drawer Drag Indicator */}
+            <div className="w-full flex items-center justify-center pt-2.5 pb-1 cursor-pointer" onClick={() => setIsCommentsOpen(false)}>
               <div className="w-12 h-1.5 bg-neutral-600 rounded-full" />
             </div>
 
-            {/* Header */}
-            <div className="px-5 py-2.5 flex items-center justify-between border-b border-white/5">
-              <h3 className="font-bold text-sm text-white">Comments ({comments.length})</h3>
-              <button onClick={() => setIsCommentsOpen(false)} className="text-neutral-400 hover:text-white p-1">
-                &times;
+            {/* Header with Circular Back Button and Close Button */}
+            <div className="px-4 py-2.5 flex items-center justify-between border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setIsCommentsOpen(false)} 
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white active:scale-95 transition-all"
+                  title="Back"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <h3 className="font-bold text-sm text-white">Comments ({comments.length})</h3>
+              </div>
+              <button 
+                onClick={() => setIsCommentsOpen(false)} 
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-neutral-300 hover:text-white active:scale-95 transition-all"
+                title="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
-            {/* Comments List */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            {/* Comments Stream */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
               {isLoadingComments ? (
-                <div className="flex justify-center py-10">
-                  <Spinner />
+                <div className="space-y-4 animate-pulse">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="flex gap-3 items-start">
+                      <div className="w-8 h-8 rounded-full bg-neutral-800 flex-shrink-0" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="w-24 h-3 bg-neutral-800 rounded" />
+                        <div className="w-3/4 h-3 bg-neutral-850 rounded" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : comments.length === 0 ? (
-                <div className="text-center py-12 text-neutral-400 text-xs">
-                  <p>No comments yet.</p>
-                  <p className="text-[11px] text-neutral-500 mt-1">Start the conversation!</p>
+                <div className="text-center py-14 text-neutral-400 text-xs">
+                  <p className="font-medium text-white mb-1">No comments yet</p>
+                  <p className="text-[11px] text-neutral-500">Be the first to share your thoughts!</p>
                 </div>
               ) : (
-                comments.map(c => (
-                  <div key={c.id} className="flex gap-3 items-start">
-                    <img 
-                      src={c.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${c.userName}`} 
-                      alt={c.userName} 
-                      className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-white">{c.userName}</span>
-                        <span className="text-[10px] text-neutral-500">{new Date(c.createdAt).toLocaleDateString()}</span>
+                comments.map(c => {
+                  const isCommentLiked = user ? (c.likedBy?.includes(user.uid) || false) : false;
+                  return (
+                    <div key={c.id} className="flex gap-3 items-start border-b border-white/5 pb-3 last:border-0 last:pb-0">
+                      <img 
+                        src={c.userPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${c.userName}`} 
+                        alt={c.userName} 
+                        className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-white/10"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-white leading-tight">{c.userName}</span>
+                          <span className="text-[10px] text-neutral-500">
+                            {new Date(c.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-200 mt-1 leading-relaxed break-words whitespace-pre-wrap">{c.content}</p>
                       </div>
-                      <p className="text-xs text-neutral-200 mt-0.5 whitespace-pre-wrap">{c.content}</p>
+
+                      {/* Comment Like Button */}
+                      <button
+                        onClick={() => handleCommentLikeToggle(c.id)}
+                        className={`flex flex-col items-center gap-0.5 pt-1 flex-shrink-0 active:scale-95 transition-transform ${
+                          isCommentLiked ? 'text-red-500' : 'text-neutral-500 hover:text-white'
+                        }`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={isCommentLiked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        {(c.likeCount || 0) > 0 && (
+                          <span className="text-[9px] font-bold">{c.likeCount}</span>
+                        )}
+                      </button>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             {/* Comment Composer */}
-            <div className="p-4 border-t border-white/10 flex items-center gap-2 bg-[#121212]">
+            <div className="p-3.5 border-t border-white/10 flex items-center gap-2 bg-[#121212]">
               <input
                 type="text"
                 placeholder={user ? "Add a comment..." : "Log in to comment"}
@@ -1169,7 +1401,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
               <button
                 onClick={handlePostComment}
                 disabled={!user || !commentText.trim() || isPostingComment}
-                className="px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs disabled:opacity-40 active:scale-95 transition-all"
+                className="px-4 py-2.5 rounded-full bg-white text-black font-bold text-xs disabled:opacity-40 active:scale-95 transition-all shadow-sm"
               >
                 {isPostingComment ? <Spinner /> : 'Post'}
               </button>
@@ -1198,29 +1430,32 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
               }}
               className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs text-left flex items-center justify-between"
             >
-              <span>Download Video</span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <span>Download / Open Video</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             </button>
 
             <button
               onClick={() => {
-                navigator.clipboard?.writeText(`https://gg.modvc.org/image/${optionsReel.id}`);
-                alert("Link copied to clipboard!");
+                onViewProfile({
+                  uploaderUid: optionsReel.uploaderUid,
+                  uploaderName: optionsReel.uploaderName,
+                  uploaderPhotoURL: optionsReel.uploaderPhotoURL || ''
+                });
                 setOptionsReel(null);
               }}
               className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs text-left flex items-center justify-between"
             >
-              <span>Copy Link</span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              <span>View Creator Profile</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
 
             <button
               onClick={() => setOptionsReel(null)}
-              className="w-full py-3 rounded-2xl bg-neutral-900/60 text-neutral-400 hover:text-white font-semibold text-xs text-center mt-2"
+              className="w-full py-3 px-4 rounded-2xl bg-white/10 text-neutral-300 font-semibold text-xs text-center mt-1"
             >
               Cancel
             </button>

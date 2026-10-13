@@ -1316,6 +1316,8 @@ const App: React.FC = () => {
           setLoginModalOpen(false);
         } else if (isUpdateModalOpen && updateInfo && !updateInfo.forceUpdate) {
           setIsUpdateModalOpen(false);
+        } else if ((window as any).__glassGalleryCloseReelsComments) {
+          (window as any).__glassGalleryCloseReelsComments();
         } else if (activeView === 'followers_following') {
           handleBack();
         } else if (activeView === 'legal') {
