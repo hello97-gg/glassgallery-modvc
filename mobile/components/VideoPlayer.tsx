@@ -276,6 +276,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsBuffering(false);
     };
 
+    const onLoadedMetadata = () => {
+      setDuration(video.duration || 0);
+      try {
+        if (video.currentTime === 0) {
+          video.currentTime = 0.001;
+        }
+      } catch (e) {}
+      setIsFirstFrameReady(true);
+    };
+
+    const onSeeked = () => {
+      setIsFirstFrameReady(true);
+    };
+
     const onLoadedData = () => {
       setIsFirstFrameReady(true);
       setDuration(video.duration || 0);
@@ -297,9 +311,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('playing', onPlaying);
     video.addEventListener('canplay', onPlaying);
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('loadeddata', onLoadedData);
     video.addEventListener('durationchange', onDurationChange);
     video.addEventListener('error', onError);
+
+    if (video.readyState >= 1) {
+      setDuration(video.duration || 0);
+      setIsFirstFrameReady(true);
+    }
 
     // Initial config: feed previews MUST be 100% muted
     if (isFeedPreview) {
@@ -318,6 +339,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplay', onPlaying);
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('error', onError);

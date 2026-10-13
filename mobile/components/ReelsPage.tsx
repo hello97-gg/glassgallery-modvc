@@ -827,6 +827,22 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }, 420);
   };
 
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (touch && touchStartPosRef.current) {
+      const moveDist = Math.hypot(
+        touch.clientX - touchStartPosRef.current.x,
+        touch.clientY - touchStartPosRef.current.y
+      );
+      if (moveDist > 10) {
+        if (holdTimerRef.current) {
+          clearTimeout(holdTimerRef.current);
+          holdTimerRef.current = null;
+        }
+      }
+    }
+  };
+
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     if (is2xHold) {
@@ -1270,20 +1286,28 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         onScroll={handleScroll}
         onClick={handleContainerClick}
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="w-full h-[100dvh] overflow-y-scroll snap-y snap-mandatory select-none no-scrollbar touch-manipulation"
-        style={{ scrollSnapType: 'y mandatory', WebkitOverflowScrolling: 'touch' }}
+        className="w-full h-[100dvh] overflow-y-scroll snap-y snap-mandatory select-none no-scrollbar touch-pan-y"
+        style={{
+          scrollSnapType: 'y mandatory',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorY: 'contain',
+          touchAction: 'pan-y'
+        }}
       >
         {reels.map((reel, index) => {
           const isMounted = Math.abs(index - currentIndex) <= 1;
           const isActive = index === currentIndex;
           const isVertical = isReelVertical(reel);
           const isFirstFrameReady = firstFrameMap.current.get(index) || false;
+          const hasValidImagePoster = reel.poster && !isVideoUrl(reel.poster);
 
           return (
             <div
               key={reel.id}
-              className="w-full h-[100dvh] snap-start snap-always relative overflow-hidden bg-black flex items-center justify-center flex-shrink-0 touch-manipulation"
+              className="w-full h-[100dvh] snap-start snap-always relative overflow-hidden bg-black flex items-center justify-center flex-shrink-0 touch-pan-y"
+              style={{ touchAction: 'pan-y' }}
             >
               {isMounted ? (
                 <>
@@ -1291,18 +1315,20 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   {!isVertical && (
                     <div
                       className="absolute inset-0 bg-cover bg-center filter blur-3xl brightness-40 scale-125 pointer-events-none transition-all duration-700"
-                      style={{ backgroundImage: `url(${reel.poster || reel.videoUrl})` }}
+                      style={{ backgroundImage: hasValidImagePoster ? `url(${reel.poster})` : 'none' }}
                     />
                   )}
 
                   {/* Poster First-Frame Crossfade */}
-                  <img
-                    src={reel.poster || reel.videoUrl}
-                    alt=""
-                    className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-300 z-10 ${
-                      isVertical ? 'object-cover' : 'object-contain'
-                    } ${isFirstFrameReady ? 'opacity-0' : 'opacity-100'}`}
-                  />
+                  {hasValidImagePoster && (
+                    <img
+                      src={reel.poster}
+                      alt=""
+                      className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-300 z-10 ${
+                        isVertical ? 'object-cover' : 'object-contain'
+                      } ${isFirstFrameReady ? 'opacity-0' : 'opacity-100'}`}
+                    />
+                  )}
 
                   {/* HTML5 Video Element: perfectly contained centered for landscape, covered for vertical */}
                   <video
@@ -1370,16 +1396,16 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       {/* Current Reel Overlay: Right Action Stack + Bottom-Left Info */}
       <div 
         className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-end"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 76px)' }}
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 76px)', touchAction: 'pan-y' }}
       >
         {/* Soft Bottom Gradient behind text and action stack */}
         <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
 
-        <div className="relative z-10 px-4 pb-2 flex items-end justify-between gap-3">
+        <div className="relative z-10 px-4 pb-2 flex items-end justify-between gap-3 pointer-events-none" style={{ touchAction: 'pan-y' }}>
           {/* Bottom Left: Creator Info, Title, Expandable Description, Tags */}
-          <div className="flex-1 min-w-0 pointer-events-auto pr-2">
+          <div className="flex-1 min-w-0 pointer-events-auto pr-2" style={{ touchAction: 'pan-y' }}>
             {/* Creator Row */}
-            <div className="flex items-center gap-2.5 mb-2.5">
+            <div className="flex items-center gap-2.5 mb-2.5" style={{ touchAction: 'pan-y' }}>
               <img
                 onClick={() => onViewProfile({
                   uploaderUid: currentReel.uploaderUid,
@@ -1410,7 +1436,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   className={`px-3 py-1 rounded-full text-xs font-bold transition-all active:scale-95 border ${
                     followedCreatorsSet.has(currentReel.uploaderUid)
                       ? 'bg-white/10 text-neutral-300 border-white/20'
-                      : 'bg-white text-black border-white hover:bg-neutral-200'
+                    : 'bg-white text-black border-white hover:bg-neutral-200'
                   }`}
                 >
                   {followedCreatorsSet.has(currentReel.uploaderUid) ? 'Following' : 'Follow'}
@@ -1427,6 +1453,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                 }
               }}
               className="cursor-pointer mb-1.5"
+              style={{ touchAction: 'pan-y' }}
             >
               {currentReel.title && (
                 <h3 className="font-bold text-sm text-white drop-shadow mb-1 leading-snug">
@@ -1447,7 +1474,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
             {/* Tags */}
             {currentReel.tags && currentReel.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="flex flex-wrap gap-1.5 mt-2" style={{ touchAction: 'pan-y' }}>
                 {currentReel.tags.slice(0, 4).map((tag, tIdx) => (
                   <span
                     key={tIdx}

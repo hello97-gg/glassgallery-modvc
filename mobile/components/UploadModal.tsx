@@ -35,6 +35,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   const [showMap, setShowMap] = useState(false);
   const [isAutoTagging, setIsAutoTagging] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
+  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
 
   const DEFAULT_FLAGS = [
     'AI Generated',
@@ -85,11 +86,22 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
       video.crossOrigin = 'anonymous';
       video.muted = true;
       video.playsInline = true;
+      video.preload = 'auto';
       video.src = videoSrc;
-      video.onloadeddata = () => {
-        video.currentTime = Math.min(1.0, (video.duration || 2) / 2);
+      
+      let resolved = false;
+      const finish = (result: string) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(result);
+        }
       };
-      video.onseeked = () => {
+
+      const timer = setTimeout(() => {
+        finish('');
+      }, 4000);
+
+      const doCapture = () => {
         try {
           const canvas = document.createElement('canvas');
           canvas.width = Math.min(video.videoWidth || 640, 640);
@@ -97,15 +109,33 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.8));
+            clearTimeout(timer);
+            finish(canvas.toDataURL('image/jpeg', 0.85));
           } else {
-            resolve('');
+            clearTimeout(timer);
+            finish('');
           }
         } catch {
-          resolve('');
+          clearTimeout(timer);
+          finish('');
         }
       };
-      video.onerror = () => resolve('');
+
+      video.onloadedmetadata = () => {
+        video.currentTime = Math.min(1.0, (video.duration || 2) / 2);
+      };
+      video.onseeked = () => {
+        doCapture();
+      };
+      video.onloadeddata = () => {
+        if (video.currentTime === 0) {
+          video.currentTime = Math.min(1.0, (video.duration || 2) / 2);
+        }
+      };
+      video.onerror = () => {
+        clearTimeout(timer);
+        finish('');
+      };
     });
   };
 
@@ -254,6 +284,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         setError(null);
         setPreview(null);
         setFile(null);
+        setVideoThumbnail(null);
 
         try {
             if (isImage) {
@@ -275,7 +306,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                 };
                 reader.readAsDataURL(compressedFile);
             } else if (isVideo) {
-                setLoadingMessage('Loading video...');
+                setLoadingMessage('Loading video & generating preview...');
                 setFile(selectedFile);
                 const previewUrl = URL.createObjectURL(selectedFile);
                 setPreview(previewUrl);
@@ -285,6 +316,17 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                   set.add('Reels');
                   return Array.from(set);
                 });
+
+                // Extract high-quality video thumbnail for preview & keyframes
+                try {
+                  const thumb = await captureVideoFrame(previewUrl);
+                  if (thumb) {
+                    setVideoThumbnail(thumb);
+                  }
+                } catch (e) {
+                  console.warn("Thumbnail generation failed:", e);
+                }
+
                 setIsLoading(false);
                 setStep(2);
             }
@@ -293,6 +335,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
             setError("Could not process the file. Please try a different one.");
             setFile(null);
             setPreview(null);
+            setVideoThumbnail(null);
             setIsLoading(false);
         }
     } else {
@@ -339,7 +382,18 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
     setError(null);
     try {
       const { url: imageUrl } = await uploadImage(file);
-      await addImageToFirestore(user, imageUrl, title || 'Untitled Pin', description, license, selectedFlags, originalWorkUrl, '', location);
+      await addImageToFirestore(
+        user, 
+        imageUrl, 
+        title || 'Untitled Pin', 
+        description, 
+        license, 
+        selectedFlags, 
+        originalWorkUrl, 
+        '', 
+        location,
+        videoThumbnail ? [videoThumbnail] : []
+      );
       onUploadSuccess();
     } catch (err: any) {
       setError(err.message || 'Upload failed. Please check your connection.');
@@ -438,7 +492,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                       <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/10 flex-shrink-0 bg-black">
                         {isCurrentFileVideo(file) ? (
                           <>
-                            <video src={preview} className="w-full h-full object-cover" muted playsInline />
+                            {videoThumbnail ? (
+                              <img src={videoThumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
+                            ) : (
+                              <video src={preview} className="w-full h-full object-cover" muted playsInline />
+                            )}
                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white drop-shadow" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
@@ -659,7 +717,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                     <div className="bg-neutral-950 rounded-[28px] overflow-hidden border border-white/10 p-4">
                       <div className="relative h-48 w-full rounded-2xl overflow-hidden border border-white/5 mb-4 bg-black">
                         {isCurrentFileVideo(file) ? (
-                          <video src={preview} controls playsInline loop className="w-full h-full object-cover" />
+                          <video src={preview} poster={videoThumbnail || undefined} controls playsInline loop className="w-full h-full object-cover" />
                         ) : (
                           <img src={preview} alt="Final Preview" className="w-full h-full object-cover" />
                         )}

@@ -27,6 +27,7 @@ interface ImageDetailModalProps {
   onLocationClick?: (location: string) => void;
   onSelectImage?: (image: ImageMeta) => void;
   onOpenInReels?: (videoId: string) => void;
+  onNavVisibilityChange?: (visible: boolean) => void;
 }
 
 const InfoChip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -127,7 +128,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   onLikeToggle, 
   onLocationClick,
   onSelectImage,
-  onOpenInReels
+  onOpenInReels,
+  onNavVisibilityChange
 }) => {
   const [currentImage, setCurrentImage] = useState<ImageMeta>(image);
   const [isEditing, setIsEditing] = useState(false);
@@ -486,19 +488,47 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     });
   }, [isLoadingMoreRelated, rankedCandidates.length]);
 
-  // Smooth Infinite Scroll Listener for both mobile (modalRef) and desktop (rightPanelRef)
+  const lastScrollTopRef = useRef(0);
+
+  // Auto-hide bottom nav when scrolling down in modal / "More like this", reveal when scrolling up a little
+  useEffect(() => {
+    onNavVisibilityChange?.(true);
+    return () => {
+      onNavVisibilityChange?.(true);
+    };
+  }, [onNavVisibilityChange]);
+
+  // Smooth Infinite Scroll & Directional Nav Auto-Hide Listener
   useEffect(() => {
     let ticking = false;
-    const handleInfiniteScroll = (e: Event) => {
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (!target) return;
+
+      // 1. BottomNav directional auto-hide logic
+      if (onNavVisibilityChange) {
+        const currentScroll = target.scrollTop;
+        const delta = currentScroll - (lastScrollTopRef.current || 0);
+
+        if (currentScroll <= 25) {
+          onNavVisibilityChange(true);
+        } else if (delta > 8 && currentScroll > 60) {
+          // Scrolling down: auto hide bottom nav
+          onNavVisibilityChange(false);
+        } else if (delta < -5) {
+          // Scrolling up even a little bit: show bottom nav
+          onNavVisibilityChange(true);
+        }
+        lastScrollTopRef.current = currentScroll;
+      }
+
+      // 2. Infinite scroll for related images
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        const target = e.target as HTMLElement;
-        if (target) {
-          const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-          if (distanceToBottom <= 650) {
-            loadMoreRelated();
-          }
+        const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+        if (distanceToBottom <= 650) {
+          loadMoreRelated();
         }
         ticking = false;
       });
@@ -507,14 +537,14 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     const modalEl = modalRef.current;
     const rightEl = rightPanelRef.current;
 
-    modalEl?.addEventListener('scroll', handleInfiniteScroll, { passive: true });
-    rightEl?.addEventListener('scroll', handleInfiniteScroll, { passive: true });
+    modalEl?.addEventListener('scroll', handleScroll, { passive: true });
+    rightEl?.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
-      modalEl?.removeEventListener('scroll', handleInfiniteScroll);
-      rightEl?.removeEventListener('scroll', handleInfiniteScroll);
+      modalEl?.removeEventListener('scroll', handleScroll);
+      rightEl?.removeEventListener('scroll', handleScroll);
     };
-  }, [loadMoreRelated]);
+  }, [loadMoreRelated, onNavVisibilityChange]);
 
   const handleSelectRelated = (img: ImageMeta) => {
     recordClickInterest(img);
@@ -1245,7 +1275,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               <div id="hero-detail-image" className="w-full relative group">
                 <VideoPlayer 
                   src={currentImage.imageUrl}
-                  poster={currentImage.imageUrl}
+                  poster={(currentImage as any).thumbnailUrl || (currentImage as any).poster || (currentImage as any).keyframes?.[0] || undefined}
                   width={currentImage.width}
                   height={currentImage.height}
                   title={currentImage.title}

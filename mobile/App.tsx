@@ -245,6 +245,7 @@ const App: React.FC = () => {
   
   // Virtual Keyboard & Input Focus Detection for Mobile Devices
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [isModalNavVisible, setIsModalNavVisible] = useState(true);
   useEffect(() => {
     const handleViewportChange = () => {
       if (window.visualViewport) {
@@ -1213,6 +1214,11 @@ const App: React.FC = () => {
   };
   
   const handleSetView = (view: 'home' | 'explore' | 'reels' | 'notifications' | 'api') => {
+    if (pinHistory.length > 0) {
+      setPinHistory([]);
+      setIsModalNavVisible(true);
+    }
+
     if (view === 'reels') {
       if (activeView !== 'reels') {
         setLastView(activeView);
@@ -1708,7 +1714,7 @@ const App: React.FC = () => {
         setView={handleSetView}
         onViewProfile={handleViewProfile}
         notifications={notifications}
-        visible={!isKeyboardVisible && !(activeView === 'explore' && exploreSearchTerm.trim().length > 0)}
+        visible={!isKeyboardVisible && !(activeView === 'explore' && exploreSearchTerm.trim().length > 0) && isModalNavVisible}
         onNotificationsClick={() => {
           if (user) {
             handleSetView('notifications');
@@ -1823,6 +1829,7 @@ const App: React.FC = () => {
           onLocationClick={handleLocationClick}
           onSelectImage={handleImageClick}
           onOpenInReels={handleOpenInReels}
+          onNavVisibilityChange={setIsModalNavVisible}
         />
       )}
 
