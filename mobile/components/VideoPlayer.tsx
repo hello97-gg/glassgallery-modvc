@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { isVideoUrl } from '../../utils/mediaUtils';
 
 export interface VideoPlayerProps {
   src: string;
@@ -42,21 +43,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const progressFillRef = useRef<HTMLDivElement>(null);
   const bufferFillRef = useRef<HTMLDivElement>(null);
   const progressTrackRef = useRef<HTMLDivElement>(null);
+  const playerIdRef = useRef(`vp_${Math.random().toString(36).substring(2, 9)}`);
 
-  // Load saved mute & volume preferences from localStorage
+  // Verify poster is actually an image, NOT a video URL
+  const isPosterVideo = useMemo(() => isVideoUrl(poster), [poster]);
+  const validImagePoster = poster && !isPosterVideo ? poster : undefined;
+
+  // Feed preview mode MUST ALWAYS BE MUTED. Only detail player can read localStorage
   const savedMuted = useMemo(() => {
+    if (isFeedPreview) return true;
     if (initialMutedProp !== undefined) return initialMutedProp;
     const item = localStorage.getItem('gg_video_muted');
     return item === null ? true : item === 'true';
-  }, [initialMutedProp]);
+  }, [initialMutedProp, isFeedPreview]);
 
   const savedVolume = useMemo(() => {
+    if (isFeedPreview) return 0;
     const item = localStorage.getItem('gg_video_volume');
     return item === null ? 1 : parseFloat(item);
-  }, []);
+  }, [isFeedPreview]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const [showControls, setShowControls] = useState(!isFeedPreview);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState(0);
@@ -83,14 +92,47 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const wasPlayingBeforeScrubRef = useRef(false);
   const scrubTargetTimeRef = useRef(0);
 
-  // Sync mute & volume to localStorage
+  // Sync mute & volume to localStorage only from detail player, never feed preview
   useEffect(() => {
-    localStorage.setItem('gg_video_muted', isMuted ? 'true' : 'false');
-  }, [isMuted]);
+    if (!isFeedPreview) {
+      localStorage.setItem('gg_video_muted', isMuted ? 'true' : 'false');
+    }
+  }, [isMuted, isFeedPreview]);
 
   useEffect(() => {
-    localStorage.setItem('gg_video_volume', volume.toString());
-  }, [volume]);
+    if (!isFeedPreview) {
+      localStorage.setItem('gg_video_volume', volume.toString());
+    }
+  }, [volume, isFeedPreview]);
+
+  // Global audio arbiter: when one video un-mutes/plays with sound, all other videos MUST mute immediately
+  const broadcastAudioActive = useCallback(() => {
+    if (!isFeedPreview && !isMuted) {
+      window.dispatchEvent(new CustomEvent('gg-video-active-audio', { detail: { id: playerIdRef.current } }));
+    }
+  }, [isFeedPreview, isMuted]);
+
+  useEffect(() => {
+    const handleOtherVideoPlayingAudio = (e: any) => {
+      if (e.detail?.id !== playerIdRef.current) {
+        if (isFeedPreview) {
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+          }
+        } else {
+          setIsMuted(true);
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('gg-video-active-audio', handleOtherVideoPlayingAudio);
+    return () => {
+      window.removeEventListener('gg-video-active-audio', handleOtherVideoPlayingAudio);
+    };
+  }, [isFeedPreview]);
 
   // High-performance requestAnimationFrame progress bar loop
   const updateProgress = useCallback(() => {
@@ -163,6 +205,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         setIsPlaying(true);
         startProgressLoop();
         scheduleHideControls();
+        if (!isFeedPreview && !isMuted) {
+          broadcastAudioActive();
+        }
       }).catch(() => {
         // Autoplay policy fallback: mute and retry
         video.muted = true;
@@ -175,7 +220,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       stopProgressLoop();
       revealControls();
     }
-  }, [startProgressLoop, stopProgressLoop, scheduleHideControls, revealControls]);
+  }, [startProgressLoop, stopProgressLoop, scheduleHideControls, revealControls, isFeedPreview, isMuted, broadcastAudioActive]);
 
   // Relative Seek (e.g. ±10s)
   const seekRelative = useCallback((delta: number) => {
@@ -205,6 +250,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsPlaying(true);
       startProgressLoop();
       scheduleHideControls();
+      if (!isFeedPreview && !isMuted) {
+        broadcastAudioActive();
+      }
     };
 
     const onPause = () => {
@@ -234,6 +282,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setDuration(video.duration || 0);
     };
 
+    const onError = () => {
+      setHasError(true);
+      setIsBuffering(false);
+      setIsPlaying(false);
+      stopProgressLoop();
+    };
+
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
     video.addEventListener('waiting', onWaiting);
@@ -241,10 +296,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     video.addEventListener('canplay', onPlaying);
     video.addEventListener('loadeddata', onLoadedData);
     video.addEventListener('durationchange', onDurationChange);
+    video.addEventListener('error', onError);
 
-    // Initial config
-    video.muted = isMuted;
-    video.volume = volume;
+    // Initial config: feed previews MUST be 100% muted
+    if (isFeedPreview) {
+      video.muted = true;
+      video.volume = 0;
+      video.defaultMuted = true;
+    } else {
+      video.muted = isMuted;
+      video.volume = volume;
+    }
     video.playbackRate = playbackRate;
 
     return () => {
@@ -255,11 +317,35 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.removeEventListener('canplay', onPlaying);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('durationchange', onDurationChange);
+      video.removeEventListener('error', onError);
       stopProgressLoop();
       if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
       if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
     };
-  }, [isMuted, volume, playbackRate, startProgressLoop, stopProgressLoop, scheduleHideControls, revealControls]);
+  }, [isMuted, volume, playbackRate, isFeedPreview, startProgressLoop, stopProgressLoop, scheduleHideControls, revealControls, broadcastAudioActive]);
+
+  // Feed preview: IntersectionObserver so offscreen tiles pause and only viewport tiles play
+  useEffect(() => {
+    if (!isFeedPreview || !containerRef.current) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (entry.isIntersecting && !hasError) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+      });
+    }, {
+      rootMargin: '120px 0px',
+      threshold: 0.1
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [isFeedPreview, hasError]);
 
   // Page visibility & clean pause on tab change / pin change
   useEffect(() => {
@@ -513,33 +599,66 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         ref={containerRef}
         onClick={onClick}
         style={{ aspectRatio: containerAspectRatio }}
-        className={`relative overflow-hidden rounded-[16px] bg-[#121212] cursor-pointer group ${className}`}
+        className={`relative overflow-hidden rounded-[16px] bg-[#121212] cursor-pointer group select-none ${className}`}
       >
-        {poster && (
+        {/* Shimmer skeleton while waiting for first frame */}
+        {!isFirstFrameReady && !hasError && (
+          <div className="absolute inset-0 bg-[#181818] animate-pulse flex items-center justify-center pointer-events-none">
+            <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white/40 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        )}
+
+        {/* Valid image poster if available and not a video URL */}
+        {validImagePoster && (
           <img
-            src={poster}
+            src={validImagePoster}
             alt=""
             className={`absolute inset-0 w-full h-full object-cover rounded-[16px] transition-opacity duration-300 pointer-events-none ${
               isFirstFrameReady ? 'opacity-0' : 'opacity-100'
             }`}
           />
         )}
-        <video
-          ref={videoRef}
-          src={src}
-          playsInline
-          muted
-          autoPlay
-          loop
-          className="w-full h-full object-cover rounded-[16px] block pointer-events-none"
-        />
-        {/* Subtle video duration / play badge */}
-        <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-white/90 text-[10px] font-mono flex items-center gap-1 opacity-90 group-hover:opacity-100 pointer-events-none">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 fill-current" viewBox="0 0 24 24">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-          <span className="tabular-nums">{formatTime(duration)}</span>
-        </div>
+
+        {/* Core video element - strictly opacity-0 until first frame is decoded so Android gray placeholder never shows */}
+        {!hasError && (
+          <video
+            ref={videoRef}
+            src={src}
+            playsInline
+            muted
+            loop
+            preload="metadata"
+            className={`w-full h-full object-cover rounded-[16px] block pointer-events-none transition-opacity duration-300 ${
+              isFirstFrameReady ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        )}
+
+        {/* Fallback card if video cannot be loaded/decoded */}
+        {hasError && (
+          <div className="w-full min-h-[160px] aspect-[4/3] bg-[#141414] border border-white/5 rounded-[16px] flex flex-col items-center justify-center p-4 text-center pointer-events-none select-none">
+            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9A2.25 2.25 0 0 0 13.5 5.25h-9A2.25 2.25 0 0 0 2.25 7.5v9A2.25 2.25 0 0 0 4.5 18.75Z" />
+              </svg>
+            </div>
+            <span className="text-[11px] text-neutral-400 font-medium truncate max-w-[90%]">{title || 'Video unavailable'}</span>
+          </div>
+        )}
+
+        {/* Subtle video duration / play badge - only shown if video successfully loaded and duration > 0 */}
+        {!hasError && duration > 0 && isFirstFrameReady && (
+          <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-white/90 text-[10px] font-mono flex items-center gap-1 opacity-90 group-hover:opacity-100 pointer-events-none">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 fill-current" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <span className="tabular-nums">{formatTime(duration)}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -558,9 +677,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       } ${className}`}
     >
       {/* Poster first-frame cross-fade to eliminate black flash */}
-      {poster && (
+      {validImagePoster && (
         <img
-          src={poster}
+          src={validImagePoster}
           alt=""
           className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-300 z-10 ${
             isFirstFrameReady ? 'opacity-0' : 'opacity-100'
@@ -568,17 +687,42 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         />
       )}
 
+      {/* Shimmer skeleton before video first frame is ready */}
+      {!isFirstFrameReady && !hasError && (
+        <div className="absolute inset-0 bg-[#121212] flex items-center justify-center pointer-events-none z-10 animate-pulse">
+          <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white/40 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+        </div>
+      )}
+
       {/* Core HTML5 Video Element with playsInline and controls disabled */}
-      <video
-        ref={videoRef}
-        src={src}
-        playsInline
-        webkit-playsinline="true"
-        x5-playsinline="true"
-        loop={loop}
-        autoPlay={autoPlay}
-        className="w-full h-full object-contain pointer-events-none"
-      />
+      {!hasError ? (
+        <video
+          ref={videoRef}
+          src={src}
+          playsInline
+          webkit-playsinline="true"
+          x5-playsinline="true"
+          loop={loop}
+          autoPlay={autoPlay}
+          className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
+            isFirstFrameReady ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      ) : (
+        <div className="w-full min-h-[260px] bg-[#141414] border border-white/5 rounded-2xl flex flex-col items-center justify-center p-6 text-center text-white">
+          <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9A2.25 2.25 0 0 0 13.5 5.25h-9A2.25 2.25 0 0 0 2.25 7.5v9A2.25 2.25 0 0 0 4.5 18.75Z" />
+            </svg>
+          </div>
+          <h4 className="text-sm font-semibold mb-1">Video could not be loaded</h4>
+          <p className="text-xs text-neutral-400 max-w-xs">The video file format is unsupported or temporarily unavailable.</p>
+        </div>
+      )}
 
       {/* 2x Speed Pill Indicator when holding */}
       {is2xHold && (
@@ -739,6 +883,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   setIsMuted(nextMuted);
                   if (videoRef.current) {
                     videoRef.current.muted = nextMuted;
+                  }
+                  if (!nextMuted) {
+                    broadcastAudioActive();
                   }
                 }}
                 className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center active:scale-95 transition-all text-white cursor-pointer"

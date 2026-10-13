@@ -14,6 +14,7 @@ import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, t
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 import { calculateDynamicBatchSize } from './utils/performanceUtils';
+import { isVideoUrl } from '../utils/mediaUtils';
 
 import Sidebar from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -1803,11 +1804,31 @@ const App: React.FC = () => {
 
             {/* Thumbnail Preview */}
             <div className="flex items-center gap-4 w-full mb-6 pb-4 border-b border-white/5">
-              <img 
-                src={longPressedImage.imageUrl} 
-                alt={longPressedImage.title || "Share preview"} 
-                className="w-16 h-16 rounded-2xl object-cover border border-white/10 shadow-md"
-              />
+              {isVideoUrl(longPressedImage.imageUrl) ? (
+                <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-neutral-900 border border-white/10 shadow-md flex-shrink-0 flex items-center justify-center">
+                  <video 
+                    src={longPressedImage.imageUrl} 
+                    className="w-full h-full object-cover"
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                  <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white/90 drop-shadow" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                </div>
+              ) : (
+                <img 
+                  src={longPressedImage.imageUrl} 
+                  alt={longPressedImage.title || "Share preview"} 
+                  className="w-16 h-16 rounded-2xl object-cover border border-white/10 shadow-md flex-shrink-0 bg-neutral-900"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }}
+                />
+              )}
               <div className="flex-1 min-w-0">
                 <h3 className="text-white font-bold truncate text-lg">{longPressedImage.title || "Glass Art Masterpiece"}</h3>
                 <p className="text-neutral-400 text-xs truncate">by {longPressedImage.uploaderName}</p>
