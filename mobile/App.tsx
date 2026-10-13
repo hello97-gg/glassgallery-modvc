@@ -32,6 +32,8 @@ import NotificationsPage from './components/NotificationsPage';
 import FullScreenDropzone from './components/FullScreenDropzone';
 import SEOHead, { DEFAULT_FAVICON } from './components/SEOHead';
 import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './components/OnboardingModal';
+import { DARK_VIDEO_POSTER } from './components/VideoPlayer';
+import SkeletonGrid from './components/SkeletonGrid';
 
 // Global Fetch Interceptor for Capacitor Native Platform to reroute relative paths to the production API
 if (Capacitor.isNativePlatform()) {
@@ -67,46 +69,6 @@ const EXPLORE_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000
 // Code/Terminal Icon for API
 const API_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4'/%3E%3C/svg%3E`;
 
-
-// --- Skeleton Components for Initial Load ---
-const SKELETON_HEIGHTS = [
-  'h-[220px]', 'h-[310px]', 'h-[180px]', 'h-[270px]',
-  'h-[340px]', 'h-[200px]', 'h-[290px]', 'h-[240px]',
-  'h-[320px]', 'h-[190px]', 'h-[280px]', 'h-[230px]'
-];
-
-const SkeletonCard: React.FC<{ index: number }> = ({ index }) => {
-  const heightClass = SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length];
-  
-  return (
-    <div 
-      className={`
-        relative w-full rounded-[16px] mb-2 break-inside-avoid overflow-hidden
-        bg-[#181818] border border-white/5 animate-pulse
-        ${heightClass}
-      `}
-    >
-      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
-      <div 
-        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent pointer-events-none"
-        style={{
-          backgroundSize: '200% 100%',
-          animation: 'shimmer 2s infinite linear',
-        }}
-      />
-    </div>
-  );
-};
-
-const SkeletonGrid: React.FC = () => {
-  return (
-    <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2 px-1 md:px-2 animate-fade-in">
-      {Array.from({ length: 12 }).map((_, index) => (
-        <SkeletonCard key={index} index={index} />
-      ))}
-    </div>
-  );
-};
 
 // Smart "Addictive" sorting algorithm
 const smartSortImages = (images: ImageMeta[], profile?: ProfileUser | null): ImageMeta[] => {
@@ -243,13 +205,22 @@ const App: React.FC = () => {
   // Track network status online/offline for instant background auto-refreshes
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Caching Synchronizers to update LocalStorage dynamically when states modify
+  // Dynamic LocalStorage Cache Synchronizers (Stale-While-Revalidate like Instagram/Pinterest)
   useEffect(() => {
-    try {
-      localStorage.removeItem('cached_all_images');
-      localStorage.removeItem('cached_displayed_images');
-    } catch (e) {}
-  }, []);
+    if (displayedImages.length > 0) {
+      try {
+        localStorage.setItem('cached_displayed_images', JSON.stringify(displayedImages.slice(0, 40)));
+      } catch (e) {}
+    }
+  }, [displayedImages]);
+
+  useEffect(() => {
+    if (allImages.length > 0) {
+      try {
+        localStorage.setItem('cached_all_images', JSON.stringify(allImages.slice(0, 100)));
+      } catch (e) {}
+    }
+  }, [allImages]);
 
   // Network Status Monitor
   useEffect(() => {
@@ -1054,16 +1025,25 @@ const App: React.FC = () => {
       updateURL({ image: original.id });
     };
 
+    // Remove any leftover viewTransitionName to prevent duplicate name error
+    document.querySelectorAll('*').forEach((el: any) => {
+      if (el.style && el.style.viewTransitionName) {
+        el.style.removeProperty('view-transition-name');
+      }
+    });
+
     // Pinterest-style shared element expansion using View Transitions API
     const cardEl = document.getElementById(`pin-card-${image.id}`);
     if (cardEl && (document as any).startViewTransition) {
-      const imgEl = cardEl.querySelector('img') || cardEl;
+      const imgEl = cardEl.querySelector('img') || cardEl.querySelector('video') || cardEl;
       imgEl.style.setProperty('view-transition-name', 'pin-active');
       const transition = (document as any).startViewTransition(() => {
         pushPin();
       });
       transition.finished.finally(() => {
         imgEl.style.removeProperty('view-transition-name');
+        const heroEl = document.getElementById('hero-detail-image');
+        if (heroEl) heroEl.style.removeProperty('view-transition-name');
       });
     } else {
       pushPin();
@@ -1113,6 +1093,11 @@ const App: React.FC = () => {
 
     const targetEl = document.getElementById(targetCardId);
     if ((document as any).startViewTransition) {
+      document.querySelectorAll('*').forEach((el: any) => {
+        if (el.style && el.style.viewTransitionName) {
+          el.style.removeProperty('view-transition-name');
+        }
+      });
       const heroEl = document.getElementById('hero-detail-image');
       if (heroEl) {
         heroEl.style.setProperty('view-transition-name', 'pin-active');
@@ -1120,10 +1105,14 @@ const App: React.FC = () => {
       const transition = (document as any).startViewTransition(() => {
         popPin();
       });
+      if (targetEl) {
+        const img = targetEl.querySelector('img') || targetEl.querySelector('video') || targetEl;
+        img.style.setProperty('view-transition-name', 'pin-active');
+      }
       transition.finished.finally(() => {
         if (heroEl) heroEl.style.removeProperty('view-transition-name');
         if (targetEl) {
-          const img = targetEl.querySelector('img') || targetEl;
+          const img = targetEl.querySelector('img') || targetEl.querySelector('video') || targetEl;
           img.style.removeProperty('view-transition-name');
         }
       });
@@ -1807,16 +1796,19 @@ const App: React.FC = () => {
               {isVideoUrl(longPressedImage.imageUrl) ? (
                 <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-neutral-900 border border-white/10 shadow-md flex-shrink-0 flex items-center justify-center">
                   <video 
-                    src={longPressedImage.imageUrl} 
-                    className="w-full h-full object-cover"
+                    src={`${longPressedImage.imageUrl}#t=0.001`} 
+                    poster={DARK_VIDEO_POSTER}
+                    className="w-full h-full object-cover pointer-events-none"
                     muted
                     playsInline
-                    preload="metadata"
+                    preload="auto"
                   />
-                  <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white/90 drop-shadow" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
+                    <div className="w-7 h-7 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white fill-current ml-0.5" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
                   </div>
                 </div>
               ) : (

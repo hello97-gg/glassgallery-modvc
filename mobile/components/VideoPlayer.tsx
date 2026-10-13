@@ -16,6 +16,9 @@ export interface VideoPlayerProps {
   onClick?: () => void;
 }
 
+// Clean flat dark SVG data poster to completely eliminate Chromium/Android native vendor gray placeholder
+export const DARK_VIDEO_POSTER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%23121212'/%3E%3C/svg%3E";
+
 // Format seconds into m:ss
 const formatTime = (seconds: number): string => {
   if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -628,6 +631,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <video
             ref={videoRef}
             src={src}
+            poster={validImagePoster || DARK_VIDEO_POSTER}
             playsInline
             muted
             loop
@@ -703,6 +707,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           src={src}
+          poster={validImagePoster || DARK_VIDEO_POSTER}
           playsInline
           webkit-playsinline="true"
           x5-playsinline="true"

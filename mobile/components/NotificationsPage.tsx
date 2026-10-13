@@ -1,5 +1,7 @@
 import React from 'react';
 import type { Notification, ImageMeta, ProfileUser } from '../types';
+import { isVideoUrl } from '../../utils/mediaUtils';
+import { DARK_VIDEO_POSTER } from './VideoPlayer';
 
 interface NotificationsPageProps {
   notifications: Notification[];
@@ -151,7 +153,7 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({
                 <div className="flex-grow min-w-0">
                   <div className="text-sm text-white">
                     {n.type === 'flagged' ? (
-                      <span>Your image was <span className="text-red-500 font-bold">flagged</span> for safety review.</span>
+                      <span>Your {isVideoUrl(n.imageUrl) ? 'video' : 'image'} was <span className="text-red-500 font-bold">flagged</span> for safety review.</span>
                     ) : n.type === 'follow' ? (
                       <span><span className="font-bold hover:underline" onClick={(e) => {
                         if (n.actorUid && onViewProfile) {
@@ -173,17 +175,37 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({
                             uploaderPhotoURL: n.actorPhotoURL || ''
                           });
                         }
-                      }}>{n.actorName}</span> liked your glass art.</span>
+                      }}>{n.actorName}</span> liked your {isVideoUrl(n.imageUrl) ? 'video' : 'image'}.</span>
                     )}
                   </div>
                   <span className="text-[11px] text-neutral-500 font-medium block mt-0.5">{timeAgo(getSafeDate(n))}</span>
                 </div>
 
-                {/* Thumbnail Image */}
+                {/* Thumbnail Preview */}
                 {n.type !== 'follow' && n.imageUrl ? (
-                  <div className="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-250">
-                    <img src={n.imageUrl} alt="preview thumbnail" className="w-full h-full object-cover" />
-                  </div>
+                  isVideoUrl(n.imageUrl) ? (
+                    <div className="relative w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-250 bg-neutral-900 flex items-center justify-center">
+                      <video 
+                        src={`${n.imageUrl}#t=0.001`} 
+                        poster={DARK_VIDEO_POSTER}
+                        className="w-full h-full object-cover pointer-events-none"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
+                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center pointer-events-none">
+                        <div className="w-5 h-5 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white fill-current ml-0.5" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0 border border-white/10 group-hover:scale-105 transition-transform duration-250 bg-neutral-900">
+                      <img src={n.imageUrl} alt="preview thumbnail" className="w-full h-full object-cover" />
+                    </div>
+                  )
                 ) : null}
 
                 {/* Red Unread Dot Indicator */}

@@ -10,6 +10,7 @@ import Button from './Button';
 import EditProfileModal from './EditProfileModal';
 import FollowersModal from './FollowersModal';
 import CreatorDashboard from './CreatorDashboard';
+import SkeletonGrid from './SkeletonGrid';
 
 // Throttle utility
 const throttle = (func: (...args: any[]) => void, limit: number) => {
@@ -785,8 +786,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
       >
         {activeTab === 'created' ? (
           isLoading ? (
-            <div className="flex justify-center items-center py-20">
-              <Spinner />
+            <div className="px-4 md:px-8 py-4">
+              <SkeletonGrid count={8} />
             </div>
           ) : allImages.length === 0 ? (
             <div className="text-center py-20 px-4">
@@ -807,8 +808,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
           )
         ) : activeTab === 'saved' ? (
           isLoadingLikes ? (
-            <div className="flex justify-center items-center py-20">
-              <Spinner />
+            <div className="px-4 md:px-8 py-4">
+              <SkeletonGrid count={8} />
             </div>
           ) : likedImages.length === 0 ? (
             <div className="text-center py-20 px-4">

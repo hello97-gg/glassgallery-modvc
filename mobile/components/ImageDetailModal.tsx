@@ -463,16 +463,6 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     if (onSelectImage) {
       onSelectImage(img);
     }
-    setRelatedVisibleCount(12);
-    if (modalRef.current) {
-      modalRef.current.scrollTo({ top: 0, behavior: 'instant' });
-    }
-    if (leftPanelRef.current) {
-      leftPanelRef.current.scrollTo({ top: 0, behavior: 'instant' });
-    }
-    if (rightPanelRef.current) {
-      rightPanelRef.current.scrollTo({ top: 0, behavior: 'instant' });
-    }
   };
 
   useEffect(() => {
@@ -495,6 +485,16 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     setTranslateX(0);
     setTranslateY(0);
     setIsFullscreen(false);
+    setRelatedVisibleCount(12);
+    if (modalRef.current) {
+      modalRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
+    if (leftPanelRef.current) {
+      leftPanelRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
+    if (rightPanelRef.current) {
+      rightPanelRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
   }, [image]);
 
   // Sync fullscreen state and sub-state to global window properties so App.tsx's single
@@ -1154,17 +1154,19 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           {/* Main Hero Image Container - Edge-to-edge on mobile, contained on desktop */}
           <div className="bg-[#0a0a0a] flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative select-none w-full min-h-[260px]">
             {isVideoUrl(currentImage.imageUrl) ? (
-              <VideoPlayer 
-                src={currentImage.imageUrl}
-                poster={currentImage.imageUrl}
-                width={currentImage.width}
-                height={currentImage.height}
-                title={currentImage.title}
-                autoPlay={true}
-                loop={true}
-                onDoubleTapLike={handleLikeClick}
-                className="w-full"
-              />
+              <div id="hero-detail-image" style={{ viewTransitionName: 'pin-active' }} className="w-full">
+                <VideoPlayer 
+                  src={currentImage.imageUrl}
+                  poster={currentImage.imageUrl}
+                  width={currentImage.width}
+                  height={currentImage.height}
+                  title={currentImage.title}
+                  autoPlay={true}
+                  loop={true}
+                  onDoubleTapLike={handleLikeClick}
+                  className="w-full"
+                />
+              </div>
             ) : (
               <img 
                 id="hero-detail-image"
