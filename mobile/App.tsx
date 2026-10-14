@@ -132,8 +132,8 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
   };
 };
 
-const CURRENT_VERSION_CODE = 8;
-const CURRENT_VERSION_NAME = "1.0.7";
+const CURRENT_VERSION_CODE = 9;
+const CURRENT_VERSION_NAME = "1.0.8";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);

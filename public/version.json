@@ -1,7 +1,7 @@
 {
-  "versionCode": 8,
-  "versionName": "1.0.7",
+  "versionCode": 9,
+  "versionName": "1.0.8",
   "apkUrl": "https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/GlassGallery.apk",
-  "releaseNotes": "Updated branding, new peach & charcoal app icon, and performance improvements",
+  "releaseNotes": "Fixed reels swipe touch pass-through, dynamic version verification, and navigation smoothness",
   "forceUpdate": false
 }
