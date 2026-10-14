@@ -132,13 +132,16 @@ const throttle = (func: (...args: any[]) => void, limit: number) => {
   };
 };
 
-const CURRENT_VERSION_CODE = 6;
-const CURRENT_VERSION_NAME = "1.0.5";
+const CURRENT_VERSION_CODE = 8;
+const CURRENT_VERSION_NAME = "1.0.7";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const FEED_BATCH_SIZE = useMemo(() => calculateDynamicBatchSize(), []);
+
+  // Current native app version (dynamically updated from CapApp.getInfo() on native devices)
+  const [currentVersionName, setCurrentVersionName] = useState(CURRENT_VERSION_NAME);
 
   // Update System States
   const [updateInfo, setUpdateInfo] = useState<{
@@ -152,12 +155,34 @@ const App: React.FC = () => {
 
   const checkForUpdates = useCallback(async () => {
     try {
+      let currentCode = CURRENT_VERSION_CODE;
+      let currentName = CURRENT_VERSION_NAME;
+
+      // Query native package manager via Capacitor App plugin if running inside Android APK
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const appInfo = await CapApp.getInfo();
+          if (appInfo.build) {
+            const parsed = parseInt(appInfo.build, 10);
+            if (!isNaN(parsed) && parsed > 0) currentCode = parsed;
+          }
+          if (appInfo.version) {
+            currentName = appInfo.version;
+          }
+        } catch (e) {
+          console.warn("Could not query native App info:", e);
+        }
+      }
+
+      setCurrentVersionName(currentName);
+
       const res = await fetch('https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/version.json?t=' + Date.now(), {
         cache: 'no-store'
       });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.versionCode > CURRENT_VERSION_CODE) {
+        // Only trigger update if remote versionCode is strictly greater AND versionName is not the same
+        if (data && data.versionCode > currentCode && data.versionName !== currentName) {
           setUpdateInfo(data);
           setIsUpdateModalOpen(true);
           return true;
@@ -1772,7 +1797,7 @@ const App: React.FC = () => {
             <div className="flex items-center justify-around p-3 rounded-2xl bg-neutral-900/50 border border-white/5 text-sm font-semibold relative z-10">
               <div className="flex flex-col items-center">
                 <span className="text-xs text-neutral-500 font-normal">Current</span>
-                <span className="text-neutral-300">v{CURRENT_VERSION_NAME}</span>
+                <span className="text-neutral-300">v{currentVersionName}</span>
               </div>
               <div className="h-8 w-px bg-white/10" />
               <div className="flex flex-col items-center">
