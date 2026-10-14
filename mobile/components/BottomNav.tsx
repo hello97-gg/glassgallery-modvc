@@ -40,17 +40,30 @@ const BottomNav: React.FC<BottomNavProps> = ({
 
   const isNavVisible = visible;
 
+  const btnBaseStyle: React.CSSProperties = {
+    WebkitTapHighlightColor: 'transparent',
+    outline: 'none',
+    touchAction: 'manipulation',
+    userSelect: 'none',
+  };
+
   return (
     <div 
       className={`fixed left-1/2 -translate-x-1/2 bg-[#111111]/95 border border-white/10 rounded-[32px] px-3.5 py-2 flex items-center justify-between gap-1 shadow-2xl z-[65] md:hidden w-[295px] backdrop-blur-md select-none transition-all duration-300 ease-out ${
         isNavVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-20 pointer-events-none'
       }`}
-      style={{ bottom: 'calc(max(env(safe-area-inset-bottom, 0px), 16px) + 8px)' }}
+      style={{ 
+        bottom: 'calc(max(env(safe-area-inset-bottom, 0px), 16px) + 8px)',
+        WebkitTapHighlightColor: 'transparent',
+        touchAction: 'manipulation',
+        userSelect: 'none'
+      }}
     >
       {/* Home Button */}
       <button
         onClick={() => setView('home')}
-        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+        style={btnBaseStyle}
+        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
           activeView === 'home' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >
@@ -69,7 +82,8 @@ const BottomNav: React.FC<BottomNavProps> = ({
       {/* Explore/Search Button */}
       <button
         onClick={() => setView('explore')}
-        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+        style={btnBaseStyle}
+        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
           activeView === 'explore' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >
@@ -82,16 +96,18 @@ const BottomNav: React.FC<BottomNavProps> = ({
       {/* Reels Button */}
       <button
         onClick={() => setView('reels')}
-        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+        style={btnBaseStyle}
+        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
           activeView === 'reels' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeView === 'reels' ? 2.5 : 2}>
           <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-          <path d="M10 8.5l5.5 3.5-5.5 3.5V8.5z" fill={activeView === 'reels' ? "currentColor" : "none"} />
           <line x1="2" y1="7" x2="22" y2="7" />
           <line x1="7" y1="2" x2="5" y2="7" />
           <line x1="17" y1="2" x2="15" y2="7" />
+          {/* Centered play triangle inside lower film frame: frame spans y=7 to y=22 (center 14.5); triangle spans y=11.5 to 17.5 (4.5px clearance above and below) */}
+          <path d="M10 11.5l5.2 3-5.2 3V11.5z" fill={activeView === 'reels' ? "currentColor" : "none"} stroke="currentColor" strokeLinejoin="round" />
         </svg>
         <span className="text-[10px] font-bold mt-1 tracking-wide">Reels</span>
       </button>
@@ -99,7 +115,8 @@ const BottomNav: React.FC<BottomNavProps> = ({
       {/* Profile/Saved Button */}
       <button
         onClick={handleProfileClick}
-        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-all duration-200 active:scale-90 focus:outline-none ${
+        style={btnBaseStyle}
+        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
           activeView === 'profile' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >

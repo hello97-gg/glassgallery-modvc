@@ -392,7 +392,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
     if (isCollapsed) {
       return (
-        <div 
+        <div
           key={comment.id}
           onClick={() => setCollapsedComments(prev => {
             const next = new Set(prev);
@@ -411,9 +411,8 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       <div
         id={`comment-${comment.id}`}
         key={comment.id}
-        className={`flex flex-col gap-1.5 transition-all duration-500 ${
-          highlightedCommentId === comment.id ? 'ring-2 ring-accent bg-accent/15 p-2.5 rounded-xl shadow-lg' : ''
-        } ${depth > 0
+        className={`flex flex-col gap-1.5 transition-all duration-500 ${highlightedCommentId === comment.id ? 'ring-2 ring-accent bg-accent/15 p-2.5 rounded-xl shadow-lg' : ''
+          } ${depth > 0
             ? (isIndented ? 'mt-2 pl-2.5 border-l-2 border-border/40 ml-1.5 sm:ml-2.5' : 'mt-1.5 pl-1.5 border-l border-accent/20 ml-0')
             : 'border-b border-border/20 pb-3 last:border-0 last:pb-0'
           }`}
@@ -974,9 +973,9 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </h1>
             )}
             {currentImage.description && (
-              <CrawlableContent 
-                content={currentImage.description} 
-                className="text-primary/80 text-sm leading-relaxed break-words [overflow-wrap:anywhere]" 
+              <CrawlableContent
+                content={currentImage.description}
+                className="text-primary/80 text-sm leading-relaxed break-words [overflow-wrap:anywhere]"
               />
             )}
           </div>

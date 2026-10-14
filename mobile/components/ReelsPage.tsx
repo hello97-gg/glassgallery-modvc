@@ -59,7 +59,21 @@ const extractReelsFromImages = (images: ImageMeta[], userUid?: string | null, st
     return isVideoUrl(u) || flags.includes('Video') || flags.includes('Reels') || u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i);
   });
 
-  let mapped: ReelItem[] = videoImages.map(img => {
+  // Filter out already liked items from discovery unless startId specifically requested it
+  const unliked = videoImages.filter(img => {
+    if (startId && img.id === startId) return true;
+    if (userUid && img.likedBy?.includes(userUid)) return false;
+    return true;
+  });
+
+  // Sort by newest uploaded first so newly uploaded reels are displayed upfront
+  unliked.sort((a, b) => {
+    const timeA = a.uploadedAt ? new Date((a as any).uploadedAt?.toDate?.() || a.uploadedAt).getTime() : 0;
+    const timeB = b.uploadedAt ? new Date((b as any).uploadedAt?.toDate?.() || b.uploadedAt).getTime() : 0;
+    return timeB - timeA;
+  });
+
+  let mapped: ReelItem[] = unliked.map(img => {
     const tags = img.flags || [];
     const isTagLandscape = tags.some(t => {
       const lower = t.toLowerCase();
@@ -406,27 +420,31 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         });
 
         if (!active) return;
-        if (res.reels.length > 0) {
-          setReels(prev => {
-            if (prev.length === 0) return res.reels;
-            const currentItem = prev[currentIndex];
-            const incoming = res.reels;
-            const uniqueMap = new Map<string, ReelItem>();
-            if (currentItem) uniqueMap.set(currentItem.id, currentItem);
-            incoming.forEach(r => {
-              if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
+        if (res.reels && res.reels.length > 0) {
+          // If viewing from the beginning (default), display the fresh, ranked discovery reels immediately!
+          if (currentIndex === 0 || initialReelId) {
+            setReels(res.reels);
+          } else {
+            setReels(prev => {
+              if (prev.length === 0) return res.reels;
+              const currentItem = prev[currentIndex];
+              const incoming = res.reels;
+              const uniqueMap = new Map<string, ReelItem>();
+              if (currentItem) uniqueMap.set(currentItem.id, currentItem);
+              incoming.forEach(r => {
+                if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
+              });
+              prev.forEach(r => {
+                if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
+              });
+              return Array.from(uniqueMap.values());
             });
-            prev.forEach(r => {
-              if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
-            });
-            const merged = Array.from(uniqueMap.values());
-            try {
-              localStorage.setItem('cached_reels_feed', JSON.stringify(merged.slice(0, 15)));
-            } catch {}
-            return merged;
-          });
+          }
           setNextCursor(res.nextCursor);
           setHasMore(res.hasMore);
+          try {
+            localStorage.setItem('cached_reels_feed', JSON.stringify(res.reels.slice(0, 15)));
+          } catch {}
         }
       } catch (err: any) {
         if (!active) return;
@@ -486,7 +504,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
   }, [isRefreshing, user?.uid, showToast]);
 
-  const prevRefreshTriggerRef = useRef(refreshTrigger);
+  const prevRefreshTriggerRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (refreshTrigger && refreshTrigger !== prevRefreshTriggerRef.current) {
       prevRefreshTriggerRef.current = refreshTrigger;
@@ -946,6 +964,72 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     if (touchStartTimeRef.current > 0 && Date.now() - touchStartTimeRef.current < 1200) return;
     handleTap(e.clientX, e.clientY);
   };
+
+  // Gesture handler for clickable overlay elements (avatar, username, buttons) so vertical swipes pass through to scroll container
+  const overlayTouchRef = useRef<{
+    startX: number;
+    startY: number;
+    startTime: number;
+    initialScrollTop: number;
+    hasMoved: boolean;
+  }>({ startX: 0, startY: 0, startTime: 0, initialScrollTop: 0, hasMoved: false });
+  const lastOverlayTapTimeRef = useRef<number>(0);
+
+  const handleOverlayTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (t && containerRef.current) {
+      overlayTouchRef.current = {
+        startX: t.clientX,
+        startY: t.clientY,
+        startTime: Date.now(),
+        initialScrollTop: containerRef.current.scrollTop,
+        hasMoved: false
+      };
+    }
+  }, []);
+
+  const handleOverlayTouchMove = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    const container = containerRef.current;
+    if (t && container) {
+      const dy = overlayTouchRef.current.startY - t.clientY;
+      if (Math.abs(dy) > 5 || overlayTouchRef.current.hasMoved) {
+        overlayTouchRef.current.hasMoved = true;
+        // Direct real-time scroll synchronization with user's thumb
+        container.scrollTop = overlayTouchRef.current.initialScrollTop + dy;
+      }
+    }
+  }, []);
+
+  const handleOverlayTouchEnd = useCallback((e: React.TouchEvent, onClickAction: () => void) => {
+    const t = e.changedTouches[0];
+    const container = containerRef.current;
+    const { startY, startTime, hasMoved } = overlayTouchRef.current;
+    const elapsed = Date.now() - startTime;
+    const dy = t ? startY - t.clientY : 0;
+
+    if (hasMoved || Math.abs(dy) > 12) {
+      // Swiping gesture detected! Settle to next or previous reel based on swipe distance and velocity
+      if (container) {
+        const height = container.clientHeight || window.innerHeight;
+        const velocity = Math.abs(dy) / Math.max(1, elapsed);
+        let targetIndex = currentIndex;
+        if (dy > 35 || (dy > 12 && velocity > 0.3)) {
+          // Swiped up -> next reel
+          targetIndex = Math.min(reels.length - 1, currentIndex + 1);
+        } else if (dy < -35 || (dy < -12 && velocity > 0.3)) {
+          // Swiped down -> prev reel
+          targetIndex = Math.max(0, currentIndex - 1);
+        }
+        container.scrollTo({ top: targetIndex * height, behavior: 'smooth' });
+      }
+      return;
+    }
+
+    // It was a clean tap (stationary touch < 12px)
+    lastOverlayTapTimeRef.current = Date.now();
+    onClickAction();
+  }, [currentIndex, reels.length]);
 
   // Follow Creator (Optimistic with sync to followedCreatorsSet)
   const handleFollowCreator = async (reel: ReelItem) => {
@@ -1489,38 +1573,62 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
 
         <div className="relative z-10 px-4 pb-2 flex items-end justify-between gap-3 pointer-events-none" style={{ touchAction: 'pan-y' }}>
-          {/* Bottom Left: Creator Info, Title, Expandable Description, Tags */}
-          <div className="flex-1 min-w-0 pointer-events-auto pr-2" style={{ touchAction: 'pan-y' }}>
+          {/* Bottom Left: Creator Info, Title, Expandable Description, Tags - Container is pointer-events-none so vertical swipe gestures pass right through */}
+          <div className="flex-1 min-w-0 pointer-events-none pr-2">
             {/* Creator Row */}
-            <div className="flex items-center gap-2.5 mb-2.5" style={{ touchAction: 'pan-y' }}>
+            <div className="flex items-center gap-2.5 mb-2.5 pointer-events-none">
               <img
-                onClick={() => onViewProfile({
+                onTouchStart={handleOverlayTouchStart}
+                onTouchMove={handleOverlayTouchMove}
+                onTouchEnd={(e) => handleOverlayTouchEnd(e, () => onViewProfile({
                   uploaderUid: currentReel.uploaderUid,
                   uploaderName: currentReel.uploaderName,
                   uploaderPhotoURL: currentReel.uploaderPhotoURL || ''
-                })}
+                }))}
+                onClick={() => {
+                  if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                  onViewProfile({
+                    uploaderUid: currentReel.uploaderUid,
+                    uploaderName: currentReel.uploaderName,
+                    uploaderPhotoURL: currentReel.uploaderPhotoURL || ''
+                  });
+                }}
                 src={currentReel.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${currentReel.uploaderName}`}
                 alt={currentReel.uploaderName}
-                className="w-9 h-9 rounded-full object-cover border border-white/20 shadow-md cursor-pointer active:scale-95 transition-transform"
+                className="w-9 h-9 rounded-full object-cover border border-white/20 shadow-md cursor-pointer active:scale-95 transition-transform pointer-events-auto"
               />
               <span 
-                onClick={() => onViewProfile({
+                onTouchStart={handleOverlayTouchStart}
+                onTouchMove={handleOverlayTouchMove}
+                onTouchEnd={(e) => handleOverlayTouchEnd(e, () => onViewProfile({
                   uploaderUid: currentReel.uploaderUid,
                   uploaderName: currentReel.uploaderName,
                   uploaderPhotoURL: currentReel.uploaderPhotoURL || ''
-                })}
-                className="font-bold text-sm text-white drop-shadow hover:underline truncate cursor-pointer"
+                }))}
+                onClick={() => {
+                  if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                  onViewProfile({
+                    uploaderUid: currentReel.uploaderUid,
+                    uploaderName: currentReel.uploaderName,
+                    uploaderPhotoURL: currentReel.uploaderPhotoURL || ''
+                  });
+                }}
+                className="font-bold text-sm text-white drop-shadow hover:underline truncate cursor-pointer pointer-events-auto"
               >
                 @{currentReel.uploaderName.toLowerCase().replace(/\s+/g, '')}
               </span>
 
               {user?.uid !== currentReel.uploaderUid && (
                 <button
+                  onTouchStart={handleOverlayTouchStart}
+                  onTouchMove={handleOverlayTouchMove}
+                  onTouchEnd={(e) => handleOverlayTouchEnd(e, () => handleFollowCreator(currentReel))}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
                     handleFollowCreator(currentReel);
                   }}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all active:scale-95 border ${
+                  className={`pointer-events-auto px-3 py-1 rounded-full text-xs font-bold transition-all active:scale-95 border ${
                     followedCreatorsSet.has(currentReel.uploaderUid)
                       ? 'bg-white/10 text-neutral-300 border-white/20'
                     : 'bg-white text-black border-white hover:bg-neutral-200'
@@ -1531,41 +1639,51 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
               )}
             </div>
 
-            {/* Title & Description: Clicking either title or description toggles expanded state */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                if (currentReel.description) {
-                  setExpandedDescIndex(prev => prev === currentIndex ? null : currentIndex);
-                }
-              }}
-              className="cursor-pointer mb-1.5"
-              style={{ touchAction: 'pan-y' }}
-            >
+            {/* Title & Description: pointer-events-none so swiping over title/desc falls straight through to container */}
+            <div className="pointer-events-none mb-1.5">
               {currentReel.title && (
-                <h3 className="font-bold text-sm text-white drop-shadow mb-1 leading-snug">
+                <h3 className="font-bold text-sm text-white drop-shadow mb-1 leading-snug pointer-events-none">
                   {currentReel.title}
                 </h3>
               )}
 
               {currentReel.description && (
-                <p
-                  className={`text-xs text-neutral-300 drop-shadow transition-all ${
-                    expandedDescIndex === currentIndex ? 'whitespace-pre-wrap' : 'line-clamp-2'
-                  }`}
-                >
-                  {currentReel.description}
-                </p>
+                <div className="pointer-events-none">
+                  <p
+                    className={`text-xs text-neutral-300 drop-shadow transition-all pointer-events-none ${
+                      expandedDescIndex === currentIndex ? 'whitespace-pre-wrap' : 'line-clamp-2'
+                    }`}
+                  >
+                    {currentReel.description}
+                  </p>
+                  {currentReel.description.length > 70 && (
+                    <button
+                      onTouchStart={handleOverlayTouchStart}
+                      onTouchMove={handleOverlayTouchMove}
+                      onTouchEnd={(e) => handleOverlayTouchEnd(e, () => {
+                        setExpandedDescIndex(prev => prev === currentIndex ? null : currentIndex);
+                      })}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                        setExpandedDescIndex(prev => prev === currentIndex ? null : currentIndex);
+                      }}
+                      className="pointer-events-auto text-[11px] font-semibold text-white/90 underline mt-0.5 active:opacity-70"
+                    >
+                      {expandedDescIndex === currentIndex ? 'Show less' : '...more'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Tags */}
+            {/* Tags: pointer-events-none so swiping over tags passes through */}
             {currentReel.tags && currentReel.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2" style={{ touchAction: 'pan-y' }}>
+              <div className="flex flex-wrap gap-1.5 mt-2 pointer-events-none">
                 {currentReel.tags.slice(0, 4).map((tag, tIdx) => (
                   <span
                     key={tIdx}
-                    className="px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-md text-[10px] text-neutral-300 font-medium border border-white/5"
+                    className="px-2 py-0.5 rounded-full bg-white/10 backdrop-blur-md text-[10px] text-neutral-300 font-medium border border-white/5 pointer-events-none"
                   >
                     #{tag}
                   </span>
@@ -1578,7 +1696,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
           <div className="flex flex-col items-center gap-4 flex-shrink-0 pointer-events-auto pb-1">
             {/* Like Button */}
             <button
-              onClick={() => handleLikeReel(currentReel)}
+              onTouchStart={handleOverlayTouchStart}
+              onTouchMove={handleOverlayTouchMove}
+              onTouchEnd={(e) => handleOverlayTouchEnd(e, () => handleLikeReel(currentReel))}
+              onClick={() => {
+                if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                handleLikeReel(currentReel);
+              }}
               className="flex flex-col items-center gap-1 group active:scale-75 transition-transform"
               title="Like"
             >
@@ -1600,7 +1724,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
             {/* Comment Button */}
             <button
-              onClick={() => handleOpenComments(currentReel)}
+              onTouchStart={handleOverlayTouchStart}
+              onTouchMove={handleOverlayTouchMove}
+              onTouchEnd={(e) => handleOverlayTouchEnd(e, () => handleOpenComments(currentReel))}
+              onClick={() => {
+                if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                handleOpenComments(currentReel);
+              }}
               className="flex flex-col items-center gap-1 active:scale-75 transition-transform"
               title="Comments"
             >
@@ -1616,7 +1746,18 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
             {/* Share Button (Reuses existing share modal) */}
             <button
+              onTouchStart={handleOverlayTouchStart}
+              onTouchMove={handleOverlayTouchMove}
+              onTouchEnd={(e) => handleOverlayTouchEnd(e, () => {
+                onShare({
+                  id: currentReel.id,
+                  imageUrl: currentReel.videoUrl,
+                  title: currentReel.title,
+                  uploaderName: currentReel.uploaderName
+                } as ImageMeta);
+              })}
               onClick={() => {
+                if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
                 onShare({
                   id: currentReel.id,
                   imageUrl: currentReel.videoUrl,
@@ -1637,7 +1778,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
             {/* Save Button */}
             <button
-              onClick={() => handleLikeReel(currentReel)}
+              onTouchStart={handleOverlayTouchStart}
+              onTouchMove={handleOverlayTouchMove}
+              onTouchEnd={(e) => handleOverlayTouchEnd(e, () => handleLikeReel(currentReel))}
+              onClick={() => {
+                if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                handleLikeReel(currentReel);
+              }}
               className="p-2.5 text-white active:scale-75 transition-transform"
               title="Save"
             >
@@ -1648,7 +1795,13 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
             {/* More / Credit Options Button */}
             <button
-              onClick={() => setOptionsReel(currentReel)}
+              onTouchStart={handleOverlayTouchStart}
+              onTouchMove={handleOverlayTouchMove}
+              onTouchEnd={(e) => handleOverlayTouchEnd(e, () => setOptionsReel(currentReel))}
+              onClick={() => {
+                if (Date.now() - lastOverlayTapTimeRef.current < 400) return;
+                setOptionsReel(currentReel);
+              }}
               className="p-2.5 text-white active:scale-80 transition-transform"
               title="More options"
             >

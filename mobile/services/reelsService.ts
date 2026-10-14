@@ -1,4 +1,9 @@
 import type { ImageMeta } from '../types';
+import { Capacitor } from '@capacitor/core';
+
+export const getReelsApiBase = (): string => {
+  return Capacitor.isNativePlatform() ? 'https://gg.modvc.org' : '';
+};
 
 export interface ReelItem {
   id: string;
@@ -238,7 +243,7 @@ class ReelsTracker {
         events: eventsToSend
       };
 
-      const res = await fetch('/api/reels?action=events', {
+      const res = await fetch(`${getReelsApiBase()}/api/reels?action=events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -264,9 +269,9 @@ class ReelsTracker {
 
     if (navigator.sendBeacon) {
       const blob = new Blob([payload], { type: 'application/json' });
-      navigator.sendBeacon('/api/reels?action=events', blob);
+      navigator.sendBeacon(`${getReelsApiBase()}/api/reels?action=events`, blob);
     } else {
-      fetch('/api/reels?action=events', {
+      fetch(`${getReelsApiBase()}/api/reels?action=events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,
@@ -315,7 +320,7 @@ export const fetchReelsFeed = async (options: FetchReelsOptions = {}): Promise<{
     params.set('seenIds', seenList.slice(-50).join(','));
   }
 
-  const res = await fetch(`/api/reels?${params.toString()}`);
+  const res = await fetch(`${getReelsApiBase()}/api/reels?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch reels (status ${res.status})`);
   }

@@ -132,6 +132,17 @@
 }
 </script>
     <style>
+      /* Remove native tap highlight overlay across the mobile app */
+      *, *::before, *::after {
+        -webkit-tap-highlight-color: transparent !important;
+        -webkit-touch-callout: none;
+      }
+      button, a, [role="button"] {
+        -webkit-tap-highlight-color: transparent !important;
+        outline: none !important;
+        user-select: none;
+      }
+
       /* Ultra-smooth hardware-accelerated momentum scrolling for mobile devices */
       html, body {
         -webkit-overflow-scrolling: touch;

@@ -10,9 +10,9 @@ const corsHeaders = {
 // Configurable algorithm parameters
 export const REELS_ALGO_CONFIG = {
   alpha: 1.8,       // Creator affinity boost
-  beta: 1.2,        // Normalized popularity weight
-  gamma: 0.8,       // Freshness boost for recent uploads
-  delta: 50.0,      // Aggressive seen penalty
+  beta: 1.0,        // Normalized popularity weight
+  gamma: 4.5,       // Freshness boost for recent uploads (strongly prioritizes new reels)
+  delta: 80.0,      // Aggressive seen penalty
   eta: 0.2,         // Learning rate for taste updates
   decay_lambda: Math.LN2 / (14 * 86400 * 1000), // 14-day exponential decay half-life in ms
 };
@@ -237,8 +237,16 @@ export async function onRequest(context) {
     // 1. Fetch all candidate video rows from Turso images table
     const allImagesRes = await db.execute(`SELECT * FROM images ORDER BY uploadedAt DESC`);
     const candidateVideos = allImagesRes.rows.filter(img => {
-      const urlStr = img.imageUrl || '';
-      return VIDEO_REGEX.test(urlStr) || urlStr.toLowerCase().includes('.mp4') || urlStr.toLowerCase().includes('.webm');
+      const urlStr = (img.imageUrl || '').toLowerCase();
+      let flags = [];
+      try { flags = typeof img.flags === 'string' ? JSON.parse(img.flags) : (img.flags || []); } catch {}
+      const isFlagVideo = Array.isArray(flags) && flags.some(f => typeof f === 'string' && /video|reels|reel/i.test(f));
+      return VIDEO_REGEX.test(urlStr) || 
+             urlStr.includes('.mp4') || 
+             urlStr.includes('.webm') || 
+             urlStr.includes('.mov') || 
+             urlStr.includes('.m4v') || 
+             isFlagVideo;
     });
 
     if (candidateVideos.length === 0) {
@@ -364,16 +372,19 @@ export async function onRequest(context) {
       const normDownloads = (parseInt(vid.downloadCount) || 0) / maxDownloads;
       const popularity = (normLikes * 0.7) + (normDownloads * 0.3);
 
-      // d) Freshness (decay over 72h)
+      // d) Freshness (decay over 72h) + Immediate New Upload Priority
       let uploadTime = now;
       try { uploadTime = new Date(vid.uploadedAt).getTime() || now; } catch {}
       const ageHours = Math.max((now - uploadTime) / (3600 * 1000), 0);
       const freshness = Math.max(0, 1.0 - (ageHours / 72.0));
+      // Give brand new uploads (e.g. within 24 hours) an extra instant discovery push!
+      const isVeryRecent = ageHours <= 24;
+      const recentBonus = isVeryRecent ? (3.0 * (1.0 - (ageHours / 24.0))) : 0.0;
 
       // e) AGGRESSIVE ANTI-REPEAT PENALTIES
-      // 1. Liked penalty: videos already liked should NOT repeat in discovery feed
+      // 1. Liked penalty: videos already liked should NEVER repeat in discovery feed
       const isLiked = likedSet.has(vid.id);
-      const likedPenalty = isLiked ? 350.0 : 0.0;
+      const likedPenalty = isLiked ? 600.0 : 0.0;
 
       // 2. Watched / Seen penalty
       const inClientSeen = clientSeenSet.has(vid.id);
@@ -410,6 +421,7 @@ export async function onRequest(context) {
         + (REELS_ALGO_CONFIG.alpha * creatorAffinity)
         + (REELS_ALGO_CONFIG.beta * popularity)
         + (REELS_ALGO_CONFIG.gamma * freshness)
+        + recentBonus
         - seenPenalty
         - likedPenalty
         + jitter;
