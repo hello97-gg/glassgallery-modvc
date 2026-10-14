@@ -69,7 +69,7 @@ export const AppShowcasePage: React.FC<AppShowcasePageProps> = ({ onBack }) => {
 
   // Fetch real download count from server on mount
   useEffect(() => {
-    fetch('/api/images?action=app_stats')
+    fetch('/api/images?action=app_stats', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         if (data && typeof data.downloadCount === 'number') {
@@ -103,7 +103,11 @@ export const AppShowcasePage: React.FC<AppShowcasePageProps> = ({ onBack }) => {
   // Handle Download Click - increments real download count on the server
   const handleDownloadClick = async () => {
     try {
-      const res = await fetch('/api/images?action=app_download', { method: 'POST' });
+      const res = await fetch('/api/images?action=app_download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
       const data = await res.json();
       if (data && typeof data.downloadCount === 'number') {
         setDownloadCount(data.downloadCount);

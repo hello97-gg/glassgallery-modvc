@@ -84,10 +84,10 @@ export async function onRequest(context) {
             args: []
           });
           const count = res.rows.length > 0 ? (parseInt(res.rows[0].count) || 0) : 0;
-          return Response.json({ success: true, downloadCount: count }, { headers: corsHeaders });
+          return Response.json({ success: true, downloadCount: count }, { headers: { ...corsHeaders, 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
         } catch (e) {
           console.error("Error fetching app stats:", e);
-          return Response.json({ success: true, downloadCount: 0 }, { headers: corsHeaders });
+          return Response.json({ success: true, downloadCount: 0 }, { headers: { ...corsHeaders, 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
         }
       }
 
@@ -101,6 +101,18 @@ export async function onRequest(context) {
           });
         } catch (e) {
           console.error("Error updating app stats:", e);
+        }
+        if (url.searchParams.get('format') === 'json') {
+          try {
+            const res = await db.execute({
+              sql: "SELECT count FROM app_stats WHERE key = 'apk_downloads'",
+              args: []
+            });
+            const count = res.rows.length > 0 ? (parseInt(res.rows[0].count) || 0) : 1;
+            return Response.json({ success: true, downloadCount: count }, { status: 200, headers: { ...corsHeaders, 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
+          } catch {
+            return Response.json({ success: true, downloadCount: 1 }, { status: 200, headers: { ...corsHeaders, 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
+          }
         }
         return Response.redirect("https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/GlassGallery.apk", 302);
       }
@@ -124,14 +136,14 @@ export async function onRequest(context) {
         if (imageId) {
           // Render specific image by ID
           const res = await db.execute({
-            sql: "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images WHERE id = ?",
+            sql: "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images WHERE id = ?",
             args: [imageId]
           });
           if (res.rows.length > 0) targetImage = res.rows[0];
         } else if (category) {
           // Render random image from a category/tag
           const res = await db.execute(
-            "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY uploadedAt DESC"
+            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY uploadedAt DESC"
           );
           const matching = res.rows.filter(row => {
             try {
@@ -145,7 +157,7 @@ export async function onRequest(context) {
         } else {
           // Render completely random image
           const res = await db.execute(
-            "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY RANDOM() LIMIT 1"
+            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY RANDOM() LIMIT 1"
           );
           if (res.rows.length > 0) targetImage = res.rows[0];
         }
@@ -163,7 +175,7 @@ export async function onRequest(context) {
             image: {
               id: targetImage.id,
               imageUrl: targetImage.imageUrl,
-              thumbnailUrl: targetImage.thumbnailUrl || targetImage.imageUrl,
+              thumbnailUrl: targetImage.thumbnailUrl || (targetImage.imageUrl && targetImage.imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? targetImage.imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : targetImage.imageUrl),
               title: targetImage.title || '',
               uploaderName: targetImage.uploaderName || '',
               license: targetImage.license || 'CC0',
@@ -775,9 +787,14 @@ export async function onRequest(context) {
 
       let body = {};
       try {
-        body = await request.json();
+        const text = await request.text();
+        if (text && text.trim().length > 0) {
+          body = JSON.parse(text);
+        }
       } catch (err) {
-        return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400, headers: corsHeaders });
+        if (action !== 'app_download') {
+          return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400, headers: corsHeaders });
+        }
       }
 
       // Action: AI auto-tags
@@ -1347,10 +1364,10 @@ Return the response strictly as a JSON object with this exact format:
             args: []
           });
           const count = res.rows.length > 0 ? (parseInt(res.rows[0].count) || 0) : 1;
-          return Response.json({ success: true, downloadCount: count }, { status: 200, headers: corsHeaders });
+          return Response.json({ success: true, downloadCount: count }, { status: 200, headers: { ...corsHeaders, 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
         } catch (e) {
           console.error("Error incrementing app download count:", e);
-          return Response.json({ success: false, error: e.message }, { status: 500, headers: corsHeaders });
+          return Response.json({ success: false, error: e.message }, { status: 500, headers: { ...corsHeaders, 'Cache-Control': 'no-store, no-cache, must-revalidate' } });
         }
       }
 

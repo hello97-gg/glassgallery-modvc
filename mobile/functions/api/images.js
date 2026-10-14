@@ -94,14 +94,14 @@ export async function onRequest(context) {
         if (imageId) {
           // Render specific image by ID
           const res = await db.execute({
-            sql: "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images WHERE id = ?",
+            sql: "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images WHERE id = ?",
             args: [imageId]
           });
           if (res.rows.length > 0) targetImage = res.rows[0];
         } else if (category) {
           // Render random image from a category/tag
           const res = await db.execute(
-            "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY uploadedAt DESC"
+            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY uploadedAt DESC"
           );
           const matching = res.rows.filter(row => {
             try {
@@ -115,7 +115,7 @@ export async function onRequest(context) {
         } else {
           // Render completely random image
           const res = await db.execute(
-            "SELECT id, imageUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY RANDOM() LIMIT 1"
+            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY RANDOM() LIMIT 1"
           );
           if (res.rows.length > 0) targetImage = res.rows[0];
         }
@@ -133,6 +133,7 @@ export async function onRequest(context) {
             image: {
               id: targetImage.id,
               imageUrl: targetImage.imageUrl,
+              thumbnailUrl: targetImage.thumbnailUrl || (targetImage.imageUrl && targetImage.imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? targetImage.imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : targetImage.imageUrl),
               title: targetImage.title || '',
               uploaderName: targetImage.uploaderName || '',
               license: targetImage.license || 'CC0',
