@@ -144,7 +144,8 @@ const SEOHead: React.FC<SEOHeadProps> = ({
                 {
                     "@type": "ListItem",
                     "position": 3,
-                    "name": title
+                    "name": title,
+                    "item": url || (typeof window !== 'undefined' ? window.location.href : baseUrl)
                 }
             ]
         });
@@ -173,7 +174,8 @@ const SEOHead: React.FC<SEOHeadProps> = ({
                 {
                     "@type": "ListItem",
                     "position": 2,
-                    "name": title.replace("'s Profile", "")
+                    "name": title.replace("'s Profile", ""),
+                    "item": url || (typeof window !== 'undefined' ? window.location.href : baseUrl)
                 }
             ]
         });

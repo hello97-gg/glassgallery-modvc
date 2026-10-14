@@ -1,4 +1,3 @@
-
 import { TERMS_OF_SERVICE, PRIVACY_POLICY, CONTENT_GUIDELINES } from "./api/lib/legalText.js";
 
 function escapeHtml(unsafe) {
@@ -20,6 +19,15 @@ export async function onRequest(context) {
   if (tab === 'privacy') activeTab = 'privacy';
   if (tab === 'guidelines') activeTab = 'guidelines';
 
+  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = new Request(url.toString(), context.request);
+  if (cache) {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    } catch {}
+  }
+
   // Fetch base index.html from static assets
   let indexHtml = "";
   try {
@@ -38,16 +46,16 @@ export async function onRequest(context) {
   }
 
   let title = "Terms of Service";
-  let description = "Read the legally binding Terms of Service for using the Glass Gallery platform, image sharing networks, and APIs.";
+  let description = "Read the official Terms of Service for Glass Gallery. Learn about licensing, user rights, digital ownership, API access, and community acceptable use policies.";
   let content = TERMS_OF_SERVICE;
 
   if (activeTab === 'privacy') {
     title = "Privacy Policy";
-    description = "Understand how Glass Gallery collects, processes, caches, and securely retains your personal data, taste profiles, and uploads.";
+    description = "Explore the Glass Gallery Privacy Policy. Learn how your data is handled, stored, and kept secure across our desktop, web, and native Android applications.";
     content = PRIVACY_POLICY;
   } else if (activeTab === 'guidelines') {
     title = "Content Guidelines";
-    description = "Review the community standards, mature content tagging rules, and acceptable use policies of Glass Gallery.";
+    description = "Review the Glass Gallery Community Guidelines. Understand our standards for acceptable media uploads, copyright compliance, NSFW labeling, and safety rules.";
     content = CONTENT_GUIDELINES;
   }
   const hasTabParam = url.searchParams.has('tab');
@@ -109,7 +117,10 @@ export async function onRequest(context) {
             <span>Glass Gallery <span style="color: #f5c3b8; font-size: 0.85rem; font-weight: 500; border: 1px solid rgba(245, 195, 184, 0.3); padding: 0.15rem 0.4rem; border-radius: 6px; margin-left: 0.25rem;">Legal</span></span>
           </a>
         </div>
-        <a href="/" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #e5e5e5; padding: 0.5rem 1.25rem; border-radius: 12px; font-weight: 600; text-decoration: none; font-size: 0.9rem; transition: all 0.2s;">Back to Feed</a>
+        <nav style="display: flex; gap: 1rem; align-items: center;">
+          <a href="/app" style="color: #f5c3b8; text-decoration: none; font-size: 0.9rem; font-weight: 600;">Android App</a>
+          <a href="/" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: #e5e5e5; padding: 0.5rem 1.25rem; border-radius: 12px; font-weight: 600; text-decoration: none; font-size: 0.9rem; transition: all 0.2s;">Back to Feed</a>
+        </nav>
       </header>
 
       <!-- Main Layout -->
@@ -156,6 +167,7 @@ export async function onRequest(context) {
         <p style="margin: 0;">
           <a href="/" style="color: #a0a0a0; text-decoration: none;">Explore Gallery</a> &bull;
           <a href="/gallery" style="color: #a0a0a0; text-decoration: none;">Gallery Directory</a> &bull;
+          <a href="/app" style="color: #a0a0a0; text-decoration: none;">Android App</a> &bull;
           <a href="/api" style="color: #a0a0a0; text-decoration: none;">API Reference</a> &bull;
           <a href="/legal?tab=terms" style="color: #a0a0a0; text-decoration: none;">Terms of Service</a> &bull;
           <a href="/legal?tab=privacy" style="color: #a0a0a0; text-decoration: none;">Privacy Policy</a> &bull;
@@ -190,11 +202,17 @@ export async function onRequest(context) {
     styledLegalHtml
   );
 
-  return new Response(indexHtml, {
+  const finalResponse = new Response(indexHtml, {
     status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400'
+      'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800'
     }
   });
+
+  if (cache && context.waitUntil) {
+    context.waitUntil(cache.put(cacheKey, finalResponse.clone()).catch(() => {}));
+  }
+
+  return finalResponse;
 }

@@ -171,7 +171,8 @@ const SEOHead: React.FC<SEOHeadProps> = ({
                 {
                     "@type": "ListItem",
                     "position": 3,
-                    "name": title
+                    "name": title,
+                    "item": url || (typeof window !== 'undefined' ? window.location.href : baseUrl)
                 }
             ]
         });

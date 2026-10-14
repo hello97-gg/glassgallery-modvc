@@ -42,9 +42,30 @@ export async function onRequest(context) {
     const staticUrls = [
       { loc: `${baseUrl}/`, lastmod: nowIso, changefreq: "daily", priority: "1.0" },
       { loc: `${baseUrl}/gallery`, lastmod: nowIso, changefreq: "daily", priority: "0.9" },
+      { loc: `${baseUrl}/app`, lastmod: nowIso, changefreq: "weekly", priority: "0.8" },
       { loc: `${baseUrl}/api`, lastmod: nowIso, changefreq: "weekly", priority: "0.7" },
       { loc: `${baseUrl}/legal`, lastmod: nowIso, changefreq: "monthly", priority: "0.5" },
+      { loc: `${baseUrl}/legal?tab=terms`, lastmod: nowIso, changefreq: "monthly", priority: "0.5" },
+      { loc: `${baseUrl}/legal?tab=privacy`, lastmod: nowIso, changefreq: "monthly", priority: "0.5" },
+      { loc: `${baseUrl}/legal?tab=guidelines`, lastmod: nowIso, changefreq: "monthly", priority: "0.5" },
     ];
+
+    try {
+      const db = getDb(context.env);
+      const countRes = await db.execute("SELECT COUNT(*) as count FROM images");
+      const totalImages = countRes.rows[0]?.count || 0;
+      const totalGalleryPages = Math.max(1, Math.ceil(totalImages / 60));
+      for (let p = 2; p <= totalGalleryPages; p++) {
+        staticUrls.push({
+          loc: `${baseUrl}/gallery?page=${p}`,
+          lastmod: nowIso,
+          changefreq: "daily",
+          priority: "0.7"
+        });
+      }
+    } catch (e) {
+      console.warn("[Sitemap Static Pages]", e);
+    }
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -64,19 +85,22 @@ ${staticUrls.map(u => `  <url>
     try {
       const db = getDb(context.env);
       const result = await db.execute(`
-        SELECT uploaderUid, uploaderName FROM users WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != ''
+        SELECT uploaderUid, uploaderName FROM users 
+        WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != '' AND LOWER(uploaderName) NOT IN ('loading...', 'loading', 'anonymous', 'null', 'undefined', 'creator', 'user')
         UNION
-        SELECT DISTINCT uploaderUid, uploaderName FROM images WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != ''
+        SELECT DISTINCT uploaderUid, uploaderName FROM images 
+        WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != '' AND LOWER(uploaderName) NOT IN ('loading...', 'loading', 'anonymous', 'null', 'undefined', 'creator', 'user')
       `);
 
       const nowIso = new Date().toISOString();
       const seenHandles = new Set();
+      const INVALID_HANDLES = new Set(['loading...', 'loading', 'anonymous', 'unknown', 'null', 'undefined', 'creator', 'user']);
       const creatorUrls = [];
 
       for (const row of (result.rows || [])) {
         const rawName = (row.uploaderName || '').trim();
         const handle = rawName.replace(/\s+/g, '').toLowerCase();
-        if (!handle || seenHandles.has(handle)) continue;
+        if (!handle || seenHandles.has(handle) || INVALID_HANDLES.has(handle)) continue;
         seenHandles.add(handle);
 
         creatorUrls.push(`  <url>

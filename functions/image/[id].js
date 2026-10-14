@@ -38,6 +38,15 @@ export async function onRequest(context) {
     });
   }
 
+  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = new Request(url.toString(), context.request);
+  if (cache) {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    } catch {}
+  }
+
   try {
     const db = getDb(context.env);
     let result = await db.execute({
@@ -95,14 +104,14 @@ export async function onRequest(context) {
 
     const uploaderName = escapeHtml((image.uploaderName || "Creator").trim());
     
-    // Guarantee Description length 70 - 155 chars
+    // Guarantee Description length 115 - 158 chars (fixes Ahrefs 'Meta description too short')
     let rawDesc = (image.description || "").trim();
     let description = rawDesc;
-    if (!description || description.length < 70) {
-      description = `View and download high-resolution photograph ${title} by ${uploaderName} on Glass Gallery. Free to share and enjoy in full quality.`;
+    if (!description || description.length < 115) {
+      description = `Explore and download high-resolution photograph ${title} by ${uploaderName} on Glass Gallery. Free to view, share, and enjoy in stunning visual clarity.`;
     }
-    if (description.length > 155) {
-      description = description.slice(0, 152) + '...';
+    if (description.length > 158) {
+      description = description.slice(0, 155) + '...';
     }
 
     const LICENSE_URLS = {
@@ -116,6 +125,7 @@ export async function onRequest(context) {
     };
 
     const imageUrl = image.imageUrl || "";
+    const thumbUrl = image.thumbnailUrl || (imageUrl && imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : imageUrl);
     const location = image.location || "";
     const license = (image.license || "CC0").trim();
     const rawLicense = license;
@@ -139,7 +149,7 @@ export async function onRequest(context) {
       "url": pageUrl,
       "name": title,
       "description": description,
-      "thumbnail": imageUrl,
+      "thumbnailUrl": thumbUrl,
       "license": licenseUrl,
       "acquireLicensePage": pageUrl,
       "creditText": creditName,
@@ -161,13 +171,14 @@ export async function onRequest(context) {
     }
     schemas.push(imageObjectSchema);
 
+    // Schema.org BreadcrumbList with required 'item' property on every ListItem (fixes 4504 schema errors)
     schemas.push({
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",
       "itemListElement": [
         { "@type": "ListItem", "position": 1, "name": "Glass Gallery", "item": baseUrl },
         { "@type": "ListItem", "position": 2, "name": "Gallery Archive", "item": `${baseUrl}/gallery` },
-        { "@type": "ListItem", "position": 3, "name": title }
+        { "@type": "ListItem", "position": 3, "name": title, "item": pageUrl }
       ]
     });
 
@@ -203,6 +214,9 @@ export async function onRequest(context) {
     <meta property="og:title" content="${escapeHtml(seoTitle)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
     <meta property="og:url" content="${pageUrl}" />
+    <meta property="og:image" content="${thumbUrl || imageUrl}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="${isVideo ? '675' : '800'}" />
     <meta property="article:author" content="${uploaderName}" />
     ${image.uploadedAt ? `<meta property="article:published_time" content="${escapeHtml(image.uploadedAt)}" />` : ''}
     
@@ -212,17 +226,11 @@ export async function onRequest(context) {
     <meta property="og:video:type" content="video/mp4" />
     <meta property="og:video:width" content="1280" />
     <meta property="og:video:height" content="720" />
-    <meta name="twitter:card" content="player" />
-    <meta name="twitter:player" content="${pageUrl}" />
-    <meta name="twitter:player:stream" content="${imageUrl}" />
-    <meta name="twitter:player:stream:content_type" content="video/mp4" />
-    <meta name="twitter:player:width" content="1280" />
-    <meta name="twitter:player:height" content="720" />
-    <meta name="twitter:image" content="${baseUrl}/web-app-manifest-512x512.png" />
-    ` : `
-    <meta property="og:image" content="${imageUrl}" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="${imageUrl}" />
+    <meta name="twitter:image" content="${thumbUrl || `${baseUrl}/web-app-manifest-512x512.png`}" />
+    ` : `
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="${thumbUrl || imageUrl}" />
     `}
     <meta name="twitter:title" content="${escapeHtml(seoTitle)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
@@ -296,7 +304,7 @@ export async function onRequest(context) {
         
         <!-- Semantic Image Details List -->
         <ul style="list-style: none; padding: 0; margin: 1.5rem 0 0 0; color: #a0a0a0; display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center; font-size: 0.9rem;">
-          <li><strong>Photographer:</strong> ${uploaderName}</li>
+          <li><strong>Photographer:</strong> <a href="${baseUrl}/@${escapeHtml((image.uploaderName || '').replace(/\s+/g, '').toLowerCase())}" style="color: #f5c3b8; text-decoration: underline;">${uploaderName}</a></li>
           ${location ? `<li><strong>Location:</strong> ${escapeHtml(location)}</li>` : ''}
           <li><strong>License:</strong> <a href="${escapeHtml(licenseUrl)}" target="_blank" rel="noopener noreferrer" style="color: #f5c3b8; text-decoration: underline;">${escapeHtml(license)} License</a></li>
           ${image.originalWorkUrl ? `<li><strong>Credit / Source:</strong> <a href="${escapeHtml(image.originalWorkUrl)}" target="_blank" rel="noopener noreferrer" style="color: #f5c3b8; text-decoration: underline;">View Source</a></li>` : ''}
@@ -327,7 +335,7 @@ export async function onRequest(context) {
                     <img src="${escapeHtml(img.imageUrl)}" alt="${escapeHtml(img.title || 'Photograph')} by ${escapeHtml(img.uploaderName || 'Creator')}" width="280" height="180" loading="lazy" style="width: 100%; height: 180px; object-fit: cover; display: block;" />
                     <div style="padding: 0.75rem 1rem;">
                       <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0 0 0.25rem 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(img.title || 'Untitled Image')}</h3>
-                      <span style="font-size: 0.8rem; color: #888;">By ${escapeHtml(img.uploaderName || 'Creator')}</span>
+                      <a href="${baseUrl}/@${escapeHtml((img.uploaderName || '').replace(/\s+/g, '').toLowerCase())}" style="font-size: 0.8rem; color: #f5c3b8; text-decoration: none;">By ${escapeHtml(img.uploaderName || 'Creator')}</a>
                     </div>
                   </a>
                 </li>
@@ -341,6 +349,7 @@ export async function onRequest(context) {
           <p>
             <a href="${baseUrl}/" style="color: #aaa; text-decoration: none;">Explore Gallery</a> &bull;
             <a href="${baseUrl}/gallery" style="color: #aaa; text-decoration: none;">Gallery Directory</a> &bull;
+            <a href="${baseUrl}/app" style="color: #aaa; text-decoration: none;">Android App</a> &bull;
             <a href="${baseUrl}/api" style="color: #aaa; text-decoration: none;">API Documentation</a> &bull;
             <a href="${baseUrl}/legal?tab=terms" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Terms of Service</a> &bull;
             <a href="${baseUrl}/legal?tab=privacy" style="color: #888; text-decoration: none; margin: 0 0.5rem;">Privacy Policy</a> &bull;
@@ -363,13 +372,19 @@ export async function onRequest(context) {
     indexHtml = indexHtml.replace(/(src|href)="\/apple-touch-icon/gi, `$1="${baseUrl}/apple-touch-icon`);
     indexHtml = indexHtml.replace(/href="\/site\.webmanifest"/gi, `href="${baseUrl}/site.webmanifest"`);
 
-    return new Response(indexHtml, {
+    const finalResponse = new Response(indexHtml, {
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=UTF-8',
-        'Cache-Control': 's-maxage=3600, stale-while-revalidate=86400'
+        'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800'
       }
     });
+
+    if (cache && context.waitUntil) {
+      context.waitUntil(cache.put(cacheKey, finalResponse.clone()).catch(() => {}));
+    }
+
+    return finalResponse;
 
   } catch (error) {
     console.error("[og-image] SSR Error:", error);

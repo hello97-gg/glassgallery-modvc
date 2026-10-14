@@ -59,12 +59,21 @@ export const onRequest = async (context) => {
         ? atMatch[1]
         : (directMatch && !RESERVED_ROUTES.has(directMatch[1].toLowerCase()) ? directMatch[1] : null);
 
+      const INVALID_HANDLES = new Set(['loading...', 'loading', 'anonymous', 'unknown', 'null', 'undefined', 'creator', 'user']);
+      const cleanUser = usernameParam ? usernameParam.replace(/^@/, '').trim().toLowerCase() : '';
+
+      if (cleanUser && INVALID_HANDLES.has(cleanUser)) {
+        return new Response(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>404 - Profile Not Found | Glass Gallery</title><meta name="robots" content="noindex, follow" /><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" /><link rel="icon" type="image/x-icon" href="/favicon.ico" /></head><body style="background:#181818;color:#e5e5e5;font-family:system-ui,sans-serif;text-align:center;padding:4rem;"><h1>404 - Profile Not Found</h1><p style="color:#a0a0a0;margin:1rem 0 2rem;">The requested creator profile does not exist.</p><a href="/gallery" style="display:inline-block;background:#f5c3b8;color:#181818;padding:0.75rem 1.5rem;border-radius:999px;text-decoration:none;font-weight:600;">Browse Gallery Archive</a></body></html>`, {
+          status: 404,
+          headers: { 'Content-Type': 'text/html; charset=UTF-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+        });
+      }
+
       let handledWithProfileSsr = false;
 
-      if (usernameParam) {
+      if (cleanUser) {
         try {
           const db = getDb(context.env);
-          const cleanUser = usernameParam.replace(/^@/, '').trim().toLowerCase();
           
           let result = await db.execute({
             sql: "SELECT * FROM users WHERE LOWER(REPLACE(uploaderName, ' ', '')) = LOWER(?) OR LOWER(uploaderName) = LOWER(?) LIMIT 1",
@@ -83,8 +92,6 @@ export const onRequest = async (context) => {
             const creatorUid = creator.uploaderUid;
             const name = escapeHtml(creator.uploaderName || cleanUser);
             const handle = escapeHtml((creator.uploaderName || cleanUser).replace(/\s+/g, '').toLowerCase());
-            const rawBio = creator.bio ? creator.bio.trim() : `Explore creative visuals and HD wallpaper photography by ${name} on Glass Gallery.`;
-            const desc = escapeHtml(rawBio.slice(0, 160));
             const photo = creator.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
             const profileUrl = `https://gg.modvc.org/@${handle}`;
 
@@ -115,6 +122,9 @@ export const onRequest = async (context) => {
               }
             }
 
+            let profileDesc = `Explore creative visuals and HD photography by ${name} on Glass Gallery. Featuring ${uploadCount} original showcases and ${totalLikes} community likes.`;
+            if (profileDesc.length > 158) profileDesc = profileDesc.slice(0, 155) + '...';
+
             // Fetch index.html
             const assetUrl = new URL(request.url);
             assetUrl.pathname = '/index.html';
@@ -123,17 +133,19 @@ export const onRequest = async (context) => {
               let html = await indexRes.text();
 
               const metaTags = `<title>${name} (@${handle}) | Glass Gallery</title>
-    <meta name="description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
+    <meta name="description" content="${escapeHtml(profileDesc)}" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <link rel="canonical" href="${profileUrl}" />
     <meta property="og:title" content="${name} (@${handle}) | Glass Gallery" />
-    <meta property="og:description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
+    <meta property="og:description" content="${escapeHtml(profileDesc)}" />
     <meta property="og:image" content="${photo}" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
     <meta property="og:url" content="${profileUrl}" />
     <meta property="og:type" content="profile" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="${name} (@${handle}) | Glass Gallery" />
-    <meta name="twitter:description" content="${desc} – ${uploadCount} uploads, ${totalLikes} likes." />
+    <meta name="twitter:description" content="${escapeHtml(profileDesc)}" />
     <meta name="twitter:image" content="${photo}" />
     <script type="application/ld+json">
     {
@@ -145,8 +157,18 @@ export const onRequest = async (context) => {
         "alternateName": "@${handle}",
         "url": "${profileUrl}",
         "image": "${photo}",
-        "description": "${desc}"
+        "description": "${escapeHtml(profileDesc)}"
       }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Glass Gallery", "item": "https://gg.modvc.org" },
+        { "@type": "ListItem", "position": 2, "name": "${name}", "item": "${profileUrl}" }
+      ]
     }
     </script>
     <script>
@@ -154,28 +176,59 @@ export const onRequest = async (context) => {
       window.__PRELOADED_CREATOR_IMAGES__ = ${JSON.stringify(creatorImages)};
     </script>`;
 
-              html = html.replace(/<title>.*?<\/title>/i, metaTags);
+              if (html.includes('<!-- SEO_META_START -->')) {
+                html = html.replace(/<!-- SEO_META_START -->[\s\S]*?<!-- SEO_META_END -->/, metaTags);
+              } else {
+                html = html.replace(/<title>.*?<\/title>/i, metaTags);
+              }
 
-              // Server-rendered crawlable HTML inside #root so web crawlers index creator data and images immediately
+              if (html.includes('<!-- JSON_LD_START -->')) {
+                html = html.replace(/<!-- JSON_LD_START -->[\s\S]*?<!-- JSON_LD_END -->/, '');
+              }
+
               const imageLinks = creatorImages.map(img => 
-                `<li><a href="https://gg.modvc.org/image/${escapeHtml(img.id)}">${escapeHtml(img.title || 'Untitled artwork')}</a></li>`
+                `<li>
+                  <a href="https://gg.modvc.org/image/${escapeHtml(img.id)}" style="display: block; text-decoration: none; color: inherit; background: #222; border-radius: 12px; overflow: hidden; border: 1px solid #333;">
+                    <img src="${escapeHtml(img.imageUrl)}" alt="${escapeHtml(img.title || 'Artwork')}" width="280" height="180" loading="lazy" style="width: 100%; height: 180px; object-fit: cover; display: block;" />
+                    <div style="padding: 0.75rem 1rem;">
+                      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(img.title || 'Untitled artwork')}</h3>
+                    </div>
+                  </a>
+                </li>`
               ).join('');
 
-              const ssrBody = `<div id="ssr-profile" style="position:absolute;left:-9999px;top:-9999px;opacity:0;pointer-events:none;" aria-hidden="true">
-                <h1>${name} (@${handle})</h1>
-                <p>${desc}</p>
-                <p>Stats: ${uploadCount} Uploads &bull; ${totalLikes} Likes &bull; ${totalDownloads} Downloads</p>
-                <a href="${profileUrl}">View ${name}'s Profile on Glass Gallery</a>
-                ${imageLinks ? `<h2>Uploads by ${name}</h2><ul>${imageLinks}</ul>` : ''}
-              </div>`;
+              const profileSsrHtml = `
+                <div style="max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; color: #e5e5e5; font-family: system-ui, sans-serif;">
+                  <header style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 2rem; border-bottom: 1px solid #282828; padding-bottom: 2rem;">
+                    <img src="${photo}" alt="${name}" width="96" height="96" style="border-radius: 50%; object-fit: cover; border: 2px solid #f5c3b8;" />
+                    <div>
+                      <h1 style="font-size: 1.75rem; font-weight: 800; margin: 0 0 0.5rem 0; color: #ffffff;">${name} (@${handle})</h1>
+                      <p style="margin: 0 0 0.75rem 0; color: #a0a0a0; max-width: 600px; line-height: 1.5;">${escapeHtml(profileDesc)}</p>
+                      <div style="font-size: 0.9rem; color: #f5c3b8; font-weight: 600;">
+                        ${uploadCount} Uploads &bull; ${totalLikes} Likes &bull; ${totalDownloads} Downloads
+                      </div>
+                    </div>
+                  </header>
+                  ${imageLinks ? `
+                    <section>
+                      <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 1.5rem; color: #ffffff;">Uploads by ${name}</h2>
+                      <ul style="list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.25rem;">
+                        ${imageLinks}
+                      </ul>
+                    </section>
+                  ` : ''}
+                </div>
+              `;
 
-              html = html.replace('<div id="root">', `<div id="root">${ssrBody}`);
+              if (html.includes('<!-- SKELETON_START -->')) {
+                html = html.replace(/<!-- SKELETON_START -->[\s\S]*?<!-- SKELETON_END -->/, profileSsrHtml);
+              }
 
               response = new Response(html, {
                 status: 200,
                 headers: {
                   'Content-Type': 'text/html; charset=UTF-8',
-                  'Cache-Control': 'public, max-age=600, s-maxage=3600'
+                  'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800'
                 }
               });
               handledWithProfileSsr = true;

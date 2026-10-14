@@ -18,6 +18,15 @@ export async function onRequest(context) {
   const offset = (page - 1) * limit;
   const baseUrl = "https://gg.modvc.org";
 
+  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = new Request(url.toString(), context.request);
+  if (cache) {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    } catch {}
+  }
+
   try {
     const db = getDb(context.env);
 
@@ -36,6 +45,32 @@ export async function onRequest(context) {
     const pageUrl = page === 1 ? `${baseUrl}/gallery` : `${baseUrl}/gallery?page=${page}`;
     const prevUrl = page > 1 ? (page === 2 ? `${baseUrl}/gallery` : `${baseUrl}/gallery?page=${page - 1}`) : null;
     const nextUrl = page < totalPages ? `${baseUrl}/gallery?page=${page + 1}` : null;
+
+    let creatorsHtml = '';
+    if (page === 1) {
+      try {
+        const topCreatorsRes = await db.execute(`
+          SELECT uploaderName, COUNT(*) as cnt FROM images 
+          WHERE uploaderName IS NOT NULL AND TRIM(uploaderName) != '' AND LOWER(uploaderName) NOT IN ('loading...', 'loading', 'anonymous', 'null', 'undefined')
+          GROUP BY uploaderName ORDER BY cnt DESC LIMIT 16
+        `);
+        if (topCreatorsRes.rows?.length > 0) {
+          creatorsHtml = `
+            <section style="margin-bottom: 2.5rem; padding: 1.25rem 1.5rem; background: #202020; border: 1px solid #303030; border-radius: 16px;">
+              <h2 style="font-size: 1.15rem; font-weight: 700; margin: 0 0 1rem 0; color: #ffffff;">Featured Photographers &amp; Creators</h2>
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                ${topCreatorsRes.rows.map(c => {
+                  const cHandle = escapeHtml(c.uploaderName.replace(/\s+/g, '').toLowerCase());
+                  return `<a href="${baseUrl}/@${cHandle}" style="display: inline-flex; align-items: center; gap: 0.5rem; background: #282828; border: 1px solid #383838; padding: 0.4rem 0.85rem; border-radius: 999px; text-decoration: none; color: #e5e5e5; font-size: 0.85rem; font-weight: 500;"><span style="color: #f5c3b8; font-weight: 700;">@${cHandle}</span><span style="color: #888; font-size: 0.75rem;">(${c.cnt})</span></a>`;
+                }).join('')}
+              </div>
+            </section>
+          `;
+        }
+      } catch (cErr) {
+        console.warn("[Gallery Creators]", cErr);
+      }
+    }
 
     // Generate crawlable pagination links with milestones so all pages are <= 2 clicks away
     const paginationSet = new Set();
@@ -64,6 +99,8 @@ export async function onRequest(context) {
       lastP = p;
     }
 
+    const description = `Browse page ${page} of Glass Gallery's comprehensive photo archive. Discover and download thousands of high-resolution astrophotography, wallpapers, and creative photography showcases.`;
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,7 +117,7 @@ export async function onRequest(context) {
   </script>
 
   <title>Gallery Archive – Page ${page} of ${totalPages} | Glass Gallery</title>
-  <meta name="description" content="Browse page ${page} of Glass Gallery's comprehensive photo archive. Explore over ${totalCount} high-resolution astrophotography, wallpaper, and photography showcases." />
+  <meta name="description" content="${description}" />
   <link rel="canonical" href="${pageUrl}" />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
   ${prevUrl ? `<link rel="prev" href="${prevUrl}" />` : ''}
@@ -93,7 +130,7 @@ export async function onRequest(context) {
   <meta property="og:site_name" content="Glass Gallery" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Gallery Archive – Page ${page} | Glass Gallery" />
-  <meta property="og:description" content="Explore page ${page} of high-resolution images and wallpapers on Glass Gallery." />
+  <meta property="og:description" content="${description}" />
   <meta property="og:url" content="${pageUrl}" />
   <meta property="og:image" content="${baseUrl}/web-app-manifest-512x512.png" />
   <meta property="og:image:width" content="512" />
@@ -102,7 +139,7 @@ export async function onRequest(context) {
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:site" content="@GlassGallery" />
   <meta name="twitter:title" content="Gallery Archive – Page ${page} | Glass Gallery" />
-  <meta name="twitter:description" content="Explore page ${page} of high-resolution images and wallpapers on Glass Gallery." />
+  <meta name="twitter:description" content="${description}" />
   <meta name="twitter:image" content="${baseUrl}/web-app-manifest-512x512.png" />
 
   <style>
@@ -283,6 +320,7 @@ export async function onRequest(context) {
     <nav>
       <a href="${baseUrl}/">Explore Gallery</a>
       <a href="${baseUrl}/gallery" class="active">Gallery Directory</a>
+      <a href="${baseUrl}/app">Android App</a>
       <a href="${baseUrl}/api">API Reference</a>
       <a href="${baseUrl}/legal?tab=terms">Terms of Service</a>
       <a href="${baseUrl}/legal?tab=privacy">Privacy Policy</a>
@@ -297,10 +335,13 @@ export async function onRequest(context) {
     <h1>Gallery Archive – Page ${page} of ${totalPages}</h1>
     <p class="subtitle">Complete crawlable directory of <strong>${totalCount.toLocaleString()}</strong> community photographs, astrophotography captures, and wallpapers.</p>
 
+    ${creatorsHtml}
+
     <ul class="grid" style="list-style: none; padding: 0; margin: 0 0 3rem 0;">
       ${images.map(img => {
         const title = escapeHtml(img.title ? img.title.charAt(0).toUpperCase() + img.title.slice(1) : "Untitled Showcase");
         const uploader = escapeHtml(img.uploaderName || "Glass Gallery Creator");
+        const handle = escapeHtml((img.uploaderName || '').replace(/\s+/g, '').toLowerCase());
         const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(img.imageUrl || "");
         const mediaTag = isVideo
           ? `<div style="position:relative; width:100%; height:200px; background:#000; overflow:hidden;">
@@ -334,6 +375,7 @@ export async function onRequest(context) {
     <p>
       <a href="${baseUrl}/">Explore Gallery</a> &bull;
       <a href="${baseUrl}/gallery">Gallery Directory</a> &bull;
+      <a href="${baseUrl}/app">Android App</a> &bull;
       <a href="${baseUrl}/api">API Documentation</a> &bull;
       <a href="${baseUrl}/legal?tab=terms">Terms of Service</a> &bull;
       <a href="${baseUrl}/legal?tab=privacy">Privacy Policy</a>
@@ -342,13 +384,19 @@ export async function onRequest(context) {
 </body>
 </html>`;
 
-    return new Response(html, {
+    const finalResponse = new Response(html, {
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=UTF-8',
-        'Cache-Control': 's-maxage=3600, stale-while-revalidate=86400'
+        'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800'
       }
     });
+
+    if (cache && context.waitUntil) {
+      context.waitUntil(cache.put(cacheKey, finalResponse.clone()).catch(() => {}));
+    }
+
+    return finalResponse;
 
   } catch (error) {
     console.error("[gallery-directory] Error:", error);
