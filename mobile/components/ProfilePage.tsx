@@ -970,6 +970,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
             followersCount={followersCount} 
             followingCount={followingCount} 
             onImageClick={onImageClick}
+            profileUser={profileData}
           />
         )}
       </div>

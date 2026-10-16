@@ -26,6 +26,13 @@ export const onRequest = async (context) => {
     return Response.redirect(url.toString(), 301);
   }
 
+  // Legacy view parameter 301 redirect (e.g. /?view=api -> /api, /?view=gallery -> /gallery)
+  const viewParam = url.searchParams.get('view');
+  if (viewParam && ['api', 'gallery', 'app', 'legal'].includes(viewParam.toLowerCase())) {
+    const targetUrl = new URL(`/${viewParam.toLowerCase()}`, url.origin);
+    return Response.redirect(targetUrl.toString(), 301);
+  }
+
   // Execute next middleware or route handler
   let response;
   try {

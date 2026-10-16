@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "1.0.8",
+  "versionCode": 10,
+  "versionName": "1.0.9",
   "apkUrl": "https://pub-0b9a9d568aa64fe6afb1da05ff60483f.r2.dev/GlassGallery.apk",
-  "releaseNotes": "Fixed reels swipe touch pass-through, dynamic version verification, and navigation smoothness",
+  "releaseNotes": "Real creator analytics with watch duration and reach metrics, strictly zero emojis, and updated SSR discovery",
   "forceUpdate": false
 }

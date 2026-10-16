@@ -362,3 +362,40 @@ export const setReelsDebug = (enabled: boolean): void => {
     localStorage.setItem('gg_reels_debug', enabled ? 'true' : 'false');
   } catch {}
 };
+
+// -------------------------------------------------------------------
+// Creator Studio Video Analytics
+// -------------------------------------------------------------------
+
+export interface CreatorVideoStats {
+  totalVideos: number;
+  totalPlays: number;
+  totalWatchMs: number;
+  avgWatchMs: number;
+  overallCompletionRate: number;
+  totalCompletions: number;
+  totalLoops: number;
+  videoStats: Record<string, {
+    plays: number;
+    totalWatchMs: number;
+    avgWatchMs: number;
+    completions: number;
+    loops: number;
+    completionRate: number;
+  }>;
+}
+
+export const getCreatorVideoStats = async (uploaderUid: string): Promise<CreatorVideoStats | null> => {
+  if (!uploaderUid) return null;
+  try {
+    const res = await fetch(`${getReelsApiBase()}/api/reels?action=creator_stats&uploaderUid=${encodeURIComponent(uploaderUid)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.success && data.stats) {
+      return data.stats as CreatorVideoStats;
+    }
+  } catch (err) {
+    console.warn("[Reels] Failed to fetch creator video stats:", err);
+  }
+  return null;
+};
