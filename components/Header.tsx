@@ -73,8 +73,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
           </svg>
         </NavItem>
         <NavItem label="Reels" active={activeView === 'reels'} onClick={() => setView('reels')}>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill={activeView === 'reels' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={activeView === 'reels' ? 0 : 2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v3h3.5l1.5-3H4zm6.5 0l-1.5 3h4.5l1.5-3H10.5zm7.5 0l-1.5 3H20V6h-2zm2 5H4v7h16v-7zm-10 1.5l5 3-5 3v-6z"/>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <rect x="2.5" y="3" width="19" height="18" rx="4" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
+            <line x1="2.5" y1="8" x2="21.5" y2="8" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
+            <line x1="7.5" y1="3" x2="5.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+            <line x1="13" y1="3" x2="11" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+            <line x1="18.5" y1="3" x2="16.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+            <polygon points="10,11.5 15.5,14.5 10,17.5" fill={activeView === 'reels' ? "currentColor" : "none"} strokeWidth={activeView === 'reels' ? 1.5 : 1.75} strokeLinejoin="round" />
           </svg>
         </NavItem>
         <NavItem label="Explore" active={activeView === 'explore'} onClick={() => setView('explore')}>

@@ -79,7 +79,7 @@ const API_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
 const APP_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='none'%3E%3Crect width='512' height='512' rx='115' fill='%2318161B'/%3E%3Ccircle cx='256' cy='256' r='160' fill='%23F5C3B8'/%3E%3Ccircle cx='256' cy='256' r='88' fill='%2318161B'/%3E%3Ccircle cx='256' cy='256' r='88' stroke='%23FFFFFF' stroke-width='26'/%3E%3Ccircle cx='256' cy='256' r='32' fill='%23F5C3B8'/%3E%3Ccircle cx='336' cy='176' r='18' fill='%2318161B'/%3E%3C/svg%3E`;
 
 // Reels Clapperboard Icon
-const REELS_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f5c3b8'%3E%3Cpath d='M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v3h3.5l1.5-3H4zm6.5 0l-1.5 3h4.5l1.5-3H10.5zm7.5 0l-1.5 3H20V6h-2zm2 5H4v7h16v-7zm-10 1.5l5 3-5 3v-6z'/%3E%3C/svg%3E`;
+const REELS_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5c3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.5' y='3' width='19' height='18' rx='4'/%3E%3Cline x1='2.5' y1='8' x2='21.5' y2='8'/%3E%3Cline x1='7.5' y1='3' x2='5.5' y2='8'/%3E%3Cline x1='13' y1='3' x2='11' y2='8'/%3E%3Cline x1='18.5' y1='3' x2='16.5' y2='8'/%3E%3Cpolygon points='10,11.5 15.5,14.5 10,17.5' fill='%23f5c3b8'/%3E%3C/svg%3E`;
 
 
 // --- Skeleton Components for Initial Load ---

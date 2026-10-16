@@ -14,14 +14,13 @@ import {
   getCommentsForImage, 
   addCommentToImage, 
   toggleCommentLike,
-  editComment,
   deleteComment
 } from '../services/firestoreService';
 import Spinner from './Spinner';
 import { downloadMedia } from '../services/mediaDownloader';
 import { isVideoUrl } from '../utils/mediaUtils';
 
-// Dark poster to prevent vendor gray flash
+// Clean flat dark SVG data poster to eliminate Chromium vendor gray placeholder
 const DARK_VIDEO_POSTER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%23121212'/%3E%3C/svg%3E";
 
 interface ReelsPageProps {
@@ -54,32 +53,36 @@ const formatTime = (seconds: number): string => {
 const extractReelsFromImages = (images: ImageMeta[], userUid?: string | null, startId?: string | null): ReelItem[] => {
   const videoImages = images.filter(img => {
     const u = img.imageUrl || '';
-    const flags = img.flags || [];
-    return isVideoUrl(u) || flags.includes('Video') || flags.includes('Reels') || u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i);
+    return isVideoUrl(u) || !!u.match(/\.(mp4|webm|mov|ogg|avi|mkv|m4v)(\?.*)?$/i);
   });
 
-  let mapped: ReelItem[] = videoImages.map(img => ({
-    id: img.id,
-    videoUrl: img.imageUrl,
-    poster: img.thumbnailUrl || img.imageUrl,
-    width: img.width || 1080,
-    height: img.height || 1920,
-    duration: 15,
-    title: img.title || 'Reels',
-    description: img.description || '',
-    uploaderUid: img.uploaderUid,
-    uploaderName: img.uploaderName || 'Creator',
-    uploaderPhotoURL: img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName || 'Creator'}`,
-    tags: img.flags || [],
-    concepts: img.aiConcepts || [],
-    likeCount: typeof img.likeCount === 'number' ? img.likeCount : (img.likedBy?.length || 0),
-    commentCount: img.commentCount || 0,
-    shareCount: 0,
-    hasLiked: !!(userUid && img.likedBy?.includes(userUid)),
-    hasSaved: false,
-    isFollowing: false,
-    uploadedAt: img.uploadedAt
-  }));
+  let mapped: ReelItem[] = videoImages.map(img => {
+    const isPosterVideo = isVideoUrl(img.thumbnailUrl || '');
+    const safePoster = !isPosterVideo && img.thumbnailUrl ? img.thumbnailUrl : undefined;
+
+    return {
+      id: img.id,
+      videoUrl: img.imageUrl,
+      poster: safePoster,
+      width: img.width || 1080,
+      height: img.height || 1920,
+      duration: 15,
+      title: img.title || 'Reels',
+      description: img.description || '',
+      uploaderUid: img.uploaderUid,
+      uploaderName: img.uploaderName || 'Creator',
+      uploaderPhotoURL: img.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${img.uploaderName || 'Creator'}`,
+      tags: img.flags || [],
+      concepts: img.aiConcepts || [],
+      likeCount: typeof img.likeCount === 'number' ? img.likeCount : (img.likedBy?.length || 0),
+      commentCount: img.commentCount || 0,
+      shareCount: 0,
+      hasLiked: !!(userUid && img.likedBy?.includes(userUid)),
+      hasSaved: false,
+      isFollowing: false,
+      uploadedAt: img.uploadedAt
+    };
+  });
 
   if (startId) {
     const target = mapped.find(v => v.id.split('_loop_')[0] === startId.split('_loop_')[0]);
@@ -164,8 +167,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   const [commentText, setCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [replyToComment, setReplyToComment] = useState<{ id: string; userName: string } | null>(null);
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editCommentText, setEditCommentText] = useState('');
 
   // Toast message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -189,6 +190,17 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   const watchStartTimeRef = useRef<number>(Date.now());
   const loopCountRef = useRef<number>(0);
   const prevActiveIndexRef = useRef(-1);
+
+  // Wheel cooldown guard for buttery desktop wheel scrolling
+  const wheelLockRef = useRef(false);
+  const wheelTimerRef = useRef<any>(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTimerRef = useRef<any>(null);
+  const scrollTimeoutRef = useRef<any>(null);
+
+  // Touch tracking for mobile swipe
+  const touchStartY = useRef<number>(0);
+  const touchDeltaY = useRef<number>(0);
 
   // Sync follow list
   useEffect(() => {
@@ -362,6 +374,12 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     setCurrentIndex(nextIdx);
     handleReelTransition(prevIdx, nextIdx);
 
+    isProgrammaticScrollRef.current = true;
+    if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+    programmaticScrollTimerRef.current = setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 450);
+
     const container = containerRef.current;
     if (container) {
       const h = container.clientHeight || window.innerHeight;
@@ -369,43 +387,50 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
   }, [currentIndex, reels.length, handleReelTransition]);
 
-  // Active Video Playback Synchronization
+  // Active Video Playback Synchronization & Autoplay Trigger
+  const playActiveVideo = useCallback(() => {
+    const video = videoRefs.current.get(currentIndex);
+    if (!video) return;
+
+    video.muted = isMuted;
+    video.volume = volume;
+    video.playbackRate = speed;
+
+    if (isPlaying) {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          // Autoplay with audio was blocked by browser policy; fallback to muted autoplay
+          if (!video.muted) {
+            video.muted = true;
+            setIsMuted(true);
+            video.play().catch(() => {});
+          }
+        });
+      }
+    } else {
+      video.pause();
+    }
+  }, [currentIndex, isPlaying, isMuted, volume, speed]);
+
   useEffect(() => {
     const isNewReel = prevActiveIndexRef.current !== currentIndex;
     prevActiveIndexRef.current = currentIndex;
 
     videoRefs.current.forEach((video, idx) => {
       if (idx === currentIndex) {
-        video.muted = isMuted;
-        video.volume = volume;
-        video.playbackRate = speed;
         if (isNewReel) {
           video.currentTime = 0;
         }
-        if (isPlaying) {
-          const playPromise = video.play();
-          if (playPromise !== undefined) {
-            playPromise.catch(() => {
-              // Browser autoplay policy might require mute
-              if (!video.muted) {
-                video.muted = true;
-                setIsMuted(true);
-                video.play().catch(() => {});
-              }
-            });
-          }
-        } else {
-          video.pause();
-        }
+        playActiveVideo();
       } else if (Math.abs(idx - currentIndex) === 1) {
-        // Pre-warm neighbouring videos for instant zero-latency switch
         video.pause();
         if (video.preload !== 'auto') video.preload = 'auto';
       } else {
         video.pause();
       }
     });
-  }, [currentIndex, isPlaying, isMuted, volume, speed]);
+  }, [currentIndex, isPlaying, isMuted, volume, speed, reels.length, playActiveVideo]);
 
   // Time update listener on active video
   useEffect(() => {
@@ -522,33 +547,37 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     const currentReel = reels[currentIndex];
     if (!currentReel) return;
 
+    const baseId = currentReel.id.split('_loop_')[0].split('_c')[0];
     const nextLiked = !currentReel.hasLiked;
     const nextCount = Math.max(0, currentReel.likeCount + (nextLiked ? 1 : -1));
 
-    // Optimistic UI
+    // Optimistic UI update
     setReels(prev => prev.map((r, i) => i === currentIndex ? {
       ...r,
       hasLiked: nextLiked,
       likeCount: nextCount
     } : r));
 
+    const asImageMeta: ImageMeta = {
+      id: baseId,
+      imageUrl: currentReel.videoUrl,
+      title: currentReel.title,
+      description: currentReel.description || '',
+      uploaderUid: currentReel.uploaderUid,
+      uploaderName: currentReel.uploaderName,
+      uploaderPhotoURL: currentReel.uploaderPhotoURL || '',
+      likedBy: currentReel.hasLiked ? [user.uid] : [], // Pass pre-toggle state so App.tsx correctly inverts it
+      likeCount: currentReel.likeCount,
+      flags: currentReel.tags,
+      license: 'Free',
+      uploadedAt: currentReel.uploadedAt || ({} as any)
+    };
+
     if (onLikeToggle) {
-      const asImageMeta: ImageMeta = {
-        id: currentReel.id,
-        imageUrl: currentReel.videoUrl,
-        title: currentReel.title,
-        description: currentReel.description || '',
-        uploaderUid: currentReel.uploaderUid,
-        uploaderName: currentReel.uploaderName,
-        uploaderPhotoURL: currentReel.uploaderPhotoURL || '',
-        likedBy: nextLiked ? [user.uid] : [],
-        likeCount: nextCount,
-        flags: currentReel.tags
-      };
       onLikeToggle(asImageMeta);
     } else {
       try {
-        await toggleImageLike(currentReel.id, user.uid);
+        await toggleImageLike({ ...asImageMeta, id: baseId }, user);
       } catch (err) {
         console.warn("Reel like error:", err);
       }
@@ -582,7 +611,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     const y = e.clientY - rect.top;
 
     if (tapTimeoutRef.current) {
-      // Double tap!
       clearTimeout(tapTimeoutRef.current);
       tapTimeoutRef.current = null;
       handleDoubleTap(x, y);
@@ -593,6 +621,97 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       }, 250);
     }
   }, [handleDoubleTap, togglePlayPause]);
+
+  // Native container scroll synchronizer (touchpad, scrollbar, or native gestures)
+  const handleContainerScroll = useCallback(() => {
+    if (isProgrammaticScrollRef.current) return;
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (isProgrammaticScrollRef.current) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const h = container.clientHeight;
+      if (!h) return;
+
+      const newIndex = Math.round(container.scrollTop / h);
+      if (newIndex >= 0 && newIndex < reels.length && newIndex !== currentIndex) {
+        const prevIdx = currentIndex;
+        setCurrentIndex(newIndex);
+        handleReelTransition(prevIdx, newIndex);
+      }
+    }, 60);
+  }, [currentIndex, reels.length, handleReelTransition]);
+
+  // Non-passive wheel listener on card to cleanly prevent jerky browser multi-skips
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+
+    const onCardWheel = (e: WheelEvent) => {
+      // Allow normal scroll inside comments drawer if open
+      if (isCommentsOpen) return;
+
+      e.preventDefault();
+      if (wheelLockRef.current) return;
+      if (Math.abs(e.deltaY) < 20) return;
+
+      wheelLockRef.current = true;
+      if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+      wheelTimerRef.current = setTimeout(() => {
+        wheelLockRef.current = false;
+      }, 420);
+
+      if (e.deltaY > 0) {
+        goToReel(currentIndex + 1);
+      } else {
+        goToReel(currentIndex - 1);
+      }
+    };
+
+    card.addEventListener('wheel', onCardWheel, { passive: false });
+    return () => {
+      card.removeEventListener('wheel', onCardWheel);
+    };
+  }, [currentIndex, goToReel, isCommentsOpen]);
+
+  // Desktop Mouse Wheel handler for outer backdrop
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (wheelLockRef.current || isCommentsOpen) return;
+    if (Math.abs(e.deltaY) < 25) return;
+
+    wheelLockRef.current = true;
+    if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+    wheelTimerRef.current = setTimeout(() => {
+      wheelLockRef.current = false;
+    }, 420);
+
+    if (e.deltaY > 0) {
+      goToReel(currentIndex + 1);
+    } else {
+      goToReel(currentIndex - 1);
+    }
+  }, [currentIndex, goToReel, isCommentsOpen]);
+
+  // Mobile Touch Gestures
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchDeltaY.current = 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchDeltaY.current = e.touches[0].clientY - touchStartY.current;
+  };
+
+  const handleTouchEnd = () => {
+    if (Math.abs(touchDeltaY.current) > 50) {
+      if (touchDeltaY.current < 0) {
+        goToReel(currentIndex + 1);
+      } else {
+        goToReel(currentIndex - 1);
+      }
+    }
+    touchDeltaY.current = 0;
+  };
 
   // Follow creator toggle
   const handleFollowToggle = useCallback(async (e: React.MouseEvent) => {
@@ -617,11 +736,12 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     });
 
     try {
-      await toggleFollowUser(user.uid, creatorUid, {
-        uploaderUid: currentReel.uploaderUid,
-        uploaderName: currentReel.uploaderName,
-        uploaderPhotoURL: currentReel.uploaderPhotoURL || ''
-      });
+      await toggleFollowUser(
+        user.uid,
+        creatorUid,
+        user.displayName || 'User',
+        user.photoURL || ''
+      );
       showToast(isNowFollowing ? `Following ${currentReel.uploaderName}` : `Unfollowed ${currentReel.uploaderName}`);
     } catch {
       showToast("Failed to update follow status");
@@ -674,7 +794,6 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   // Keyboard controls for desktop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in a textarea or input
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
 
@@ -738,16 +857,12 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     setIsPostingComment(true);
 
     try {
-      const newComment = await addCommentToImage(baseId, {
-        authorUid: user.uid,
-        authorName: user.displayName || 'User',
-        authorPhotoURL: user.photoURL || '',
-        text: commentText.trim(),
-        replyTo: replyToComment ? {
-          commentId: replyToComment.id,
-          userName: replyToComment.userName
-        } : undefined
-      });
+      const newComment = await addCommentToImage(
+        baseId,
+        user,
+        commentText.trim(),
+        replyToComment ? replyToComment.id : null
+      );
 
       if (newComment) {
         setComments(prev => [newComment, ...prev]);
@@ -757,13 +872,59 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
           ...r,
           commentCount: r.commentCount + 1
         } : r));
+        showToast("Comment posted!");
       }
-    } catch {
+    } catch (err) {
+      console.error("Error posting comment:", err);
       showToast("Failed to post comment");
     } finally {
       setIsPostingComment(false);
     }
   }, [user, commentText, isPostingComment, reels, currentIndex, replyToComment, onLoginClick, showToast]);
+
+  // Like comment
+  const handleCommentLike = useCallback(async (commentId: string) => {
+    if (!user) {
+      if (onLoginClick) onLoginClick();
+      return;
+    }
+    try {
+      const res = await toggleCommentLike(commentId, user.uid);
+      setComments(prev => prev.map(c => {
+        if (c.id === commentId) {
+          const isLiked = res.isLiked;
+          const oldLikedBy = c.likedBy || [];
+          const newLikedBy = isLiked
+            ? (oldLikedBy.includes(user.uid) ? oldLikedBy : [...oldLikedBy, user.uid])
+            : oldLikedBy.filter(uid => uid !== user.uid);
+          return {
+            ...c,
+            likedBy: newLikedBy,
+            likeCount: newLikedBy.length
+          };
+        }
+        return c;
+      }));
+    } catch (err) {
+      console.warn("Failed to like comment:", err);
+    }
+  }, [user, onLoginClick]);
+
+  // Delete comment
+  const handleCommentDelete = useCallback(async (commentId: string) => {
+    if (!user) return;
+    try {
+      await deleteComment(commentId, user.uid);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      setReels(prev => prev.map((r, i) => i === currentIndex ? {
+        ...r,
+        commentCount: Math.max(0, r.commentCount - 1)
+      } : r));
+      showToast("Comment deleted");
+    } catch (err) {
+      showToast("Failed to delete comment");
+    }
+  }, [user, currentIndex, showToast]);
 
   const currentReel = reels[currentIndex];
 
@@ -794,7 +955,10 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   }
 
   return (
-    <div className="relative w-full h-[calc(100vh-64px)] md:h-[calc(100vh-24px)] flex items-center justify-center overflow-hidden select-none">
+    <div 
+      onWheel={handleWheel}
+      className="relative w-full h-[calc(100vh-64px)] md:h-[calc(100vh-24px)] flex items-center justify-center overflow-hidden select-none"
+    >
       {/* Toast notification banner */}
       {toastMessage && (
         <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-surface/90 backdrop-blur-md border border-border/80 shadow-2xl text-xs font-semibold text-primary animate-fade-in pointer-events-none">
@@ -802,16 +966,16 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         </div>
       )}
 
-      {/* Desktop Left/Right Navigation Floaters */}
-      <div className="hidden lg:flex flex-col gap-3 mr-4 z-20">
+      {/* Desktop Left Navigation Floater (Previous Video) */}
+      <div className="hidden lg:flex flex-col gap-3 mr-5 z-20">
         <button
           onClick={() => goToReel(currentIndex - 1)}
           disabled={currentIndex === 0}
-          title="Previous Video (Arrow Up)"
+          title="Previous Video (Arrow Up or Mouse Wheel Up)"
           className={`w-12 h-12 rounded-full flex items-center justify-center border shadow-xl transition-all duration-200 ${
             currentIndex === 0
-              ? 'opacity-30 border-border/30 bg-surface/40 cursor-not-allowed text-secondary'
-              : 'border-border/60 bg-surface/80 hover:bg-surface text-primary hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-md'
+              ? 'opacity-25 border-border/20 bg-surface/30 cursor-not-allowed text-secondary'
+              : 'border-border/60 bg-surface/85 hover:bg-surface text-primary hover:scale-110 active:scale-95 cursor-pointer backdrop-blur-md'
           }`}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -820,8 +984,8 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         </button>
         <button
           onClick={() => goToReel(currentIndex + 1)}
-          title="Next Video (Arrow Down)"
-          className="w-12 h-12 rounded-full flex items-center justify-center border border-border/60 bg-surface/80 hover:bg-surface text-primary shadow-xl hover:scale-110 active:scale-95 cursor-pointer transition-all duration-200 backdrop-blur-md"
+          title="Next Video (Arrow Down or Mouse Wheel Down)"
+          className="w-12 h-12 rounded-full flex items-center justify-center border border-border/60 bg-surface/85 hover:bg-surface text-primary shadow-xl hover:scale-110 active:scale-95 cursor-pointer transition-all duration-200 backdrop-blur-md"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -832,11 +996,15 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       {/* Main Reels Card Container */}
       <div
         ref={cardRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         className="relative w-full max-w-[420px] h-full md:max-h-[820px] md:rounded-2xl overflow-hidden bg-black shadow-2xl border border-border/40 flex items-center justify-center"
       >
         {/* Vertical Pager Container */}
         <div
           ref={containerRef}
+          onScroll={handleContainerScroll}
           className="w-full h-full overflow-y-scroll snap-y snap-mandatory hidden-scrollbar"
           style={{ scrollSnapType: 'y mandatory', WebkitOverflowScrolling: 'touch' }}
         >
@@ -844,6 +1012,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
             const isCurrent = idx === currentIndex;
             const isAdjacent = Math.abs(idx - currentIndex) <= 1;
             const isVertical = isReelVertical(reel);
+            const hasValidImagePoster = reel.poster && !isVideoUrl(reel.poster);
 
             return (
               <div
@@ -852,10 +1021,10 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                 style={{ height: '100%' }}
               >
                 {/* Ambient Blurred Background for landscape/square videos */}
-                {!isVertical && isAdjacent && (
+                {!isVertical && (
                   <div
-                    className="absolute inset-0 z-0 bg-cover bg-center filter blur-2xl scale-125 opacity-40 pointer-events-none"
-                    style={{ backgroundImage: `url(${reel.poster || reel.videoUrl})` }}
+                    className="absolute inset-0 z-0 bg-cover bg-center filter blur-3xl scale-125 opacity-35 pointer-events-none"
+                    style={{ backgroundImage: hasValidImagePoster ? `url(${reel.poster})` : 'none' }}
                   />
                 )}
 
@@ -863,24 +1032,40 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                 {isAdjacent ? (
                   <video
                     ref={el => {
-                      if (el) videoRefs.current.set(idx, el);
-                      else videoRefs.current.delete(idx);
+                      if (el) {
+                        videoRefs.current.set(idx, el);
+                        if (isCurrent && isPlaying && el.paused) {
+                          el.play().catch(() => {});
+                        }
+                      } else {
+                        videoRefs.current.delete(idx);
+                      }
                     }}
                     src={reel.videoUrl}
-                    poster={reel.poster || DARK_VIDEO_POSTER}
+                    poster={hasValidImagePoster ? reel.poster : DARK_VIDEO_POSTER}
                     playsInline
                     loop
                     preload={isCurrent ? 'auto' : 'metadata'}
                     muted={isMuted}
-                    onLoadedMetadata={e => handleVideoMetadata(reel.id, e.currentTarget)}
+                    onLoadedMetadata={e => {
+                      handleVideoMetadata(reel.id, e.currentTarget);
+                      if (isCurrent && isPlaying) {
+                        e.currentTarget.play().catch(() => {});
+                      }
+                    }}
+                    onCanPlay={e => {
+                      if (isCurrent && isPlaying && e.currentTarget.paused) {
+                        e.currentTarget.play().catch(() => {});
+                      }
+                    }}
                     className={`relative z-10 w-full h-full ${isVertical ? 'object-cover' : 'object-contain'} cursor-pointer`}
                     onClick={handleVideoAreaClick}
                   />
                 ) : (
                   <div className="w-full h-full bg-[#121212] flex items-center justify-center">
                     <img
-                      src={reel.poster || DARK_VIDEO_POSTER}
-                      alt={reel.title}
+                      src={hasValidImagePoster ? reel.poster : DARK_VIDEO_POSTER}
+                      alt=""
                       className="w-full h-full object-cover opacity-60"
                     />
                   </div>
@@ -996,7 +1181,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     <button
                       onClick={handleLikeClick}
                       className={`w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md border border-white/10 transition-all hover:scale-110 active:scale-90 ${
-                        reel.hasLiked ? 'bg-red-500/20 text-red-500' : 'bg-black/40 text-white hover:bg-black/60'
+                        reel.hasLiked ? 'bg-red-500/25 text-red-500' : 'bg-black/40 text-white hover:bg-black/60'
                       }`}
                       title={reel.hasLiked ? 'Unlike' : 'Like'}
                     >
@@ -1183,7 +1368,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         {/* Comments Drawer (Modal / Bottom Sheet) */}
         {isCommentsOpen && (
           <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex flex-col justify-end">
-            <div className="w-full h-[65%] bg-surface rounded-t-2xl border-t border-border shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div className="w-full h-[70%] bg-surface rounded-t-2xl border-t border-border shadow-2xl flex flex-col overflow-hidden animate-slide-up">
               {/* Comments Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-border/80">
                 <div className="flex items-center gap-2">
@@ -1212,26 +1397,79 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     <p className="text-xs mt-1">Be the first to share your thoughts!</p>
                   </div>
                 ) : (
-                  comments.map(c => (
-                    <div key={c.id} className="flex gap-3 text-left">
-                      <img
-                        src={c.authorPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${c.authorName}`}
-                        alt={c.authorName}
-                        className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-primary">@{c.authorName}</span>
-                          <span className="text-[10px] text-secondary">
-                            {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Just now'}
-                          </span>
+                  comments.map(c => {
+                    const isAuthor = user?.uid === (c.userUid || (c as any).authorUid);
+                    const authorName = c.userName || (c as any).authorName || 'User';
+                    const authorPhoto = c.userPhotoURL || (c as any).authorPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${authorName}`;
+                    const commentContent = c.content || (c as any).text || '';
+                    const hasLikedComment = !!(user && c.likedBy?.includes(user.uid));
+
+                    return (
+                      <div key={c.id} className="flex gap-3 text-left group/comment">
+                        <img
+                          src={authorPhoto}
+                          alt={authorName}
+                          className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5 border border-border/40"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-primary">@{authorName}</span>
+                            <span className="text-[10px] text-secondary">
+                              {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Just now'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-primary/90 mt-0.5 break-words leading-relaxed">{commentContent}</p>
+                          
+                          {/* Comment Actions: Reply, Like, Delete */}
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-secondary">
+                            <button
+                              onClick={() => {
+                                setReplyToComment({ id: c.id, userName: authorName });
+                              }}
+                              className="hover:text-primary font-medium"
+                            >
+                              Reply
+                            </button>
+                            {isAuthor && (
+                              <button
+                                onClick={() => handleCommentDelete(c.id)}
+                                className="hover:text-red-400 font-medium opacity-0 group-hover/comment:opacity-100 transition-opacity"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-xs text-primary/90 mt-0.5 break-words leading-relaxed">{c.text}</p>
+
+                        {/* Comment Like Heart */}
+                        <div className="flex flex-col items-center shrink-0">
+                          <button
+                            onClick={() => handleCommentLike(c.id)}
+                            className={`p-1 transition-transform active:scale-125 ${
+                              hasLikedComment ? 'text-red-500' : 'text-secondary hover:text-primary'
+                            }`}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill={hasLikedComment ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            </svg>
+                          </button>
+                          {(c.likeCount || 0) > 0 && (
+                            <span className="text-[10px] text-secondary font-mono">{c.likeCount}</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
+
+              {/* Reply Indicator if active */}
+              {replyToComment && (
+                <div className="px-4 py-1.5 bg-background/80 border-t border-border flex items-center justify-between text-xs text-secondary">
+                  <span>Replying to <strong className="text-primary">@{replyToComment.userName}</strong></span>
+                  <button onClick={() => setReplyToComment(null)} className="hover:text-primary">✕</button>
+                </div>
+              )}
 
               {/* Comment Input Footer */}
               <form onSubmit={handlePostComment} className="p-3 border-t border-border bg-surface/95 flex items-center gap-2">
@@ -1239,7 +1477,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   type="text"
                   value={commentText}
                   onChange={e => setCommentText(e.target.value)}
-                  placeholder={user ? "Add a comment..." : "Sign in to comment..."}
+                  placeholder={user ? (replyToComment ? `Reply to @${replyToComment.userName}...` : "Add a comment...") : "Sign in to comment..."}
                   disabled={!user || isPostingComment}
                   className="flex-1 px-3.5 py-2 text-xs bg-background border border-border/80 rounded-full text-primary placeholder-secondary focus:outline-none focus:border-accent"
                 />
@@ -1248,19 +1486,12 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                   disabled={!user || !commentText.trim() || isPostingComment}
                   className="px-4 py-2 text-xs font-bold bg-accent text-surface rounded-full hover:opacity-90 disabled:opacity-40 transition-opacity"
                 >
-                  Post
+                  {isPostingComment ? 'Posting...' : 'Post'}
                 </button>
               </form>
             </div>
           </div>
         )}
-      </div>
-
-      {/* Right Desktop Floating Indicator (Current / Total) */}
-      <div className="hidden lg:flex flex-col gap-2 ml-4 text-xs font-mono text-secondary z-20">
-        <span className="px-3 py-1.5 rounded-full bg-surface/80 border border-border shadow-sm">
-          #{currentIndex + 1} of {reels.length}
-        </span>
       </div>
     </div>
   );

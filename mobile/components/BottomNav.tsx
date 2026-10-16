@@ -101,13 +101,13 @@ const BottomNav: React.FC<BottomNavProps> = ({
           activeView === 'reels' ? 'text-white' : 'text-neutral-400 hover:text-white'
         }`}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeView === 'reels' ? 2.5 : 2}>
-          <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-          <line x1="2" y1="7" x2="22" y2="7" />
-          <line x1="7" y1="2" x2="5" y2="7" />
-          <line x1="17" y1="2" x2="15" y2="7" />
-          {/* Centered play triangle inside lower film frame: frame spans y=7 to y=22 (center 14.5); triangle spans y=11.5 to 17.5 (4.5px clearance above and below) */}
-          <path d="M10 11.5l5.2 3-5.2 3V11.5z" fill={activeView === 'reels' ? "currentColor" : "none"} stroke="currentColor" strokeLinejoin="round" />
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <rect x="2.5" y="3" width="19" height="18" rx="4" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
+          <line x1="2.5" y1="8" x2="21.5" y2="8" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
+          <line x1="7.5" y1="3" x2="5.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+          <line x1="13" y1="3" x2="11" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+          <line x1="18.5" y1="3" x2="16.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+          <polygon points="10,11.5 15.5,14.5 10,17.5" fill={activeView === 'reels' ? "currentColor" : "none"} strokeWidth={activeView === 'reels' ? 1.5 : 1.75} strokeLinejoin="round" />
         </svg>
         <span className="text-[10px] font-bold mt-1 tracking-wide">Reels</span>
       </button>
