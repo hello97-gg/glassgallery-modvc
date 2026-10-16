@@ -427,7 +427,8 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
   useEffect(() => {
     const handleScroll = () => {
         const scrollThreshold = 800;
-        const isAtBottom = window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - scrollThreshold;
+        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+        const isAtBottom = window.innerHeight + scrollY >= document.documentElement.scrollHeight - scrollThreshold;
         if (isAtBottom) {
             if (activeTab === 'created') {
                 loadMoreUserImages();

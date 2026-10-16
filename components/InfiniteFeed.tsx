@@ -3,7 +3,7 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { recordWatchInterest } from '../services/interestTracker';
-import { recordFeedImpression } from '../services/impressionTracker';
+import { recordFeedImpression, observeImpression } from '../services/impressionTracker';
 import { isVideoUrl } from '../utils/mediaUtils';
 import EmbedModal from './EmbedModal';
 import VideoPlayer from './VideoPlayer';
@@ -67,39 +67,13 @@ export const FeedItem: React.FC<{
   // Feed Impression View Tracking (MRC Standard: >=50% visible in viewport for >= 1s)
   useEffect(() => {
     const el = itemArticleRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-
-    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            if (!dwellTimer) {
-              dwellTimer = setTimeout(() => {
-                const isNew = recordFeedImpression(image.id);
-                if (isNew) {
-                  setLocalViewCount((prev) => prev + 1);
-                }
-              }, 1000);
-            }
-          } else {
-            if (dwellTimer) {
-              clearTimeout(dwellTimer);
-              dwellTimer = null;
-            }
-          }
-        });
-      },
-      { threshold: 0.5 }
-    );
-
-    observer.observe(el);
-
-    return () => {
-      if (dwellTimer) clearTimeout(dwellTimer);
-      observer.disconnect();
-    };
+    if (!el) return;
+    const unobserve = observeImpression(el, image.id, (isNew) => {
+      if (isNew) {
+        setLocalViewCount((prev) => prev + 1);
+      }
+    });
+    return unobserve;
   }, [image.id]);
 
   const showToast = (msg: string) => {
@@ -148,7 +122,12 @@ export const FeedItem: React.FC<{
   return (
     <article
       ref={itemArticleRef}
-      className="flex gap-3 p-4 border-b border-border transition-colors hover:bg-surface/30 cursor-pointer"
+      className="flex gap-3 p-4 border-b border-border transition-colors hover:bg-surface/30 cursor-pointer contain-paint"
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicSize: '600px 700px',
+        transform: 'translateZ(0)',
+      }}
       onClick={() => onImageClick(image)}
     >
       <div className="shrink-0">
@@ -316,7 +295,7 @@ export const FeedItem: React.FC<{
                 src={image.imageUrl}
                 alt={image.title || 'Post image'}
                 onLoad={() => setIsImageLoaded(true)}
-                className={`w-full h-full object-cover max-h-[500px] transition-all duration-500 ease-out ${isImageLoaded ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-95'
+                className={`w-full h-full object-cover max-h-[500px] transition-opacity duration-300 ease-out ${isImageLoaded ? 'opacity-100' : 'opacity-0'
                   }`}
                 loading="lazy"
                 decoding="async"
@@ -584,6 +563,8 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
           ref={virtuosoRef}
           useWindowScroll
           data={images}
+          overscan={{ main: 1500, reverse: 800 }}
+          increaseViewportBy={{ top: 800, bottom: 1500 }}
           restoreStateFrom={restoreStateFrom}
           endReached={onEndReached}
           itemContent={(index, image) => (

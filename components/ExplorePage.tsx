@@ -194,23 +194,69 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
     });
   }, [searchSource, searchQuery]);
 
-  // Restart the progressive reveal whenever the query changes so each new search
-  // streams in from the top rather than jumping to a previous scroll depth.
+  const [searchLoopCount, setSearchLoopCount] = useState(0);
+  const [categoryLoopCount, setCategoryLoopCount] = useState(0);
+
+  // Restart progressive reveal & loop counter whenever the query or category changes
   useEffect(() => {
     setVisibleSearchCount(SEARCH_REVEAL_BATCH);
+    setSearchLoopCount(0);
   }, [searchQuery]);
 
-  const visibleSearchResults = useMemo(
-    () => searchResults.slice(0, visibleSearchCount),
-    [searchResults, visibleSearchCount]
-  );
+  useEffect(() => {
+    setCategoryLoopCount(0);
+  }, [selectedFlag]);
+
+  const visibleSearchResults = useMemo(() => {
+    if (searchResults.length === 0) return [];
+    if (visibleSearchCount < searchResults.length) {
+      return searchResults.slice(0, visibleSearchCount);
+    }
+    const result = [...searchResults];
+    for (let i = 1; i <= searchLoopCount; i++) {
+      const looped = searchResults.map((img, idx) => ({
+        ...img,
+        id: `${img.id.split('_loop_')[0]}_loop_search_${i}_${idx}`
+      }));
+      result.push(...looped);
+    }
+    return result;
+  }, [searchResults, visibleSearchCount, searchLoopCount]);
+
   const hasMoreSearchResults = visibleSearchCount < searchResults.length;
 
   // Reveal the next batch as the user scrolls (ImageGrid fires this near the bottom).
   const handleSearchEndReached = () => {
     if (hasMoreSearchResults) {
       setVisibleSearchCount((c) => c + SEARCH_REVEAL_BATCH);
-    } else if (onEndReached) {
+    } else {
+      setSearchLoopCount((c) => c + 1);
+    }
+    if (onEndReached) {
+      onEndReached();
+    }
+  };
+
+  const categoryImages = useMemo(() => {
+    if (!selectedFlag) return [];
+    const base = imagesByFlag[selectedFlag] || [];
+    if (base.length === 0) return [];
+    if (categoryLoopCount === 0) return base;
+
+    const result = [...base];
+    for (let i = 1; i <= categoryLoopCount; i++) {
+      const looped = base.map((img, idx) => ({
+        ...img,
+        id: `${img.id.split('_loop_')[0]}_loop_cat_${i}_${idx}`
+      }));
+      result.push(...looped);
+    }
+    return result;
+  }, [selectedFlag, imagesByFlag, categoryLoopCount]);
+
+  const handleCategoryEndReached = () => {
+    setCategoryLoopCount((c) => c + 1);
+    if (onEndReached) {
       onEndReached();
     }
   };
@@ -324,12 +370,12 @@ const ExplorePage: React.FC<ExplorePageProps> = ({
             <h1 className="text-3xl font-bold text-primary">{selectedFlag}</h1>
         </div>
         <ImageGrid 
-          images={imagesByFlag[selectedFlag]} 
+          images={categoryImages} 
           user={user} 
           onImageClick={onImageClick} 
           onViewProfile={onViewProfile} 
           onLikeToggle={onLikeToggle} 
-          onEndReached={onEndReached}
+          onEndReached={handleCategoryEndReached}
           isFetchingMore={isFetchingNextPage}
         />
       </div>

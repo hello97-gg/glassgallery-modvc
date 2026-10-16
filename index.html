@@ -140,23 +140,25 @@
 }
 </script>
     <style>
-      /* Ultra-smooth hardware-accelerated inertia scrolling for mobile devices */
+      /* Ultra-smooth hardware-accelerated momentum scrolling */
       html, body {
         -webkit-overflow-scrolling: touch;
-        scroll-behavior: smooth;
+        overscroll-behavior-y: contain;
+        touch-action: pan-y;
       }
       
       /* Target all overflow-y scroll panels in the app for momentum scrolling */
       .overflow-y-auto {
         -webkit-overflow-scrolling: touch !important;
-        scroll-behavior: smooth !important;
         overscroll-behavior-y: contain !important;
+        touch-action: pan-y;
       }
       
-      /* Hardware acceleration only for grid layout elements, NOT images */
+      /* Hardware acceleration for grid layout elements and feed items */
       .break-inside-avoid {
         transform: translateZ(0);
         backface-visibility: hidden;
+        contain: layout paint;
       }
       
       /* Hide scrollbar for elements with hidden-scrollbar class */

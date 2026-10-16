@@ -589,10 +589,41 @@ const App: React.FC = () => {
         const sorted = smartSortImages(filtered, profileRef.current, followingUidsRef.current, likedConceptSetRef.current);
         const isGridView = activeView === 'discover' || activeView === 'explore';
         const pageSize = isGridView ? 30 : FEED_BATCH_SIZE;
-        const pageItems = sorted.slice(pageParam, pageParam + pageSize);
+
+        if (sorted.length === 0) {
+          return { items: [], nextPageParam: undefined };
+        }
+
+        let pageItems: ImageMeta[] = [];
+        const uniqueTime = Date.now();
+
+        if (pageParam < sorted.length) {
+          pageItems = sorted.slice(pageParam, pageParam + pageSize);
+          // If this slice doesn't fill the full pageSize, loop from the beginning to fill it
+          if (pageItems.length < pageSize && sorted.length > 0) {
+            const needed = pageSize - pageItems.length;
+            const wrapped = sorted.slice(0, needed).map((img, idx) => ({
+              ...img,
+              id: `${img.id.split('_loop_')[0]}_loop_${uniqueTime}_${idx}`
+            }));
+            pageItems = [...pageItems, ...wrapped];
+          }
+        } else {
+          // Seamless infinite feed: continuously loop through items with unique IDs so scrolling never stops
+          const loopIndex = pageParam % sorted.length;
+          let slice = sorted.slice(loopIndex, loopIndex + pageSize);
+          if (slice.length < pageSize) {
+            slice = [...slice, ...sorted.slice(0, pageSize - slice.length)];
+          }
+          pageItems = slice.map((img, idx) => ({
+            ...img,
+            id: `${img.id.split('_loop_')[0]}_loop_${uniqueTime}_${pageParam + idx}`
+          }));
+        }
+
         return {
           items: pageItems,
-          nextPageParam: pageParam + pageSize < sorted.length ? pageParam + pageSize : undefined,
+          nextPageParam: pageParam + pageSize,
         };
       } finally {
         isFetchingRef.current = false;
@@ -614,9 +645,8 @@ const App: React.FC = () => {
     const seen = new Set<string>();
     const deduped: ImageMeta[] = [];
     for (const img of flattened) {
-      const baseId = img.id.split('_loop_')[0];
-      if (!seen.has(baseId)) {
-        seen.add(baseId);
+      if (!seen.has(img.id)) {
+        seen.add(img.id);
         deduped.push(img);
       }
     }
@@ -1265,27 +1295,37 @@ const App: React.FC = () => {
   }, [currentIndex, activeAllImages, imagesLoading]);
 
   useEffect(() => {
+    // 'home' feed is fully managed by Virtuoso with smooth overscan and onEndReached
+    if (activeView === 'home') return;
+
     let ticking = false;
     const handleScroll = () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        if (['home', 'discover', 'explore', 'post'].includes(activeView) && !isLoadingMore.current) {
-            const scrollThreshold = 400;
-            const hasUserScrolled = window.scrollY > 30;
-            const isNearBottom = hasUserScrolled && (window.innerHeight + window.scrollY >= document.documentElement.offsetHeight - scrollThreshold);
-            
-            if (isNearBottom) {
-              loadMoreImages();
-            }
+        try {
+          if (['discover', 'explore', 'post'].includes(activeView)) {
+              const scrollThreshold = 1000;
+              const scrollY = window.scrollY || window.pageYOffset || 0;
+              const windowHeight = window.innerHeight;
+              const documentHeight = document.documentElement.scrollHeight;
+              
+              if (scrollY > 50 && (windowHeight + scrollY >= documentHeight - scrollThreshold)) {
+                handleLoadMore();
+                if (!isLoadingMore.current) {
+                  loadMoreImages();
+                }
+              }
+          }
+        } finally {
+          ticking = false;
         }
-        ticking = false;
       });
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [loadMoreImages, activeView]);
+  }, [handleLoadMore, loadMoreImages, activeView]);
 
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();

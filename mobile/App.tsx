@@ -313,8 +313,11 @@ const App: React.FC = () => {
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
 
-  // Mobile Top Header Visibility (hide on scroll down, show on scroll up)
+  // Mobile Top Header Visibility (controlled via direct GPU transform for 0ms scroll overhead)
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const headerRef = useRef<HTMLElement>(null);
+  const isHeaderVisibleRef = useRef(true);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const lastScrollYRef = useRef(0);
 
   // Legal Tab State
@@ -913,17 +916,21 @@ const App: React.FC = () => {
     if (imagesLoading || allImages.length === 0 || isLoadingMore.current) return;
 
     if (currentIndex >= allImages.length) {
-      // For small image sets (under 50), seamlessly loop images so the user has an endless feed
-      if (allImages.length > 0 && allImages.length <= 50) {
+      // Seamlessly loop images for any database size so the user has an endless infinite feed
+      if (allImages.length > 0) {
         isLoadingMore.current = true;
         const uniqueTime = Date.now();
-        const loopImages = allImages.slice(0, FEED_BATCH_SIZE);
+        const loopIndex = currentIndex % allImages.length;
+        let loopImages = allImages.slice(loopIndex, loopIndex + FEED_BATCH_SIZE);
+        if (loopImages.length < FEED_BATCH_SIZE) {
+          loopImages = [...loopImages, ...allImages.slice(0, FEED_BATCH_SIZE - loopImages.length)];
+        }
         const processed = loopImages.map((img, idx) => ({
             ...img,
-            id: `${img.id}_loop_${uniqueTime}_${idx}`
+            id: `${img.id.split('_loop_')[0]}_loop_${uniqueTime}_${currentIndex + idx}`
         }));
         setDisplayedImages(prev => [...prev, ...processed]);
-        setCurrentIndex(FEED_BATCH_SIZE);
+        setCurrentIndex(prev => prev + FEED_BATCH_SIZE);
         requestAnimationFrame(() => { isLoadingMore.current = false; });
       } else {
         isLoadingMore.current = false;
@@ -949,45 +956,67 @@ const App: React.FC = () => {
     requestAnimationFrame(() => { isLoadingMore.current = false; });
   }, [currentIndex, allImages, imagesLoading, FEED_BATCH_SIZE]);
 
+  // Zero-cost IntersectionObserver for Infinite Feed loading (replaces forced layout scroll polling)
+  useEffect(() => {
+    if (activeView !== 'home') return;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoadingMore.current) {
+          loadMoreImages();
+        }
+      },
+      { rootMargin: '1200px 0px 1200px 0px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [activeView, loadMoreImages, displayedImages.length]);
+
+  // Ultra-lightweight scroll handler for Header hide/show (Direct GPU transform, zero React re-renders)
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+        try {
+          const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+          const scrollDelta = scrollY - lastScrollYRef.current;
 
-        // Toggle mobile header visibility: hide on scroll down, show on scroll up
-        const scrollDelta = scrollY - lastScrollYRef.current;
-        if (scrollY <= 20) {
-          setIsHeaderVisible(true);
-        } else if (scrollDelta > 8 && scrollY > 60) {
-          setIsHeaderVisible(false); // scrolling down
-        } else if (scrollDelta < -8) {
-          setIsHeaderVisible(true);  // scrolling up
-        }
-        lastScrollYRef.current = scrollY;
-
-        if (activeView === 'home' && !isLoadingMore.current) {
-            const scrollThreshold = 800;
-            const isNearBottom = (window.innerHeight + scrollY >= document.documentElement.offsetHeight - scrollThreshold);
-            
-            if (isNearBottom) {
-              loadMoreImages();
+          if (scrollY <= 20) {
+            if (!isHeaderVisibleRef.current) {
+              isHeaderVisibleRef.current = true;
+              if (headerRef.current) headerRef.current.style.transform = 'translateY(0)';
             }
+          } else if (scrollDelta > 20 && scrollY > 60) {
+            if (isHeaderVisibleRef.current) {
+              isHeaderVisibleRef.current = false;
+              if (headerRef.current) headerRef.current.style.transform = 'translateY(-100%)';
+            }
+          } else if (scrollDelta < -20) {
+            if (!isHeaderVisibleRef.current) {
+              isHeaderVisibleRef.current = true;
+              if (headerRef.current) headerRef.current.style.transform = 'translateY(0)';
+            }
+          }
+          lastScrollYRef.current = scrollY;
+        } finally {
+          ticking = false;
         }
-        ticking = false;
       });
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [loadMoreImages, activeView]);
+  }, []);
 
   // Auto-fill effect: if initial or rendered feed is shorter than viewport + 300px, immediately load more images
   useEffect(() => {
     if (activeView === 'home' && displayedImages.length > 0 && !imagesLoading && !isLoadingMore.current) {
-      if (document.documentElement.offsetHeight <= window.innerHeight + 300 && currentIndex < allImages.length) {
+      if (document.documentElement.scrollHeight <= window.innerHeight + 300 && currentIndex < allImages.length) {
         loadMoreImages();
       }
     }
@@ -1615,6 +1644,7 @@ const App: React.FC = () => {
                 favicon={DEFAULT_FAVICON}
             />
             <ImageGrid images={displayedImages} user={user} onImageClick={handleImageClick} onViewProfile={handleViewProfile} onLikeToggle={handleLikeToggle} onLongPress={setLongPressedImage} />
+            <div ref={loadMoreSentinelRef} className="h-12 w-full flex items-center justify-center pointer-events-none" />
         </>
     );
   }
@@ -1635,9 +1665,8 @@ const App: React.FC = () => {
       {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
       {activeView === 'home' && !profileUser && (
         <header 
-          className={`fixed top-0 left-0 right-0 z-40 bg-transparent flex items-center justify-between px-4 sm:px-5 md:hidden select-none transition-transform duration-300 ease-in-out pointer-events-none ${
-            isHeaderVisible ? 'translate-y-0' : '-translate-y-full'
-          }`}
+          ref={headerRef}
+          className="fixed top-0 left-0 right-0 z-40 bg-transparent flex items-center justify-between px-4 sm:px-5 md:hidden select-none transition-transform duration-300 ease-in-out pointer-events-none translate-y-0"
           style={{ 
             paddingTop: 'env(safe-area-inset-top, 0px)',
             height: 'calc(3.5rem + env(safe-area-inset-top, 0px))'

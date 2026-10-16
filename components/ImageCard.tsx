@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import { isVideoUrl } from '../utils/mediaUtils';
-import { recordFeedImpression } from '../services/impressionTracker';
+import { recordFeedImpression, observeImpression } from '../services/impressionTracker';
 import VideoPlayer from './VideoPlayer';
 
 interface ImageCardProps {
@@ -43,35 +43,8 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   // Impression view tracking (MRC Standard: >=50% in viewport for >= 1s)
   React.useEffect(() => {
     const el = cardContainerRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-
-    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            if (!dwellTimer) {
-              dwellTimer = setTimeout(() => {
-                recordFeedImpression(image.id);
-              }, 1000);
-            }
-          } else {
-            if (dwellTimer) {
-              clearTimeout(dwellTimer);
-              dwellTimer = null;
-            }
-          }
-        });
-      },
-      { threshold: 0.5 }
-    );
-
-    observer.observe(el);
-
-    return () => {
-      if (dwellTimer) clearTimeout(dwellTimer);
-      observer.disconnect();
-    };
+    if (!el) return;
+    return observeImpression(el, image.id);
   }, [image.id]);
 
   React.useEffect(() => {
@@ -153,6 +126,11 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
     <div
       ref={cardContainerRef}
       className={combinedClassName}
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicSize: '240px 320px',
+        transform: 'translateZ(0)',
+      }}
       onClick={handleCardClick}
     >
       {!isLoaded && !hasError && (
@@ -241,4 +219,4 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   );
 };
 
-export default ImageCard;
+export default React.memo(ImageCard);

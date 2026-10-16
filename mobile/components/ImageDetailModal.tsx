@@ -511,11 +511,14 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   }, [isLoadingMoreRelated, rankedCandidates.length]);
 
   const lastScrollTopRef = useRef(0);
+  const isNavVisibleLocalRef = useRef(true);
 
   // Auto-hide bottom nav when scrolling down in modal / "More like this", reveal when scrolling up a little
   useEffect(() => {
+    isNavVisibleLocalRef.current = true;
     onNavVisibilityChange?.(true);
     return () => {
+      isNavVisibleLocalRef.current = true;
       onNavVisibilityChange?.(true);
     };
   }, [onNavVisibilityChange]);
@@ -527,19 +530,26 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
       const target = e.target as HTMLElement;
       if (!target) return;
 
-      // 1. BottomNav directional auto-hide logic
+      // 1. BottomNav directional auto-hide logic (gated to prevent unnecessary re-renders)
       if (onNavVisibilityChange) {
         const currentScroll = target.scrollTop;
         const delta = currentScroll - (lastScrollTopRef.current || 0);
 
         if (currentScroll <= 25) {
-          onNavVisibilityChange(true);
-        } else if (delta > 8 && currentScroll > 60) {
-          // Scrolling down: auto hide bottom nav
-          onNavVisibilityChange(false);
-        } else if (delta < -5) {
-          // Scrolling up even a little bit: show bottom nav
-          onNavVisibilityChange(true);
+          if (!isNavVisibleLocalRef.current) {
+            isNavVisibleLocalRef.current = true;
+            onNavVisibilityChange(true);
+          }
+        } else if (delta > 20 && currentScroll > 60) {
+          if (isNavVisibleLocalRef.current) {
+            isNavVisibleLocalRef.current = false;
+            onNavVisibilityChange(false);
+          }
+        } else if (delta < -20) {
+          if (!isNavVisibleLocalRef.current) {
+            isNavVisibleLocalRef.current = true;
+            onNavVisibilityChange(true);
+          }
         }
         lastScrollTopRef.current = currentScroll;
       }

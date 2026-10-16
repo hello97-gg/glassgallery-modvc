@@ -147,6 +147,7 @@
       html, body {
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;
+        touch-action: pan-y;
         min-height: 100%;
         background-color: #0a0a0a;
       }
@@ -154,6 +155,15 @@
       /* Target all overflow-y scroll panels in the app for momentum scrolling */
       .overflow-y-auto {
         -webkit-overflow-scrolling: touch !important;
+        overscroll-behavior-y: contain !important;
+        touch-action: pan-y;
+      }
+
+      /* Hardware acceleration for grid layout elements and cards */
+      .break-inside-avoid {
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        contain: layout paint;
       }
 
       /* Native Instagram/Pinterest-style Instant Modal Transition */

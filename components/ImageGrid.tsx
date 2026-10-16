@@ -37,10 +37,10 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
           onEndReachedRef.current?.();
           setTimeout(() => {
             isTriggeringRef.current = false;
-          }, 300);
+          }, 250);
         }
       },
-      { rootMargin: '1000px' }
+      { rootMargin: '1200px' }
     );
     observer.observe(el);
     return () => {
@@ -48,21 +48,34 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
     };
   }, [isFetchingMore, images.length]);
 
-  // 2. Window scroll listener as rock-solid backup
+  // Reset triggering guard whenever images update or fetching state toggles
   useEffect(() => {
-    const handleScroll = () => {
-      if (isFetchingMore || isTriggeringRef.current || !onEndReachedRef.current) return;
-      const scrollY = window.scrollY || window.pageYOffset;
-      const windowHeight = window.innerHeight;
-      const documentHeight = document.documentElement.scrollHeight;
+    isTriggeringRef.current = false;
+  }, [images.length, isFetchingMore]);
 
-      if (scrollY + windowHeight >= documentHeight - 800) {
-        isTriggeringRef.current = true;
-        onEndReachedRef.current();
-        setTimeout(() => {
-          isTriggeringRef.current = false;
-        }, 300);
-      }
+  // 2. Throttled scroll listener as passive backup
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (ticking || isFetchingMore || isTriggeringRef.current || !onEndReachedRef.current) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        try {
+          const scrollY = window.scrollY || window.pageYOffset;
+          const windowHeight = window.innerHeight;
+          const documentHeight = document.documentElement.scrollHeight;
+
+          if (scrollY + windowHeight >= documentHeight - 1200) {
+            isTriggeringRef.current = true;
+            onEndReachedRef.current?.();
+            setTimeout(() => {
+              isTriggeringRef.current = false;
+            }, 250);
+          }
+        } finally {
+          ticking = false;
+        }
+      });
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -139,4 +152,4 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
   );
 };
 
-export default ImageGrid;
+export default React.memo(ImageGrid);

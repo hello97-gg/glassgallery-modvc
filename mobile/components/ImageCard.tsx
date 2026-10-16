@@ -77,7 +77,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   };
   
   const isFlagged = image.flags?.includes('Flagged');
-  const combinedClassName = `block group relative bg-[#121212] rounded-[16px] overflow-hidden cursor-pointer transition-transform duration-300 hover:scale-[1.02] mb-2 break-inside-avoid ${className}`;
+  const combinedClassName = `block group relative bg-[#121212] rounded-[16px] overflow-hidden cursor-pointer active:scale-[0.98] transition-transform duration-150 mb-2 break-inside-avoid ${className}`;
   const hasLiked = user && image.likedBy?.includes(user.uid);
 
   const handleTouchStart = () => {
@@ -136,6 +136,11 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
     <div
       id={`pin-card-${image.id}`}
       className={combinedClassName}
+      style={{
+        contentVisibility: 'auto',
+        containIntrinsicSize: '160px 220px',
+        transform: 'translateZ(0)',
+      }}
       onClick={handleCardClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -215,4 +220,4 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
   );
 };
 
-export default ImageCard;
+export default React.memo(ImageCard);

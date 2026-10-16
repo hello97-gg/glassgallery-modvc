@@ -42,4 +42,4 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
   );
 };
 
-export default ImageGrid;
+export default React.memo(ImageGrid);

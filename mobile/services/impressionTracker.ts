@@ -130,3 +130,75 @@ export const recordFeedImpression = (imageId: string): boolean => {
 
   return true;
 };
+
+type ImpressionCallback = (isNew: boolean) => void;
+
+interface ObservedItem {
+  id: string;
+  callback?: ImpressionCallback;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const observedElements = new Map<Element, ObservedItem>();
+let sharedObserver: IntersectionObserver | null = null;
+
+function getSharedObserver(): IntersectionObserver | null {
+  if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined') return null;
+  if (!sharedObserver) {
+    sharedObserver = new IntersectionObserver(
+      (entries) => {
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const item = observedElements.get(entry.target);
+          if (!item) continue;
+
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            if (!item.timer) {
+              item.timer = setTimeout(() => {
+                const isNew = recordFeedImpression(item.id);
+                if (item.callback) item.callback(isNew);
+                item.timer = null;
+              }, 1000);
+            }
+          } else {
+            if (item.timer) {
+              clearTimeout(item.timer);
+              item.timer = null;
+            }
+          }
+        }
+      },
+      { threshold: 0.5 }
+    );
+  }
+  return sharedObserver;
+}
+
+/**
+ * Observes an element with a single shared IntersectionObserver.
+ * Eliminates garbage collection and layout overhead during scrolling.
+ */
+export const observeImpression = (
+  element: Element | null,
+  imageId: string,
+  callback?: ImpressionCallback
+): (() => void) => {
+  if (!element) return () => {};
+  const observer = getSharedObserver();
+  if (!observer) return () => {};
+
+  observedElements.set(element, { id: imageId, callback, timer: null });
+  observer.observe(element);
+
+  return () => {
+    const item = observedElements.get(element);
+    if (item?.timer) {
+      clearTimeout(item.timer);
+    }
+    observedElements.delete(element);
+    try {
+      observer.unobserve(element);
+    } catch {}
+  };
+};
+

@@ -118,6 +118,74 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
   }, [images, searchQuery]);
 
 
+  const [searchLoopCount, setSearchLoopCount] = useState(0);
+  const [categoryLoopCount, setCategoryLoopCount] = useState(0);
+
+  const searchSentinelRef = useRef<HTMLDivElement>(null);
+  const categorySentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSearchLoopCount(0);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setCategoryLoopCount(0);
+  }, [selectedFlag]);
+
+  const displayedSearchResults = useMemo(() => {
+    if (searchResults.length === 0) return [];
+    if (searchLoopCount === 0) return searchResults;
+    const result = [...searchResults];
+    for (let i = 1; i <= searchLoopCount; i++) {
+      const looped = searchResults.map((img, idx) => ({
+        ...img,
+        id: `${img.id.split('_loop_')[0]}_loop_search_${i}_${idx}`
+      }));
+      result.push(...looped);
+    }
+    return result;
+  }, [searchResults, searchLoopCount]);
+
+  const categoryImages = useMemo(() => {
+    if (!selectedFlag) return [];
+    const base = imagesByFlag[selectedFlag] || [];
+    if (base.length === 0) return [];
+    if (categoryLoopCount === 0) return base;
+    const result = [...base];
+    for (let i = 1; i <= categoryLoopCount; i++) {
+      const looped = base.map((img, idx) => ({
+        ...img,
+        id: `${img.id.split('_loop_')[0]}_loop_cat_${i}_${idx}`
+      }));
+      result.push(...looped);
+    }
+    return result;
+  }, [selectedFlag, imagesByFlag, categoryLoopCount]);
+
+  useEffect(() => {
+    const el = searchSentinelRef.current;
+    if (!el || searchResults.length === 0) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setSearchLoopCount(c => c + 1);
+      }
+    }, { rootMargin: '1000px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [searchResults.length, searchLoopCount]);
+
+  useEffect(() => {
+    const el = categorySentinelRef.current;
+    if (!el || !selectedFlag) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setCategoryLoopCount(c => c + 1);
+      }
+    }, { rootMargin: '1000px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [selectedFlag, categoryLoopCount]);
+
   // --- RENDER HELPERS ---
 
   // 1. Search Results View
@@ -154,7 +222,10 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
             </div>
             
             {searchResults.length > 0 ? (
-                <ImageGrid images={searchResults} user={user} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={onLikeToggle} onLongPress={onLongPress} />
+                <>
+                  <ImageGrid images={displayedSearchResults} user={user} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={onLikeToggle} onLongPress={onLongPress} />
+                  <div ref={searchSentinelRef} className="h-12 w-full flex items-center justify-center pointer-events-none" />
+                </>
             ) : (
                 <div className="text-center py-16 bg-surface/30 rounded-2xl border border-border border-dashed">
                     <svg className="mx-auto h-12 w-12 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -214,7 +285,8 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ images, user, onImageClick, o
             </Button>
             <h1 className="text-3xl font-bold text-primary">{selectedFlag}</h1>
         </div>
-        <ImageGrid images={imagesByFlag[selectedFlag]} user={user} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={onLikeToggle} onLongPress={onLongPress} />
+        <ImageGrid images={categoryImages} user={user} onImageClick={onImageClick} onViewProfile={onViewProfile} onLikeToggle={onLikeToggle} onLongPress={onLongPress} />
+        <div ref={categorySentinelRef} className="h-12 w-full flex items-center justify-center pointer-events-none" />
       </div>
     );
   }
