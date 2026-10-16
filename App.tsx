@@ -34,6 +34,7 @@ import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './compon
 import MobileAppPromo from './components/MobileAppPromo';
 import TrendingSidebar from './components/TrendingSidebar';
 import AppShowcasePage from './components/AppShowcasePage';
+import ReelsPage from './components/ReelsPage';
 
 // Global Fetch Interceptor for Capacitor Native Platform or External Sandbox/Embed Hosts to reroute relative paths to the production API
 const isExternalHost = typeof window !== 'undefined' && 
@@ -76,6 +77,9 @@ const API_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg
 
 // Mobile App Camera Icon for App Showcase
 const APP_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='none'%3E%3Crect width='512' height='512' rx='115' fill='%2318161B'/%3E%3Ccircle cx='256' cy='256' r='160' fill='%23F5C3B8'/%3E%3Ccircle cx='256' cy='256' r='88' fill='%2318161B'/%3E%3Ccircle cx='256' cy='256' r='88' stroke='%23FFFFFF' stroke-width='26'/%3E%3Ccircle cx='256' cy='256' r='32' fill='%23F5C3B8'/%3E%3Ccircle cx='336' cy='176' r='18' fill='%2318161B'/%3E%3C/svg%3E`;
+
+// Reels Clapperboard Icon
+const REELS_FAVICON = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f5c3b8'%3E%3Cpath d='M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v3h3.5l1.5-3H4zm6.5 0l-1.5 3h4.5l1.5-3H10.5zm7.5 0l-1.5 3H20V6h-2zm2 5H4v7h16v-7zm-10 1.5l5 3-5 3v-6z'/%3E%3C/svg%3E`;
 
 
 // --- Skeleton Components for Initial Load ---
@@ -466,9 +470,10 @@ const App: React.FC = () => {
   
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post' | 'app'>('home');
+  const [initialReelId, setInitialReelId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post' | 'app'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'discover' | 'explore' | 'api' | 'legal' | 'app'>('home');
+  const [lastView, setLastView] = useState<'home' | 'discover' | 'reels' | 'explore' | 'api' | 'legal' | 'app'>('home');
   
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
   const [homeTopicFilter, setHomeTopicFilter] = useState('');
@@ -879,7 +884,7 @@ const App: React.FC = () => {
 
       // Detect @username or direct /username routes (e.g. /@pixeletedthoughts or /pixeletedthoughts)
       const RESERVED_PATHS = new Set([
-        'image', 'gallery', 'api', 'legal', 'discover', 'explore', 'app', 'download', 'apk',
+        'image', 'gallery', 'api', 'legal', 'discover', 'reels', 'explore', 'app', 'download', 'apk',
         'login', 'notifications', 'feed', 'assets', 'favicon.ico',
         'robots.txt', 'sitemap.xml', 'manifest.json', 'html', 'run',
         'sandbox', 'embed', 'preview', 'index'
@@ -976,6 +981,11 @@ const App: React.FC = () => {
           setLegalModalTab(tab as 'terms' | 'privacy' | 'guidelines');
           setActiveView('legal');
           setProfileUser(null);
+      } else if (viewParam === 'reels' || window.location.pathname === '/reels' || params.get('reel')) {
+          const reelId = params.get('reel') || params.get('reelId');
+          if (reelId) setInitialReelId(reelId);
+          setActiveView('reels');
+          setProfileUser(null);
       } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
@@ -1070,6 +1080,8 @@ const App: React.FC = () => {
         url.pathname = '/app';
       } else if (params?.view === 'api') {
         url.pathname = '/api';
+      } else if (params?.view === 'reels') {
+        url.pathname = '/reels';
       } else if (params?.username) {
         url.pathname = `/@${params.username.replace(/^@/, '')}`;
       } else {
@@ -1078,7 +1090,7 @@ const App: React.FC = () => {
       
       if (params?.user && !params?.username) url.searchParams.set('user', params.user);
       if (params?.search) url.searchParams.set('search', params.search);
-      if (params?.view && params.view !== 'legal' && params.view !== 'app' && params.view !== 'api') url.searchParams.set('view', params.view);
+      if (params?.view && params.view !== 'legal' && params.view !== 'app' && params.view !== 'api' && params.view !== 'reels') url.searchParams.set('view', params.view);
       
       window.history.pushState({}, '', url.toString());
     } catch {
@@ -1524,7 +1536,7 @@ const App: React.FC = () => {
     updateURL(null);
   }
   
-  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'notifications' | 'api' | 'app') => {
+  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'reels' | 'notifications' | 'api' | 'app') => {
     savedVirtuosoStateRef.current = {}; // Clear all Virtuoso scroll states on explicit nav click to start fresh
     console.log('[Nav] Explicit navigation click to view:', view, 'Cleared Virtuoso scroll states');
     if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
@@ -1569,6 +1581,8 @@ const App: React.FC = () => {
           updateURL({ view: 'app' });
         } else if (view === 'discover') {
           updateURL({ view: 'discover' });
+        } else if (view === 'reels') {
+          updateURL({ view: 'reels' });
         } else {
           updateURL(null);
         }
@@ -1833,6 +1847,31 @@ const App: React.FC = () => {
         );
     }
 
+    // REELS (Algorithmic Video Feed with Desktop & Mobile Player Controls)
+    if (activeView === 'reels') {
+        return (
+            <>
+                <SEOHead 
+                    title="Reels – Glass Gallery"
+                    description="Watch trending video shorts, reels, and high-fidelity video creations on Glass Gallery."
+                    url={window.location.href}
+                    favicon={REELS_FAVICON}
+                />
+                <ReelsPage 
+                    user={user}
+                    onBack={handleBack}
+                    onViewProfile={handleViewProfile}
+                    onShare={(reel) => setSelectedFeedPost(reel)}
+                    onLikeToggle={handleLikeToggle}
+                    onImageUpdate={handleImageUpdate}
+                    initialReelId={initialReelId}
+                    allImages={allImages}
+                    onLoginClick={() => setLoginModalOpen(true)}
+                />
+            </>
+        );
+    }
+
     if (activeView === 'post' && selectedFeedPost) {
         return (
             <>
@@ -1943,7 +1982,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Added min-w-0 to fix flex child overflow issues on mobile */}
-      <main id="main-content" className={`flex-1 min-w-0 ${activeView === 'home' || activeView === 'app' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
+      <main id="main-content" className={`flex-1 min-w-0 ${activeView === 'home' || activeView === 'app' || activeView === 'reels' ? 'p-0 pb-16 md:pb-0' : 'p-4 md:p-8 pb-20 md:pb-8'}`}>
         {renderContent()}
       </main>
 

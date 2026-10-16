@@ -386,8 +386,9 @@ export async function onRequest(context) {
       const isLiked = likedSet.has(vid.id);
       const likedPenalty = isLiked ? 600.0 : 0.0;
 
-      // 2. Watched / Seen penalty
-      const inClientSeen = clientSeenSet.has(vid.id);
+      // 2. Watched / Seen penalty: only apply in-session seen list to initial feed load (cursor === 0)
+      // to avoid unstable ranking drift during subsequent cursor-based offset pagination
+      const inClientSeen = (cursor === 0) && clientSeenSet.has(vid.id);
       const seenInfo = seenInfoMap.get(vid.id);
       const seenCount = (seenInfo ? seenInfo.count : 0) + (inClientSeen ? 1 : 0);
       let seenPenalty = 0;
@@ -520,15 +521,31 @@ export async function onRequest(context) {
       finalSelection.push(candidate);
     }
 
-    // 10. Slice for cursor-based pagination
-    const paged = finalSelection.slice(cursor, cursor + limit);
-    const nextCursor = (cursor + limit < finalSelection.length) ? (cursor + limit) : null;
+    // 10. Slice for cursor-based infinite pagination with seamless circular catalog wrap
+    const totalSelection = finalSelection.length;
+    const paged = [];
+    if (totalSelection > 0) {
+      for (let i = 0; i < limit; i++) {
+        const absoluteIndex = cursor + i;
+        const cycleIndex = absoluteIndex % totalSelection;
+        const loopCount = Math.floor(absoluteIndex / totalSelection);
+        const item = finalSelection[cycleIndex];
+        paged.push({
+          ...item,
+          loopCount,
+          virtualIndex: absoluteIndex
+        });
+      }
+    }
+    const nextCursor = totalSelection > 0 ? (cursor + limit) : null;
 
     // 11. Format final response
     const reels = paged.map(item => {
       const v = item.video;
+      const id = item.loopCount > 0 ? `${v.id}_loop_${item.loopCount}_${item.virtualIndex}` : v.id;
       return {
-        id: v.id,
+        id,
+        originalId: v.id,
         videoUrl: v.imageUrl,
         poster: v.thumbnailUrl || v.imageUrl, // Will be paired with DARK_VIDEO_POSTER
         width: v.width || 1080,
@@ -564,7 +581,7 @@ export async function onRequest(context) {
       success: true,
       reels,
       nextCursor,
-      hasMore: nextCursor !== null
+      hasMore: totalSelection > 0
     }, { headers: corsHeaders });
 
   } catch (err) {

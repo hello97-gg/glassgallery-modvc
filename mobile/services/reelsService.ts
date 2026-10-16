@@ -154,9 +154,9 @@ export const rerankNextReels = (reels: ReelItem[], startIndex: number): ReelItem
   const sessionTaste = getSessionTaste();
   if (Object.keys(sessionTaste).length === 0) return reels;
 
-  const head = reels.slice(0, startIndex);
-  const tail = reels.slice(startIndex, startIndex + 6);
-  const remaining = reels.slice(startIndex + 6);
+  const head = reels.slice(0, startIndex + 1);
+  const tail = reels.slice(startIndex + 1, startIndex + 7);
+  const remaining = reels.slice(startIndex + 7);
 
   tail.sort((a, b) => {
     let scoreA = 0;

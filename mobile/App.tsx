@@ -1247,14 +1247,15 @@ const App: React.FC = () => {
     if (view === 'reels') {
       if (activeView !== 'reels') {
         setLastView(activeView);
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        setActiveView('reels');
+        setInitialReelId(null);
+        setProfileUser(null);
+        setExploreSearchTerm('');
+        updateURL(null);
+        return;
       }
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      setActiveView('reels');
-      setInitialReelId(null);
-      setProfileUser(null);
-      setExploreSearchTerm('');
-      updateURL(null);
-      // Force change and pull new reels whenever pressed reels button
+      // If user is ALREADY in reels and taps reels again, pull fresh reels
       setReelsRefreshTrigger(Date.now());
       return;
     }

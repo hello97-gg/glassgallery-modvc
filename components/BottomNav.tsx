@@ -7,8 +7,8 @@ interface BottomNavProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'discover' | 'explore' | 'profile' | 'notifications' | 'api' | 'app' | 'legal' | 'post';
-  setView: (view: 'home' | 'discover' | 'explore' | 'notifications' | 'api' | 'app') => void;
+  activeView: 'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'app' | 'legal' | 'post';
+  setView: (view: 'home' | 'discover' | 'reels' | 'explore' | 'notifications' | 'api' | 'app') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications: Notification[];
   onNotificationsClick: () => void;
@@ -60,6 +60,11 @@ const BottomNav: React.FC<BottomNavProps> = ({ user, onCreateClick, onLoginClick
       <NavItem onClick={() => setView('discover')} active={activeView === 'discover'}>
         <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+        </svg>
+      </NavItem>
+      <NavItem onClick={() => setView('reels')} active={activeView === 'reels'}>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill={activeView === 'reels' ? "currentColor" : "none"} stroke="currentColor" strokeWidth={activeView === 'reels' ? 0 : 2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v3h3.5l1.5-3H4zm6.5 0l-1.5 3h4.5l1.5-3H10.5zm7.5 0l-1.5 3H20V6h-2zm2 5H4v7h16v-7zm-10 1.5l5 3-5 3v-6z"/>
         </svg>
       </NavItem>
       <NavItem onClick={() => setView('explore')} active={activeView === 'explore'}>

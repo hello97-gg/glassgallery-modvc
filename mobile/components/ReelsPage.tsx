@@ -421,25 +421,33 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
 
         if (!active) return;
         if (res.reels && res.reels.length > 0) {
-          // If viewing from the beginning (default), display the fresh, ranked discovery reels immediately!
-          if (currentIndex === 0 || initialReelId) {
-            setReels(res.reels);
-          } else {
-            setReels(prev => {
-              if (prev.length === 0) return res.reels;
-              const currentItem = prev[currentIndex];
-              const incoming = res.reels;
-              const uniqueMap = new Map<string, ReelItem>();
-              if (currentItem) uniqueMap.set(currentItem.id, currentItem);
-              incoming.forEach(r => {
-                if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
-              });
-              prev.forEach(r => {
-                if (!uniqueMap.has(r.id)) uniqueMap.set(r.id, r);
-              });
-              return Array.from(uniqueMap.values());
+          setReels(prev => {
+            if (prev.length === 0) return res.reels;
+
+            // If initialReelId was requested and matches incoming, ensure target leads
+            if (initialReelId) {
+              const target = res.reels.find(r => r.id.split('_loop_')[0] === initialReelId.split('_loop_')[0]);
+              if (target) {
+                return [target, ...res.reels.filter(r => r.id !== target.id)];
+              }
+            }
+
+            // Protect currently active playing reel so it is NEVER yanked or replaced
+            const activeReel = prev[currentIndex] || prev[0];
+            const activeBaseId = activeReel.id.split('_loop_')[0].split('_c')[0];
+
+            const remainingIncoming = res.reels.filter(r => {
+              const rBase = r.id.split('_loop_')[0].split('_c')[0];
+              return rBase !== activeBaseId;
             });
-          }
+
+            if (currentIndex === 0) {
+              return [activeReel, ...remainingIncoming];
+            }
+
+            const beforeCurrent = prev.slice(0, currentIndex);
+            return [...beforeCurrent, activeReel, ...remainingIncoming];
+          });
           setNextCursor(res.nextCursor);
           setHasMore(res.hasMore);
           try {
@@ -522,11 +530,19 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
         cursor: nextCursor,
         limit: 10
       });
-      if (res.reels.length > 0) {
+      if (res.reels && res.reels.length > 0) {
         setReels(prev => {
           const existingIds = new Set(prev.map(r => r.id));
-          const fresh = res.reels.filter(r => !existingIds.has(r.id));
-          const merged = [...prev, ...fresh];
+          const safeIncoming = res.reels.map((r, idx) => {
+            if (existingIds.has(r.id)) {
+              return {
+                ...r,
+                id: `${r.id}_c${Date.now()}_${idx}`
+              };
+            }
+            return r;
+          });
+          const merged = [...prev, ...safeIncoming];
           return rerankNextReels(merged, currentIndex);
         });
         setNextCursor(res.nextCursor);
@@ -577,7 +593,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       sessionStorage.setItem('gg_reels_last_index', nextIdx.toString());
     } catch {}
 
-    if (nextIdx >= reels.length - 3) {
+    if (nextIdx >= reels.length - 4) {
       loadMore();
     }
   }, [reels, isMuted, loadMore]);
