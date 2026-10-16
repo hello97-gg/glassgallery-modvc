@@ -393,7 +393,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         '', 
         location,
         videoThumbnail ? [videoThumbnail] : [],
-        thumbnailUrl || videoThumbnail || imageUrl
+        isCurrentFileVideo(file) ? (videoThumbnail || undefined) : thumbnailUrl
       );
       onUploadSuccess();
     } catch (err: any) {

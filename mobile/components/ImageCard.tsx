@@ -151,7 +151,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
         {isVideoUrl(image.imageUrl) ? (
           <VideoPlayer
             src={image.imageUrl}
-            poster={(image as any).thumbnailUrl || (image as any).poster || (image as any).keyframes?.[0] || undefined}
+            poster={image.thumbnailUrl && !isVideoUrl(image.thumbnailUrl) ? image.thumbnailUrl : (image.keyframes?.[0] || undefined)}
             width={image.width}
             height={image.height}
             isFeedPreview={true}

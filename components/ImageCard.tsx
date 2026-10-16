@@ -172,6 +172,7 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
           <div className="relative">
             <video
               src={imageSrc}
+              poster={image.thumbnailUrl && !isVideoUrl(image.thumbnailUrl) ? image.thumbnailUrl : undefined}
               muted
               loop
               autoPlay

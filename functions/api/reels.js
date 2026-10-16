@@ -547,7 +547,7 @@ export async function onRequest(context) {
         id,
         originalId: v.id,
         videoUrl: v.imageUrl,
-        poster: v.thumbnailUrl || v.imageUrl, // Will be paired with DARK_VIDEO_POSTER
+        poster: (v.thumbnailUrl && !v.thumbnailUrl.match(/\.(mp4|webm|mov|mkv|ogg|m4v)(\?.*)?$/i)) ? v.thumbnailUrl : undefined,
         width: v.width || 1080,
         height: v.height || 1920,
         duration: v.duration || 15,

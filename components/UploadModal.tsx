@@ -409,7 +409,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         license === 'Other' ? licenseUrl : '',
         location,
         isVideoUpload ? videoKeyframes : undefined,
-        thumbnailUrl
+        isVideoUpload ? (videoKeyframes?.[0] || undefined) : thumbnailUrl
       );
       onUploadSuccess();
     } catch (err: any) {
