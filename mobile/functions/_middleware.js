@@ -20,10 +20,35 @@ export const onRequest = async (context) => {
   const { request, next } = context;
   const url = new URL(request.url);
 
-  // Canonical domain redirect: ensure all *.pages.dev traffic redirects to gg.modvc.org
-  if (url.hostname.endsWith('.pages.dev')) {
+  // Canonical domain redirect: ensure all *.pages.dev and old domain traffic redirects to gg.modvc.org
+  if (url.hostname.endsWith('.pages.dev') || url.hostname === 'glassgallery.modvc.org') {
     url.hostname = 'gg.modvc.org';
     return Response.redirect(url.toString(), 301);
+  }
+
+  // Legacy image parameter 301 redirect (e.g. /?image=XYZ -> /image/XYZ)
+  const imageParam = url.searchParams.get('image');
+  if (imageParam) {
+    const cleanImageId = imageParam.split('_loop_')[0].split('?')[0];
+    const targetUrl = new URL(`/image/${cleanImageId}`, url.origin);
+    return Response.redirect(targetUrl.toString(), 301);
+  }
+
+  // Legacy user parameter 301 redirect (e.g. /?user=NAME or /?username=NAME -> /@name)
+  const userParam = url.searchParams.get('username') || url.searchParams.get('user');
+  if (userParam && !userParam.startsWith('http')) {
+    const cleanUser = userParam.replace(/^@/, '').trim().toLowerCase().replace(/\s+/g, '');
+    if (cleanUser) {
+      const targetUrl = new URL(`/@${cleanUser}`, url.origin);
+      return Response.redirect(targetUrl.toString(), 301);
+    }
+  }
+
+  // Legacy view parameter 301 redirect (e.g. /?view=api -> /api, /?view=gallery -> /gallery)
+  const viewParam = url.searchParams.get('view');
+  if (viewParam && ['api', 'gallery', 'app', 'legal', 'reels'].includes(viewParam.toLowerCase())) {
+    const targetUrl = new URL(`/${viewParam.toLowerCase()}`, url.origin);
+    return Response.redirect(targetUrl.toString(), 301);
   }
 
   // Execute next middleware or route handler
