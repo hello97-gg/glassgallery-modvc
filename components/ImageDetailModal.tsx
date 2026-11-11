@@ -863,7 +863,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
 
   const handleShare = async () => {
     const origin = window.location.origin;
-    const shareUrl = `${origin}/api/share?id=${currentImage.id}`;
+    const shareUrl = `${origin}/image/${currentImage.id}`;
     const shareData = {
       title: currentImage.title || 'Glass Gallery Image',
       text: `Check out this image by ${currentImage.uploaderName} on Glass Gallery!`,
