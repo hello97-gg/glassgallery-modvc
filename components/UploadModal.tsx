@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { User } from 'firebase/auth';
 import { uploadImage } from '../services/storageService';
-import { addImageToFirestore } from '../services/firestoreService';
+import { addImageToFirestore, addTextPostToFirestore } from '../services/firestoreService';
 import { LICENSES, FLAGS } from '../constants';
 import Button from './Button';
 import Spinner from './Spinner';
@@ -17,12 +17,22 @@ import VideoPlayer from './VideoPlayer';
 interface UploadModalProps {
   user: User;
   onClose: () => void;
-  onUploadSuccess: () => void;
+  onUploadSuccess: (commInfo?: { id?: string; slug?: string }) => void;
   initialFile?: File | null;
   allImages?: any[];
+  initialCommunityId?: string;
+  initialPostType?: 'media' | 'text';
 }
 
-const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSuccess, initialFile = null, allImages = [] }) => {
+const UploadModal: React.FC<UploadModalProps> = ({
+  user,
+  onClose,
+  onUploadSuccess,
+  initialFile = null,
+  allImages = [],
+  initialCommunityId = '',
+  initialPostType = 'media'
+}) => {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [videoKeyframes, setVideoKeyframes] = useState<string[] | null>(null);
@@ -41,6 +51,34 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
   const [isAutoTagging, setIsAutoTagging] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
   const [showAllTags, setShowAllTags] = useState(false);
+  const [postType, setPostType] = useState<'media' | 'text'>(initialPostType);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<string>(initialCommunityId);
+  const [userCommunities, setUserCommunities] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (initialCommunityId) {
+      setSelectedCommunityId(initialCommunityId);
+    }
+  }, [initialCommunityId]);
+
+  useEffect(() => {
+    if (initialPostType) {
+      setPostType(initialPostType);
+    }
+  }, [initialPostType]);
+
+  useEffect(() => {
+    if (user?.uid) {
+      fetch(`/api/communities?my=true&uid=${user.uid}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.communities)) {
+            setUserCommunities(data.communities);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user?.uid]);
 
   const DEFAULT_FLAGS = [
     'AI Generated',
@@ -374,7 +412,34 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (!user) return;
+
+    if (postType === 'text') {
+      if (!title.trim() && !description.trim()) {
+        setError("Please enter a title or discussion text.");
+        return;
+      }
+      setIsLoading(true);
+      setLoadingMessage('Publishing discussion post...');
+      setError(null);
+      try {
+        await addTextPostToFirestore(
+          user,
+          title,
+          description,
+          selectedCommunityId,
+          selectedFlags
+        );
+        const targetComm = userCommunities.find(c => c.id === selectedCommunityId);
+        onUploadSuccess(selectedCommunityId ? { id: selectedCommunityId, slug: targetComm?.slug } : undefined);
+      } catch (err: any) {
+        setError(err.message || 'Failed to publish post.');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     if (!file) {
       setError("Please select a file to upload.");
       return;
@@ -383,7 +448,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
       setError("Please select at least one tag.");
       return;
     }
-    if (!user) return;
 
     const isVideoUpload = file.type.startsWith('video/') || isVideoFile(file.name);
     const FIFTY_MB = 50 * 1024 * 1024;
@@ -409,9 +473,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         license === 'Other' ? licenseUrl : '',
         location,
         isVideoUpload ? videoKeyframes : undefined,
-        isVideoUpload ? (videoKeyframes?.[0] || undefined) : thumbnailUrl
+        isVideoUpload ? (videoKeyframes?.[0] || undefined) : thumbnailUrl,
+        selectedCommunityId || undefined
       );
-      onUploadSuccess();
+      const targetComm = userCommunities.find(c => c.id === selectedCommunityId);
+      onUploadSuccess(selectedCommunityId ? { id: selectedCommunityId, slug: targetComm?.slug } : undefined);
     } catch (err: any) {
       setError(err.message || 'Upload failed. Please check your connection.');
       console.error(err);
@@ -451,11 +517,54 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
         <div className="bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
           <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-primary">{file && (file.type.startsWith('video/') || isVideoFile(file.name)) ? 'Upload a Video' : 'Upload an Image'}</h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xl font-bold text-primary">
+                      {postType === 'text' ? 'New Discussion' : (file && (file.type.startsWith('video/') || isVideoFile(file.name)) ? 'Upload Video' : 'Upload Image')}
+                    </h2>
+                  </div>
                   <button onClick={onClose} className="text-secondary hover:text-primary transition-colors text-3xl leading-none">&times;</button>
+              </div>
+
+              {/* Post Type Selector & Community Picker */}
+              <div className="flex flex-col sm:flex-row gap-3 p-3 bg-background/50 rounded-xl border border-border/60 mb-4">
+                <div className="flex rounded-lg bg-surface p-1 border border-border flex-1">
+                  <button
+                    type="button"
+                    onClick={() => setPostType('media')}
+                    className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${postType === 'media' ? 'bg-accent text-surface shadow' : 'text-secondary hover:text-primary'}`}
+                  >
+                    Image / Video
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPostType('text')}
+                    className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${postType === 'text' ? 'bg-accent text-surface shadow' : 'text-secondary hover:text-primary'}`}
+                  >
+                    Discussion Post
+                  </button>
+                </div>
+
+                <div className="flex-1">
+                  <select
+                    value={selectedCommunityId}
+                    onChange={(e) => setSelectedCommunityId(e.target.value)}
+                    className="w-full h-full py-1.5 px-3 text-xs bg-surface border border-border rounded-lg text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    <option value="">Post to: Profile Feed (Global)</option>
+                    {selectedCommunityId && !userCommunities.some(c => c.id === selectedCommunityId) && (
+                      <option value={selectedCommunityId}>Selected Community</option>
+                    )}
+                    {userCommunities.map(c => (
+                      <option key={c.id} value={c.id}>
+                        c/{c.slug} ({c.name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               
               <form onSubmit={handleSubmit} className="space-y-4">
+                {postType === 'media' ? (
                   <div>
                       <label className="block text-sm font-medium text-secondary mb-2">Media File</label>
                       <label 
@@ -506,11 +615,18 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                           </div>
                       )}
                   </div>
+                ) : (
+                  <div className="p-4 bg-background/40 border border-border/70 rounded-xl space-y-3">
+                    <p className="text-xs text-secondary">
+                      Discussion posts render as glassmorphic typography cards in feeds, perfect for community questions, thoughts, and announcements.
+                    </p>
+                  </div>
+                )}
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                      <div>
-                        <label htmlFor="title" className="block text-sm font-medium text-secondary">Title (Optional)</label>
-                        <input type="text" id="title" value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder="My Amazing Image" />
+                        <label htmlFor="title" className="block text-sm font-medium text-secondary">{postType === 'text' ? 'Post Title' : 'Title (Optional)'}</label>
+                        <input type="text" id="title" value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder={postType === 'text' ? "What's on your mind?" : "My Amazing Image"} />
                      </div>
                      <div>
                         <label htmlFor="location" className="block text-sm font-medium text-secondary">Location (Optional)</label>
@@ -552,8 +668,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
                   </div>
 
                   <div>
-                      <label htmlFor="description" className="block text-sm font-medium text-secondary">Description (Optional)</label>
-                      <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder="Tell us about your image..." />
+                      <label htmlFor="description" className="block text-sm font-medium text-secondary">{postType === 'text' ? 'Discussion Content / Body' : 'Description (Optional)'}</label>
+                      <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={postType === 'text' ? 5 : 3} className="mt-1 block w-full bg-background border border-border rounded-md shadow-sm py-2 px-3 text-primary focus:outline-none focus:ring-accent focus:border-accent" placeholder={postType === 'text' ? "Write your thoughts, questions, or story..." : "Tell us about your image..."} />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -646,8 +762,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ user, onClose, onUploadSucces
 
                   <div className="flex justify-end gap-3 pt-2">
                       <Button type="button" onClick={onClose} variant="secondary">Cancel</Button>
-                      <Button type="submit" disabled={isLoading || !file || selectedFlags.length === 0}>
-                          {isLoading ? <Spinner /> : 'Upload'}
+                      <Button type="submit" disabled={isLoading || (postType === 'media' && !file) || selectedFlags.length === 0}>
+                          {isLoading ? <Spinner /> : (postType === 'text' ? 'Publish Post' : 'Upload')}
                       </Button>
                   </div>
               </form>

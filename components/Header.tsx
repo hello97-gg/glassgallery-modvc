@@ -9,8 +9,8 @@ interface SidebarProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'app';
-  setView: (view: 'home' | 'discover' | 'reels' | 'explore' | 'notifications' | 'api' | 'app') => void;
+  activeView: 'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'app' | 'communities' | 'community';
+  setView: (view: 'home' | 'discover' | 'reels' | 'explore' | 'notifications' | 'api' | 'app' | 'communities') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications: Notification[];
   onImageClick: (image: ImageMeta) => void;
@@ -86,6 +86,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+          </svg>
+        </NavItem>
+        <NavItem label="Communities" active={activeView === 'communities' || activeView === 'community'} onClick={() => setView('communities')}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
         </NavItem>
         <NavItem label="Android App" active={activeView === 'app'} onClick={() => setView('app')}>

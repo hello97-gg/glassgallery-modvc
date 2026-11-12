@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, Comment, ProfileUser } from '../types';
-import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, deleteComment, getFollowStats, toggleFollowUser, updateImageDetails } from '../services/firestoreService';
+import { getCommentsForImage, addCommentToImage, toggleCommentLike, editComment, deleteComment, getFollowStats, toggleFollowUser, updateImageDetails, deleteImageFromFirestore } from '../services/firestoreService';
 import { LICENSES } from '../constants';
 import { recordWatchInterest } from '../services/interestTracker';
 import { isVideoUrl, getRelatedImages } from '../utils/mediaUtils';
@@ -52,6 +52,56 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
+
+  const isCommunityOwner = Boolean(
+    user?.uid && (
+      currentImage.community_owner_uid === user.uid ||
+      currentImage.is_owner
+    )
+  );
+
+  const [isCommunityMember, setIsCommunityMember] = useState(Boolean(currentImage.is_member || isCommunityOwner));
+  const [isCommunityJoining, setIsCommunityJoining] = useState(false);
+
+  useEffect(() => {
+    setIsCommunityMember(Boolean(currentImage.is_member || isCommunityOwner));
+  }, [currentImage.is_member, isCommunityOwner, currentImage.id]);
+
+  const handleCommunityJoinToggle = async () => {
+    if (!user) {
+      onLoginClick();
+      return;
+    }
+    if (!currentImage.community_id) return;
+    if (isCommunityOwner) {
+      showToast("You are the owner of this community.");
+      return;
+    }
+    setIsCommunityJoining(true);
+    try {
+      const action = isCommunityMember ? 'leave' : 'join';
+      const res = await fetch('/api/communities/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityId: currentImage.community_id,
+          action,
+          uid: user.uid
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsCommunityMember(!isCommunityMember);
+        showToast(isCommunityMember ? `Left c/${currentImage.community_slug}` : `Joined c/${currentImage.community_slug}!`);
+      } else {
+        showToast(data.error || 'Failed to update membership');
+      }
+    } catch (err) {
+      showToast('Error updating membership');
+    } finally {
+      setIsCommunityJoining(false);
+    }
+  };
   const [showEmbed, setShowEmbed] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -65,6 +115,52 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   const [editLicense, setEditLicense] = useState(currentImage.license || 'CC0');
   const [editOriginalWorkUrl, setEditOriginalWorkUrl] = useState(currentImage.originalWorkUrl || '');
   const [isSavingAttribution, setIsSavingAttribution] = useState(false);
+
+  const [isEditingPost, setIsEditingPost] = useState(false);
+  const [editPostTitle, setEditPostTitle] = useState(currentImage.title || '');
+  const [editPostDescription, setEditPostDescription] = useState(currentImage.description || '');
+  const [isSavingPost, setIsSavingPost] = useState(false);
+
+  const isAuthor = Boolean(user && user.uid === currentImage.uploaderUid);
+  const canManagePost = Boolean(isAuthor || isCommunityOwner);
+
+  const handleSavePostDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPostTitle.trim()) return;
+    setIsSavingPost(true);
+    try {
+      await updateImageDetails(currentImage.id, {
+        title: editPostTitle.trim(),
+        description: editPostDescription.trim()
+      });
+      const updated = {
+        ...currentImage,
+        title: editPostTitle.trim(),
+        description: editPostDescription.trim()
+      };
+      setCurrentImage(updated);
+      onImageUpdate?.(updated);
+      setIsEditingPost(false);
+      showToast('Post updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update post.');
+    } finally {
+      setIsSavingPost(false);
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!confirm('Are you sure you want to permanently delete this post?')) return;
+    try {
+      await deleteImageFromFirestore(currentImage.id);
+      showToast('Post deleted.');
+      if (onClose) onClose();
+      else window.history.back();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete post.');
+    }
+  };
+
   const mainImgRef = useRef<HTMLImageElement>(null);
   const watchLoggedRef = useRef(false);
 
@@ -92,6 +188,11 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   };
 
   useEffect(() => {
+    const isTextPost = !currentImage.imageUrl || currentImage.imageUrl === 'text://post' || currentImage.imageUrl.startsWith('text://');
+    if (isTextPost) {
+      setIsMainLoaded(true);
+      return;
+    }
     setIsMainLoaded(false);
     if (mainImgRef.current && mainImgRef.current.complete && mainImgRef.current.naturalWidth > 0) {
       setIsMainLoaded(true);
@@ -139,6 +240,22 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
   };
 
   const relatedImages = useMemo(() => {
+    if (currentImage.community_id) {
+      const sameCommunity = suggestedImages.filter(img => 
+        img.id !== currentImage.id && 
+        img.id.split('_loop_')[0] !== currentImage.id.split('_loop_')[0] &&
+        img.community_id === currentImage.community_id
+      );
+      if (sameCommunity.length >= 6) {
+        return sameCommunity.slice(0, 12);
+      }
+      const others = getRelatedImages(
+        currentImage, 
+        suggestedImages.filter(img => img.community_id !== currentImage.community_id), 
+        12 - sameCommunity.length
+      );
+      return [...sameCommunity, ...others];
+    }
     return getRelatedImages(currentImage, suggestedImages, 12);
   }, [currentImage, suggestedImages]);
 
@@ -657,6 +774,78 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             }}>Post</h1>
           </div>
 
+          {/* Community Strip */}
+          {currentImage.community_slug && (
+            <div className="flex items-center justify-between px-4 py-2.5 bg-surface/50 border-b border-border backdrop-blur-md">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.history.pushState(null, '', `/c/${currentImage.community_slug}`);
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="flex items-center gap-2 hover:opacity-80 transition-opacity min-w-0 text-left cursor-pointer group/comm"
+                >
+                  {currentImage.community_icon_url ? (
+                    <img
+                      src={currentImage.community_icon_url}
+                      alt=""
+                      className="w-7 h-7 rounded-full object-cover shrink-0 border border-border"
+                    />
+                  ) : (
+                    <span className="w-7 h-7 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center shrink-0 border border-accent/30">
+                      {currentImage.community_slug[0]?.toUpperCase()}
+                    </span>
+                  )}
+                  <span className="font-bold text-sm text-primary group-hover/comm:text-accent transition-colors truncate">
+                    c/{currentImage.community_slug}
+                  </span>
+                </button>
+
+                <span className="text-secondary/60 text-xs">·</span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.history.pushState(null, '', `/c/${currentImage.community_slug}?tab=rules`);
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="text-xs text-secondary hover:text-primary hover:underline transition-colors shrink-0 cursor-pointer"
+                >
+                  Rules
+                </button>
+              </div>
+
+              {isCommunityOwner ? (
+                <span className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-accent/15 text-accent border border-accent/30 shrink-0">
+                  Owner
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCommunityJoinToggle}
+                  disabled={isCommunityJoining}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold min-h-[36px] sm:min-h-[32px] transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                    isCommunityMember
+                      ? 'bg-transparent border border-border text-primary hover:bg-surface/80'
+                      : 'bg-accent text-primary hover:bg-accent/80'
+                  }`}
+                >
+                  {isCommunityMember ? (
+                    <>
+                      <svg className="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Joined
+                    </>
+                  ) : (
+                    '+ Join'
+                  )}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Main Content Area */}
           <div className="flex-1 overflow-y-visible">
             {/* User Info */}
@@ -748,6 +937,37 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
                         <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[18px] h-[18px] fill-current"><g><path d="M22 12l-7.5 5.5v-3.5c-3.1 0-6.1 1.2-8.5 3.5 1.1-4.7 4.2-8.3 8.5-9.5V4.5L22 12z"></path></g></svg>
                         Embed post
                       </button>
+
+                      {/* Author / Mod Edit & Delete */}
+                      {canManagePost && (
+                        <>
+                          <div className="my-1 border-t border-border/40" />
+                          <button
+                            onClick={() => {
+                              setShowDropdown(false);
+                              setEditPostTitle(currentImage.title || '');
+                              setEditPostDescription(currentImage.description || '');
+                              setIsEditingPost(true);
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-[14px] font-medium text-primary hover:bg-background transition-colors flex items-center gap-3"
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-[18px] h-[18px] text-accent fill-current"><path d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"></path></svg>
+                            Edit post details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowDropdown(false);
+                              handleDeletePost();
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-[14px] font-medium text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-3"
+                          >
+                            <svg className="w-[18px] h-[18px] text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete post
+                          </button>
+                        </>
+                      )}
 
                       {/* License in 3-dots */}
                       <div className="px-4 py-2 border-t border-border/40 text-xs flex items-center justify-between">
@@ -882,32 +1102,34 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
             )}
 
             {/* Image/Video */}
-            <div className="relative rounded-2xl border border-border overflow-hidden max-h-[500px] min-h-[200px] mx-4 mt-4 bg-black/40 flex items-center justify-center">
-              {!isMainLoaded && !isVideoUrl(currentImage.imageUrl) && (
-                <div className="absolute inset-0 bg-surface/50 animate-pulse flex items-center justify-center">
-                  <Spinner />
-                </div>
-              )}
-              {isVideoUrl(currentImage.imageUrl) ? (
-                  <VideoPlayer 
-                    src={currentImage.imageUrl} 
-                    autoPlay 
-                    muted 
-                    loop 
-                    onTimeUpdate={handleVideoTimeUpdate} 
-                    className="w-full h-full object-contain max-h-[500px] bg-black/40"
-                  />
-              ) : (
-                  <img
-                    ref={mainImgRef}
-                    src={currentImage.imageUrl}
-                    alt={currentImage.title || 'Image Detail'}
-                    decoding="async"
-                    className={`w-full h-full object-contain max-h-[500px] bg-black/40 transition-opacity duration-200 ${isMainLoaded ? 'opacity-100' : 'opacity-0'}`}
-                    onLoad={() => setIsMainLoaded(true)}
-                  />
-              )}
-            </div>
+            {Boolean(currentImage.imageUrl && currentImage.imageUrl !== 'text://post' && !currentImage.imageUrl.startsWith('text://')) && (
+              <div className="relative rounded-2xl border border-border overflow-hidden max-h-[500px] min-h-[200px] mx-4 mt-4 bg-black/40 flex items-center justify-center">
+                {!isMainLoaded && !isVideoUrl(currentImage.imageUrl) && (
+                  <div className="absolute inset-0 bg-surface/50 animate-pulse flex items-center justify-center">
+                    <Spinner />
+                  </div>
+                )}
+                {isVideoUrl(currentImage.imageUrl) ? (
+                    <VideoPlayer 
+                      src={currentImage.imageUrl} 
+                      autoPlay 
+                      muted 
+                      loop 
+                      onTimeUpdate={handleVideoTimeUpdate} 
+                      className="w-full h-full object-contain max-h-[500px] bg-black/40"
+                    />
+                ) : (
+                    <img
+                      ref={mainImgRef}
+                      src={currentImage.imageUrl}
+                      alt={currentImage.title || 'Image Detail'}
+                      decoding="async"
+                      className={`w-full h-full object-contain max-h-[500px] bg-black/40 transition-opacity duration-200 ${isMainLoaded ? 'opacity-100' : 'opacity-0'}`}
+                      onLoad={() => setIsMainLoaded(true)}
+                    />
+                )}
+              </div>
+            )}
 
             {/* Meta Details Row (Time, Date, Views) */}
             <div className="py-3 px-4 text-[15px] text-secondary flex flex-wrap gap-1.5 items-center">
@@ -1032,10 +1254,12 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
               )}
             </div>
 
-            {/* Discover More Algorithm Suggestions Feed */}
+            {/* Discover More / More from Community Algorithm Suggestions Feed */}
             <div className="border-t-[10px] border-border bg-background pt-2 pb-6">
                <div className="px-4 py-3">
-                  <h2 className="text-xl font-bold text-primary">Discover more</h2>
+                  <h2 className="text-xl font-bold text-primary">
+                    {currentImage.community_slug ? `More from c/${currentImage.community_slug}` : 'Discover more'}
+                  </h2>
                </div>
                <div className="flex flex-col">
                   {renderRelated ? (
@@ -1068,6 +1292,73 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
        {showEmbed && (
          <div className="fixed inset-0 z-[60]" onClick={(e) => e.stopPropagation()}>
            <EmbedModal image={currentImage} onClose={() => setShowEmbed(false)} />
+         </div>
+       )}
+
+       {/* Edit Post Modal */}
+       {isEditingPost && (
+         <div
+           className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+           onClick={() => setIsEditingPost(false)}
+         >
+           <div
+             className="w-full max-w-lg rounded-3xl bg-surface/95 border border-border p-6 shadow-2xl relative"
+             onClick={(e) => e.stopPropagation()}
+           >
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="text-base font-bold text-primary">Edit Post</h3>
+               <button
+                 type="button"
+                 onClick={() => setIsEditingPost(false)}
+                 className="text-secondary hover:text-primary text-xl leading-none p-1"
+                 aria-label="Close"
+               >
+                 &times;
+               </button>
+             </div>
+             <form onSubmit={handleSavePostDetails} className="space-y-4">
+               <div>
+                 <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
+                   Title
+                 </label>
+                 <input
+                   type="text"
+                   value={editPostTitle}
+                   onChange={(e) => setEditPostTitle(e.target.value)}
+                   maxLength={300}
+                   className="w-full px-4 py-2.5 rounded-xl bg-background/60 border border-border text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none"
+                   required
+                 />
+               </div>
+               <div>
+                 <label className="block text-xs font-semibold text-secondary uppercase tracking-wider mb-1.5">
+                   Content / Description
+                 </label>
+                 <textarea
+                   value={editPostDescription}
+                   onChange={(e) => setEditPostDescription(e.target.value)}
+                   rows={4}
+                   className="w-full px-4 py-2.5 rounded-xl bg-background/60 border border-border text-sm text-primary placeholder-secondary focus:border-accent focus:outline-none resize-none"
+                 />
+               </div>
+               <div className="flex justify-end gap-2.5 pt-2">
+                 <button
+                   type="button"
+                   onClick={() => setIsEditingPost(false)}
+                   className="px-4 py-2 rounded-xl text-xs font-semibold text-secondary hover:text-primary hover:bg-surface border border-border transition-colors"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   type="submit"
+                   disabled={isSavingPost || !editPostTitle.trim()}
+                   className="px-5 py-2 rounded-xl text-xs font-bold bg-accent text-surface hover:opacity-90 disabled:opacity-50 transition-opacity"
+                 >
+                   {isSavingPost ? 'Saving...' : 'Save Changes'}
+                 </button>
+               </div>
+             </form>
+           </div>
          </div>
        )}
 

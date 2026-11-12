@@ -42,6 +42,7 @@ export async function onRequest(context) {
     const staticUrls = [
       { loc: `${baseUrl}/`, lastmod: nowIso, changefreq: "daily", priority: "1.0" },
       { loc: `${baseUrl}/gallery`, lastmod: nowIso, changefreq: "daily", priority: "0.9" },
+      { loc: `${baseUrl}/communities`, lastmod: nowIso, changefreq: "daily", priority: "0.9" },
       { loc: `${baseUrl}/app`, lastmod: nowIso, changefreq: "weekly", priority: "0.8" },
       { loc: `${baseUrl}/api`, lastmod: nowIso, changefreq: "weekly", priority: "0.7" },
       { loc: `${baseUrl}/legal`, lastmod: nowIso, changefreq: "monthly", priority: "0.5" },
@@ -119,6 +120,39 @@ ${creatorUrls.join("\n")}
       return new Response(xml, { status: 200, headers: xmlHeaders });
     } catch (err) {
       console.error("[Sitemap Creators] Error:", err);
+      const fallbackXml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
+      return new Response(fallbackXml, { status: 200, headers: xmlHeaders });
+    }
+  }
+
+  // Case 2.5: Communities Sub-Sitemap (/sitemap/communities.xml)
+  if (chunkName === "communities") {
+    try {
+      const db = getDb(context.env);
+      const result = await db.execute(`
+        SELECT slug, created_at FROM communities 
+        WHERE type = 'public' AND is_nsfw = 0
+        ORDER BY member_count DESC LIMIT 2000
+      `);
+
+      const nowIso = new Date().toISOString();
+      const communityUrls = (result.rows || []).map(comm => {
+        return `  <url>
+    <loc>${baseUrl}/c/${escapeXml(comm.slug)}</loc>
+    <lastmod>${comm.created_at || nowIso}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>`;
+      });
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${communityUrls.join("\n")}
+</urlset>`;
+
+      return new Response(xml, { status: 200, headers: xmlHeaders });
+    } catch (err) {
+      console.error("[Sitemap Communities] Error:", err);
       const fallbackXml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
       return new Response(fallbackXml, { status: 200, headers: xmlHeaders });
     }

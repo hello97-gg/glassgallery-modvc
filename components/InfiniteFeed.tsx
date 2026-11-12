@@ -31,6 +31,8 @@ interface InfiniteFeedProps {
   isFetchingNextPage?: boolean;
   virtuosoRef?: React.RefObject<VirtuosoHandle | null>;
   restoreStateFrom?: any;
+  onCreateCommunityClick?: () => void;
+  onNavigateCommunities?: () => void;
 }
 
 export const FeedItem: React.FC<{
@@ -59,6 +61,44 @@ export const FeedItem: React.FC<{
   const dropdownRef = useRef<HTMLDivElement>(null);
   const itemArticleRef = useRef<HTMLElement>(null);
   const [localViewCount, setLocalViewCount] = useState<number>(image.viewCount || 0);
+
+  const [isMember, setIsMember] = useState(image.is_member ?? false);
+  const [isJoining, setIsJoining] = useState(false);
+
+  useEffect(() => {
+    setIsMember(image.is_member ?? false);
+  }, [image.is_member]);
+
+  const handleJoin = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) {
+      onLoginClick();
+      return;
+    }
+    if (!image.community_id) return;
+    setIsJoining(true);
+    try {
+      const res = await fetch('/api/communities/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityId: image.community_id,
+          action: 'join',
+          uid: user.uid
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsMember(true);
+      }
+    } catch (err) {
+      console.error('Failed to join community:', err);
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  const isTextOnly = !image.imageUrl || image.imageUrl === 'text://post' || image.imageUrl.startsWith('text://');
 
   useEffect(() => {
     setLocalViewCount(image.viewCount || 0);
@@ -149,6 +189,46 @@ export const FeedItem: React.FC<{
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col">
+        {image.community_slug && (
+          <div className="flex items-center justify-between gap-2 mb-1.5 min-h-[28px]">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.history.pushState(null, '', `/c/${image.community_slug}`);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+              className="flex items-center gap-1.5 hover:underline group/comm min-w-0 text-left cursor-pointer"
+            >
+              {image.community_icon_url ? (
+                <img
+                  src={image.community_icon_url}
+                  alt=""
+                  className="w-4 h-4 rounded-full object-cover shrink-0"
+                />
+              ) : (
+                <span className="w-4 h-4 rounded-full bg-accent/20 text-accent text-[10px] font-bold flex items-center justify-center shrink-0">
+                  {image.community_slug[0]?.toUpperCase()}
+                </span>
+              )}
+              <span className="text-[12px] font-bold text-primary group-hover/comm:text-accent transition-colors truncate">
+                c/{image.community_slug}
+              </span>
+            </button>
+
+            {!isMember && (
+              <button
+                type="button"
+                onClick={handleJoin}
+                disabled={isJoining}
+                className="px-3 py-1 rounded-full text-xs font-semibold bg-accent text-primary hover:bg-accent/80 active:scale-95 transition-all min-h-[32px] sm:min-h-[28px] flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                {isJoining ? 'Joining...' : 'Join'}
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-baseline justify-between mb-1">
           <div className="flex items-baseline gap-1.5 truncate">
             <span
@@ -273,36 +353,38 @@ export const FeedItem: React.FC<{
           )}
         </div>
 
-        <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-surface/30 relative min-h-[180px] flex items-center justify-center">
-          {isVideoUrl(image.imageUrl) ? (
-            <VideoPlayer
-              src={image.imageUrl}
-              muted
-              loop
-              autoPlay
-              preload="metadata"
-              onTimeUpdate={handleVideoTimeUpdate}
-              className="w-full h-full object-contain max-h-[500px]"
-            />
-          ) : (
-            <>
-              {!isImageLoaded && (
-                <div className="absolute inset-0 bg-gradient-to-br from-surface/80 via-surface/40 to-surface/90 animate-pulse flex items-center justify-center">
-                  <div className="w-7 h-7 border-2 border-accent/40 border-t-accent rounded-full animate-spin"></div>
-                </div>
-              )}
-              <img
+        {!isTextOnly && (
+          <div className="rounded-2xl border border-border overflow-hidden mb-3 max-h-[500px] bg-surface/30 relative min-h-[180px] flex items-center justify-center">
+            {isVideoUrl(image.imageUrl) ? (
+              <VideoPlayer
                 src={image.imageUrl}
-                alt={image.title || 'Post image'}
-                onLoad={() => setIsImageLoaded(true)}
-                className={`w-full h-full object-cover max-h-[500px] transition-opacity duration-300 ease-out ${isImageLoaded ? 'opacity-100' : 'opacity-0'
-                  }`}
-                loading="lazy"
-                decoding="async"
+                muted
+                loop
+                autoPlay
+                preload="metadata"
+                onTimeUpdate={handleVideoTimeUpdate}
+                className="w-full h-full object-contain max-h-[500px]"
               />
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                {!isImageLoaded && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-surface/80 via-surface/40 to-surface/90 animate-pulse flex items-center justify-center">
+                    <div className="w-7 h-7 border-2 border-accent/40 border-t-accent rounded-full animate-spin"></div>
+                  </div>
+                )}
+                <img
+                  src={image.imageUrl}
+                  alt={image.title || 'Post image'}
+                  onLoad={() => setIsImageLoaded(true)}
+                  className={`w-full h-full object-cover max-h-[500px] transition-opacity duration-300 ease-out ${isImageLoaded ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-between items-center text-secondary w-full max-w-md mt-1">
           <button
@@ -478,8 +560,18 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
   onEndReached,
   isFetchingNextPage,
   virtuosoRef,
-  restoreStateFrom
+  restoreStateFrom,
+  onCreateCommunityClick,
+  onNavigateCommunities
 }) => {
+  const [isBannerDismissed, setIsBannerDismissed] = useState(() => {
+    try {
+      return localStorage.getItem('gg_community_banner_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   return (
     <div className="w-full flex justify-center bg-background min-h-screen">
       <div className="w-full max-w-2xl border-l border-r border-border min-h-screen pb-20 md:pb-0">
@@ -516,6 +608,71 @@ const InfiniteFeed: React.FC<InfiniteFeedProps> = ({
             </div>
           )}
         </div>
+
+        {/* Reddit-Style Community Header / Start Community Banner */}
+        {!topicFilter && !isBannerDismissed && (
+          <div className="m-3 sm:m-4 p-4 rounded-2xl bg-gradient-to-r from-accent/15 via-surface/85 to-surface/50 border border-accent/25 relative overflow-hidden shadow-lg transition-all">
+            <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-accent/10 blur-xl pointer-events-none" />
+
+            <div className="flex items-start justify-between gap-3 relative z-10">
+              <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center shrink-0 text-accent shadow-sm mt-0.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-primary tracking-tight">
+                      {user ? 'Start your own Community' : 'Join or Start a Community'}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-secondary mt-1 leading-relaxed">
+                    Create your creative circle, share high-res art & photography, host discussions, and grow your audience.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2.5 mt-3">
+                    <button
+                      type="button"
+                      onClick={onCreateCommunityClick || (user ? onCreateClick : onLoginClick)}
+                      className="px-3.5 py-1.5 rounded-full bg-accent text-surface text-xs font-bold hover:bg-accent/90 active:scale-95 transition-all shadow flex items-center gap-1.5"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                      </svg>
+                      <span>Create Community</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onNavigateCommunities || (() => {
+                        window.history.pushState(null, '', '/communities');
+                        window.dispatchEvent(new Event('popstate'));
+                      })}
+                      className="px-3.5 py-1.5 rounded-full bg-surface/80 hover:bg-surface border border-border text-primary text-xs font-semibold active:scale-95 transition-all flex items-center gap-1.5"
+                    >
+                      <span>Explore Communities</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBannerDismissed(true);
+                  try { localStorage.setItem('gg_community_banner_dismissed', 'true'); } catch {}
+                }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-secondary hover:text-primary hover:bg-surface/60 transition-colors shrink-0"
+                aria-label="Dismiss banner"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
 
         {!topicFilter && (
           <div className="flex gap-4 p-4 border-b border-border hover:bg-surface/30 cursor-text transition-colors" onClick={user ? onCreateClick : onLoginClick}>

@@ -12,8 +12,8 @@ function escapeHtml(unsafe) {
 
 const RESERVED_ROUTES = new Set([
   'image', 'gallery', 'api', 'legal', 'discover', 'explore', 'reels',
-  'login', 'notifications', 'feed', 'assets', 'favicon.ico',
-  'robots.txt', 'sitemap.xml', 'manifest.json'
+  'c', 'communities', 'login', 'notifications', 'feed', 'assets', 'favicon.ico',
+  'robots.txt', 'sitemap.xml', 'sitemap', 'manifest.json'
 ]);
 
 export const onRequest = async (context) => {
@@ -26,29 +26,37 @@ export const onRequest = async (context) => {
     return Response.redirect(url.toString(), 301);
   }
 
-  // Legacy image parameter 301 redirect (e.g. /?image=XYZ -> /image/XYZ)
-  const imageParam = url.searchParams.get('image');
-  if (imageParam) {
-    const cleanImageId = imageParam.split('_loop_')[0].split('?')[0];
-    const targetUrl = new URL(`/image/${cleanImageId}`, url.origin);
-    return Response.redirect(targetUrl.toString(), 301);
+  // Sitemap shorthand redirect (/sitemap or /sitemap/ -> /sitemap.xml)
+  if (url.pathname === '/sitemap' || url.pathname === '/sitemap/') {
+    return Response.redirect(new URL('/sitemap.xml', url.origin).toString(), 301);
   }
 
-  // Legacy user parameter 301 redirect (e.g. /?user=NAME or /?username=NAME -> /@name)
-  const userParam = url.searchParams.get('username') || url.searchParams.get('user');
-  if (userParam && !userParam.startsWith('http')) {
-    const cleanUser = userParam.replace(/^@/, '').trim().toLowerCase().replace(/\s+/g, '');
-    if (cleanUser) {
-      const targetUrl = new URL(`/@${cleanUser}`, url.origin);
+  // Legacy URL parameter 301 redirects (strictly for non-API page requests)
+  if (!url.pathname.startsWith('/api')) {
+    // Legacy image parameter 301 redirect (e.g. /?image=XYZ -> /image/XYZ)
+    const imageParam = url.searchParams.get('image');
+    if (imageParam) {
+      const cleanImageId = imageParam.split('_loop_')[0].split('?')[0];
+      const targetUrl = new URL(`/image/${cleanImageId}`, url.origin);
       return Response.redirect(targetUrl.toString(), 301);
     }
-  }
 
-  // Legacy view parameter 301 redirect (e.g. /?view=api -> /api, /?view=gallery -> /gallery)
-  const viewParam = url.searchParams.get('view');
-  if (viewParam && ['api', 'gallery', 'app', 'legal', 'reels'].includes(viewParam.toLowerCase())) {
-    const targetUrl = new URL(`/${viewParam.toLowerCase()}`, url.origin);
-    return Response.redirect(targetUrl.toString(), 301);
+    // Legacy user parameter 301 redirect (e.g. /?user=NAME or /?username=NAME -> /@name)
+    const userParam = url.searchParams.get('username') || url.searchParams.get('user');
+    if (userParam && !userParam.startsWith('http')) {
+      const cleanUser = userParam.replace(/^@/, '').trim().toLowerCase().replace(/\s+/g, '');
+      if (cleanUser) {
+        const targetUrl = new URL(`/@${cleanUser}`, url.origin);
+        return Response.redirect(targetUrl.toString(), 301);
+      }
+    }
+
+    // Legacy view parameter 301 redirect (e.g. /?view=api -> /api, /?view=gallery -> /gallery)
+    const viewParam = url.searchParams.get('view');
+    if (viewParam && ['api', 'gallery', 'app', 'legal', 'reels'].includes(viewParam.toLowerCase())) {
+      const targetUrl = new URL(`/${viewParam.toLowerCase()}`, url.origin);
+      return Response.redirect(targetUrl.toString(), 301);
+    }
   }
 
   // Execute next middleware or route handler

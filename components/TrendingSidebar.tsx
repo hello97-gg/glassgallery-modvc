@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { RecommendedCommunitiesWidget } from './communities/RecommendedCommunitiesWidget';
 
 interface TrendingSidebarProps {
   onTopicClick?: (topic: string) => void;
+  user?: any;
+  onSelectCommunity?: (slug: string) => void;
 }
 
-export default function TrendingSidebar({ onTopicClick }: TrendingSidebarProps) {
+export default function TrendingSidebar({ onTopicClick, user, onSelectCommunity }: TrendingSidebarProps) {
   const navigate = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
     e.preventDefault();
     window.history.pushState(null, '', path);
@@ -91,6 +94,12 @@ export default function TrendingSidebar({ onTopicClick }: TrendingSidebarProps) 
         <a href="/api" onClick={(e) => navigate(e, '/api')} className="hover:underline">API</a>
         <a href="mailto:contact@modvc.org" className="hover:underline">Contact</a>
       </div>
+
+      {onSelectCommunity && (
+        <div className="mt-4 pt-4 border-t border-border/40">
+          <RecommendedCommunitiesWidget user={user} onSelectCommunity={onSelectCommunity} />
+        </div>
+      )}
     </div>
   );
 }

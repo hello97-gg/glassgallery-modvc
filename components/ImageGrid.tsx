@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import ImageCard from './ImageCard';
+import TextPostCard from './TextPostCard';
 import Spinner from './Spinner';
 
 interface ImageGridProps {
@@ -134,16 +135,29 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
   return (
     <div className="flex flex-col w-full">
       <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4 md:gap-6">
-        {images.map((image) => (
-          <ImageCard 
+        {images.map((image) => {
+          const isText = !image.imageUrl || image.imageUrl === 'text://post' || image.imageUrl.startsWith('text://');
+          return isText ? (
+            <TextPostCard
+              key={image.id}
+              image={image}
+              user={user}
+              onClick={() => onImageClick(image)}
+              onViewProfile={onViewProfile}
+              onLikeToggle={onLikeToggle}
+              className="mb-4 md:mb-6"
+            />
+          ) : (
+            <ImageCard 
               key={image.id} 
               image={image}
               user={user}
               onClick={() => onImageClick(image)} 
               onViewProfile={onViewProfile}
               onLikeToggle={onLikeToggle}
-          />
-        ))}
+            />
+          );
+        })}
       </div>
       <div ref={sentinelRef} className="h-16 w-full flex items-center justify-center py-4 mt-4">
         {isFetchingMore && <Spinner />}

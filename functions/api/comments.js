@@ -1,4 +1,5 @@
 import { getDb } from "./lib/turso.js";
+import { isPlatformAdmin } from "./lib/communityPermissions.js";
 
 const corsHeaders = {
   'Access-Control-Allow-Credentials': 'true',
@@ -240,10 +241,17 @@ export async function onRequest(context) {
           return Response.json({ success: false, error: "Missing commentId or userUid." }, { status: 400, headers: corsHeaders });
         }
 
-        // Verify ownership (comment author or post uploader)
+        // Verify ownership (comment author, post uploader, community owner/moderator, or platform admin)
         const commentRes = await db.execute({
-          sql: "SELECT c.userUid, c.imageId, i.uploaderUid FROM comments c LEFT JOIN images i ON c.imageId = i.id WHERE c.id = ?",
-          args: [commentId]
+          sql: `SELECT c.userUid, c.imageId, i.uploaderUid, i.community_id,
+                       comm.owner_uid as commOwnerUid,
+                       cm.role as modRole, cm.permissions as modPerms, cm.status as modStatus
+                FROM comments c 
+                LEFT JOIN images i ON c.imageId = i.id 
+                LEFT JOIN communities comm ON i.community_id = comm.id
+                LEFT JOIN community_members cm ON i.community_id = cm.community_id AND cm.uid = ?
+                WHERE c.id = ?`,
+          args: [userUid, commentId]
         });
         if (commentRes.rows.length === 0) {
           return Response.json({ success: false, error: "Comment not found." }, { status: 404, headers: corsHeaders });
@@ -251,9 +259,11 @@ export async function onRequest(context) {
 
         const commentOwner = commentRes.rows[0].userUid;
         const postOwner = commentRes.rows[0].uploaderUid;
-        const imageId = commentRes.rows[0].imageId;
+        const commOwner = commentRes.rows[0].commOwnerUid;
+        const isMod = (commentRes.rows[0].modRole === 'owner' || commentRes.rows[0].modRole === 'moderator') && commentRes.rows[0].modStatus === 'active';
+        const isSuperAdmin = isPlatformAdmin(userUid);
 
-        if (commentOwner !== userUid && postOwner !== userUid) {
+        if (commentOwner !== userUid && postOwner !== userUid && commOwner !== userUid && !isMod && !isSuperAdmin) {
           return Response.json({ success: false, error: "Unauthorized to delete this comment." }, { status: 403, headers: corsHeaders });
         }
 

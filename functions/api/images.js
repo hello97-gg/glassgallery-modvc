@@ -1,5 +1,6 @@
 import { getDb } from "./lib/turso.js";
 import { submitToIndexNow } from "./lib/indexnow.js";
+import { canPostInCommunity, checkUserPlatformAdmin } from "./lib/communityPermissions.js";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon";
 
@@ -46,7 +47,7 @@ export async function onRequest(context) {
       const uploaderUid = url.searchParams.get('uploaderUid');
       const rawImageId = url.searchParams.get('imageId') || url.searchParams.get('id');
       const imageId = rawImageId ? rawImageId.split('_loop_')[0] : null;
-      const userUid = url.searchParams.get('userUid');
+      const userUid = url.searchParams.get('userUid') || url.searchParams.get('uid') || null;
 
       if (action === 'download') {
         const targetId = imageId;
@@ -198,9 +199,22 @@ export async function onRequest(context) {
           return Response.json({ success: false, error: "Missing imageId or id parameter." }, { status: 400, headers: corsHeaders });
         }
 
+        const effectiveUid = userUid || '';
         const targetRes = await db.execute({
-          sql: "SELECT *, (SELECT COUNT(*) FROM views WHERE imageId = images.id) as viewCount FROM images WHERE id = ?",
-          args: [targetId]
+          sql: `SELECT i.*, 
+                       (SELECT COUNT(*) FROM views WHERE imageId = i.id) as viewCount,
+                       c.slug as community_slug,
+                       c.name as community_name,
+                       c.icon_url as community_icon_url,
+                       c.type as community_type,
+                       c.owner_uid as community_owner_uid,
+                       cm.role as viewer_community_role,
+                       cm.status as viewer_community_status
+                FROM images i
+                LEFT JOIN communities c ON i.community_id = c.id
+                LEFT JOIN community_members cm ON i.community_id = cm.community_id AND cm.uid = ?
+                WHERE i.id = ?`,
+          args: [effectiveUid, targetId]
         });
 
         if (targetRes.rows.length === 0) {
@@ -208,11 +222,54 @@ export async function onRequest(context) {
         }
 
         const row = targetRes.rows[0];
+
+        // Check mod status
+        const isAuthor = userUid && userUid === row.uploaderUid;
+        const isCommMod = row.viewer_community_role === 'owner' || row.viewer_community_role === 'moderator' || (userUid && userUid === row.community_owner_uid);
+        if ((row.mod_status === 'removed' || row.mod_status === 'pending_approval') && !isAuthor && !isCommMod) {
+          return Response.json({ success: false, error: "This post has been removed or is pending approval." }, { status: 404, headers: corsHeaders });
+        }
+
+        // Check private community access
+        if (row.community_id && row.community_type === 'private') {
+          const isCommMember = (row.viewer_community_role && row.viewer_community_status === 'active') || (userUid && userUid === row.community_owner_uid);
+          if (!isCommMember) {
+            return Response.json({ success: false, error: "This post is in a private community. You must be an approved member to view." }, { status: 403, headers: corsHeaders });
+          }
+        }
+
+        // Check if viewer is banned from community
+        if (row.community_id && userUid) {
+          if (row.viewer_community_status === 'banned') {
+            return Response.json({ success: false, error: "You are banned from this community." }, { status: 403, headers: corsHeaders });
+          }
+          const banCheck = await db.execute({
+            sql: `SELECT 1 FROM community_bans WHERE community_id = ? AND uid = ? AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`,
+            args: [row.community_id, userUid]
+          });
+          if (banCheck.rows && banCheck.rows.length > 0) {
+            return Response.json({ success: false, error: "You are banned from this community." }, { status: 403, headers: corsHeaders });
+          }
+        }
+
         const likesRes = await db.execute({
           sql: "SELECT userUid FROM likes WHERE imageId = ?",
           args: [targetId]
         });
         const likedBy = likesRes.rows.map(r => r.userUid);
+
+        let isLiked = false;
+        let isSaved = false;
+        if (effectiveUid) {
+          const bookmarkCheck = await db.execute({
+            sql: "SELECT 1 FROM bookmarks WHERE imageId = ? AND userUid = ? LIMIT 1",
+            args: [targetId, effectiveUid]
+          }).catch(() => ({ rows: [] }));
+          const hasLikedThis = likedBy.includes(effectiveUid);
+          const hasSavedThis = (bookmarkCheck.rows && bookmarkCheck.rows.length > 0);
+          isLiked = hasLikedThis || hasSavedThis;
+          isSaved = isLiked;
+        }
 
         let parsedFlags = [];
         let parsedConcepts = [];
@@ -241,7 +298,20 @@ export async function onRequest(context) {
           flags: parsedFlags,
           tags: parsedFlags,
           aiConcepts: parsedConcepts,
-          likedBy: likedBy
+          likedBy: likedBy,
+          isLiked: isLiked,
+          isSaved: isSaved,
+          community_id: row.community_id || null,
+          community_slug: row.community_slug || null,
+          community_name: row.community_name || null,
+          community_icon_url: row.community_icon_url || null,
+          community_owner_uid: row.community_owner_uid || null,
+          is_owner: Boolean(userUid && userUid === row.community_owner_uid),
+          is_mod: Boolean(row.viewer_community_role === 'owner' || row.viewer_community_role === 'moderator' || (userUid && userUid === row.community_owner_uid)),
+          is_member: Boolean((row.viewer_community_role && row.viewer_community_status === 'active') || (userUid && userUid === row.community_owner_uid)),
+          is_pinned: parseInt(row.is_pinned || 0, 10) === 1,
+          is_locked: parseInt(row.is_locked || 0, 10) === 1,
+          mod_status: row.mod_status || 'approved'
         };
 
         return Response.json({ success: true, image }, { status: 200, headers: cacheHeaders });
@@ -292,9 +362,26 @@ export async function onRequest(context) {
           })());
         }
 
+        const effectiveUid = userUid || '';
         const allImagesRes = await db.execute({
-          sql: "SELECT * FROM images WHERE id != ? ORDER BY uploadedAt DESC",
-          args: [imageId]
+          sql: `SELECT i.*,
+                       c.slug as community_slug,
+                       c.name as community_name,
+                       c.icon_url as community_icon_url,
+                       c.type as community_type,
+                       c.owner_uid as community_owner_uid,
+                       cm.role as viewer_community_role,
+                       cm.status as viewer_community_status
+                FROM images i
+                LEFT JOIN communities c ON i.community_id = c.id
+                LEFT JOIN community_members cm ON i.community_id = cm.community_id AND cm.uid = ?
+                WHERE i.id != ?
+                  AND (i.mod_status = 'approved' OR i.mod_status IS NULL)
+                  AND (i.community_id IS NULL OR c.id IS NULL OR c.type != 'private' OR (cm.role IS NOT NULL AND cm.status = 'active') OR (c.owner_uid = ?))
+                  AND (i.community_id IS NULL OR NOT EXISTS (SELECT 1 FROM community_bans cb WHERE cb.community_id = i.community_id AND cb.uid = ? AND (cb.expires_at IS NULL OR cb.expires_at > datetime('now'))))
+                  AND (i.community_id IS NULL OR NOT EXISTS (SELECT 1 FROM community_members cmb WHERE cmb.community_id = i.community_id AND cmb.uid = ? AND cmb.status = 'banned'))
+                ORDER BY (CASE WHEN ? != '' AND i.community_id = ? THEN 1 ELSE 0 END) DESC, i.uploadedAt DESC`,
+          args: [effectiveUid, imageId, effectiveUid, effectiveUid, effectiveUid, target.community_id || '', target.community_id || '']
         });
         const likesRes = await db.execute("SELECT * FROM likes");
 
@@ -305,6 +392,17 @@ export async function onRequest(context) {
           if (!likesMap[imgId]) likesMap[imgId] = [];
           likesMap[imgId].push(uUid);
         });
+
+        const userBookmarks = new Set();
+        if (userUid) {
+          try {
+            const bRes = await db.execute({
+              sql: "SELECT imageId FROM bookmarks WHERE userUid = ?",
+              args: [userUid]
+            });
+            bRes.rows.forEach(b => userBookmarks.add(b.imageId));
+          } catch {}
+        }
 
         const tasteProfile = {};
         if (userUid) {
@@ -470,7 +568,8 @@ export async function onRequest(context) {
 
           // Related-panel score: on-topic relevance (concepts/tags/metadata) + same-creator lead,
           // personalized to the viewer's taste; generic popularity is a minor tiebreaker.
-          const totalScore = (conceptOverlap * 5.0) + (tagOverlap * 4.5) + (metadataMatch * 3.0) + (tasteScore * 3.0) + sameCreatorBoost + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
+          const sameCommunityBoost = (target.community_id && row.community_id === target.community_id) ? 1000.0 : 0.0;
+          const totalScore = (conceptOverlap * 5.0) + (tagOverlap * 4.5) + (metadataMatch * 3.0) + (tasteScore * 3.0) + sameCreatorBoost + sameCommunityBoost + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
 
           return {
             image: {
@@ -494,15 +593,39 @@ export async function onRequest(context) {
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[id] || [],
+              isLiked: Boolean(userUid && (userBookmarks.has(id) || (likesMap[id] && likesMap[id].includes(userUid)))),
+              isSaved: Boolean(userUid && (userBookmarks.has(id) || (likesMap[id] && likesMap[id].includes(userUid)))),
+              community_id: row.community_id || null,
+              community_slug: row.community_slug || null,
+              community_name: row.community_name || null,
+              community_icon_url: row.community_icon_url || null,
+              community_owner_uid: row.community_owner_uid || null,
+              is_owner: Boolean(userUid && userUid === row.community_owner_uid),
+              is_mod: Boolean(row.viewer_community_role === 'owner' || row.viewer_community_role === 'moderator' || (userUid && userUid === row.community_owner_uid)),
+              is_member: Boolean((row.viewer_community_role && (row.viewer_community_status === 'active' || !row.viewer_community_status)) || (userUid && userUid === row.community_owner_uid)),
+              is_pinned: parseInt(row.is_pinned || 0, 10) === 1,
+              is_locked: parseInt(row.is_locked || 0, 10) === 1,
+              mod_status: row.mod_status || 'approved'
             },
             score: totalScore
           };
         });
 
         scoredImages.sort((a, b) => b.score - a.score);
-        const suggestions = scoredImages.map(item => item.image).slice(0, 12);
+        const pageSize = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '24', 10), 1), 60);
+        const cursorParam = url.searchParams.get('cursor');
+        const offset = cursorParam ? parseInt(cursorParam, 10) || 0 : 0;
+        const suggestionsPage = scoredImages.slice(offset, offset + pageSize).map(item => item.image);
+        const nextOffset = offset + suggestionsPage.length;
+        const nextCursor = nextOffset < scoredImages.length ? String(nextOffset) : null;
 
-        return Response.json({ success: true, images: suggestions }, { status: 200, headers: cacheHeaders });
+        return Response.json({
+          success: true,
+          images: suggestionsPage,
+          nextCursor,
+          hasMore: Boolean(nextCursor),
+          total: scoredImages.length
+        }, { status: 200, headers: cacheHeaders });
       }
 
       // --- Personalized Feed: Full feed sorted by user's taste profile ---
@@ -510,8 +633,27 @@ export async function onRequest(context) {
         const searchTerms = url.searchParams.get('searchTerms') || ''; // Client-side search history
 
         // Optimized: Combined taste profile query (uploads + likes + views in one UNION ALL) — reduces 7→5 DB calls
+        const effectiveUid = userUid || '';
         const [allImagesRes, likesRes, userProfileRes, combinedTasteRes, followingRes, viewsCountRes] = await Promise.all([
-          db.execute("SELECT * FROM images ORDER BY uploadedAt DESC"),
+          db.execute({
+            sql: `SELECT i.*,
+                         c.slug as community_slug,
+                         c.name as community_name,
+                         c.icon_url as community_icon_url,
+                         c.type as community_type,
+                         c.owner_uid as community_owner_uid,
+                         cm.role as viewer_community_role,
+                         cm.status as viewer_community_status
+                  FROM images i
+                  LEFT JOIN communities c ON i.community_id = c.id
+                  LEFT JOIN community_members cm ON i.community_id = cm.community_id AND cm.uid = ?
+                  WHERE (i.mod_status = 'approved' OR i.mod_status IS NULL)
+                    AND (i.community_id IS NULL OR c.id IS NULL OR c.type != 'private' OR (cm.role IS NOT NULL AND cm.status = 'active') OR (c.owner_uid = ?))
+                    AND (i.community_id IS NULL OR NOT EXISTS (SELECT 1 FROM community_bans cb WHERE cb.community_id = i.community_id AND cb.uid = ? AND (cb.expires_at IS NULL OR cb.expires_at > datetime('now'))))
+                    AND (i.community_id IS NULL OR NOT EXISTS (SELECT 1 FROM community_members cmb WHERE cmb.community_id = i.community_id AND cmb.uid = ? AND cmb.status = 'banned'))
+                  ORDER BY i.uploadedAt DESC`,
+            args: [effectiveUid, effectiveUid, effectiveUid, effectiveUid]
+          }),
           db.execute("SELECT * FROM likes"),
           db.execute({ sql: "SELECT followedTags FROM users WHERE uploaderUid = ?", args: [userUid] }),
           // Single combined query for uploads + likes + views taste signals
@@ -681,6 +823,17 @@ export async function onRequest(context) {
               flags: fl,
               aiConcepts: co,
               likedBy: likesMap[row.id] || [],
+              community_id: row.community_id || null,
+              community_slug: row.community_slug || null,
+              community_name: row.community_name || null,
+              community_icon_url: row.community_icon_url || null,
+              community_owner_uid: row.community_owner_uid || null,
+              is_owner: Boolean(userUid && userUid === row.community_owner_uid),
+              is_mod: Boolean(row.viewer_community_role === 'owner' || row.viewer_community_role === 'moderator' || (userUid && userUid === row.community_owner_uid)),
+              is_member: Boolean((row.viewer_community_role && (row.viewer_community_status === 'active' || !row.viewer_community_status)) || (userUid && userUid === row.community_owner_uid)),
+              is_pinned: parseInt(row.is_pinned || 0, 10) === 1,
+              is_locked: parseInt(row.is_locked || 0, 10) === 1,
+              mod_status: row.mod_status || 'approved'
             },
             score: totalScore
           };
@@ -695,23 +848,56 @@ export async function onRequest(context) {
       const cursor = url.searchParams.get('cursor');
       const limitParam = parseInt(url.searchParams.get('limit') || '50');
 
-      let imagesQuery = "SELECT * FROM images";
-      let imagesArgs = [];
-      let conditions = [];
+      const effectiveUid = userUid || '';
+      let imagesQuery = `SELECT i.*,
+                                c.slug as community_slug,
+                                c.name as community_name,
+                                c.icon_url as community_icon_url,
+                                c.type as community_type,
+                                c.owner_uid as community_owner_uid,
+                                cm.role as viewer_community_role,
+                                cm.status as viewer_community_status
+                         FROM images i
+                         LEFT JOIN communities c ON i.community_id = c.id
+                         LEFT JOIN community_members cm ON i.community_id = cm.community_id AND cm.uid = ?`;
+      let imagesArgs = [effectiveUid];
+      let conditions = [
+        "(i.mod_status = 'approved' OR i.mod_status IS NULL)",
+        "(i.community_id IS NULL OR c.id IS NULL OR c.type != 'private' OR (cm.role IS NOT NULL AND cm.status = 'active') OR (c.owner_uid = ?))",
+        "(i.community_id IS NULL OR NOT EXISTS (SELECT 1 FROM community_bans cb WHERE cb.community_id = i.community_id AND cb.uid = ? AND (cb.expires_at IS NULL OR cb.expires_at > datetime('now'))))",
+        "(i.community_id IS NULL OR NOT EXISTS (SELECT 1 FROM community_members cmb WHERE cmb.community_id = i.community_id AND cmb.uid = ? AND cmb.status = 'banned'))"
+      ];
+      imagesArgs.push(effectiveUid, effectiveUid, effectiveUid);
 
       if (uploaderUid) {
-        conditions.push("uploaderUid = ?");
+        conditions.push("i.uploaderUid = ?");
         imagesArgs.push(uploaderUid);
       }
+      const feedParam = url.searchParams.get('feed');
+      if (feedParam === 'following') {
+        if (!effectiveUid) {
+          return Response.json({ success: true, images: [], nextCursor: null }, { status: 200, headers: cacheHeaders });
+        }
+        conditions.push(`(
+          i.uploaderUid IN (SELECT followingUid FROM follows WHERE followerUid = ?)
+          OR
+          (i.community_id IS NOT NULL AND (
+            i.community_id IN (SELECT community_id FROM community_members WHERE uid = ? AND status = 'active')
+            OR
+            i.community_id IN (SELECT id FROM communities WHERE owner_uid = ?)
+          ))
+        )`);
+        imagesArgs.push(effectiveUid, effectiveUid, effectiveUid);
+      }
       if (cursor) {
-        conditions.push("uploadedAt < ?");
+        conditions.push("i.uploadedAt < ?");
         imagesArgs.push(cursor);
       }
 
       if (conditions.length > 0) {
         imagesQuery += " WHERE " + conditions.join(" AND ");
       }
-      imagesQuery += " ORDER BY uploadedAt DESC";
+      imagesQuery += " ORDER BY i.uploadedAt DESC";
 
       try {
         if (url.searchParams.has('limit') || cursor) {
@@ -719,11 +905,16 @@ export async function onRequest(context) {
           imagesArgs.push(limitParam);
         }
 
-        const [defaultImagesRes, defaultLikesRes, defaultViewsRes] = await Promise.all([
+        const [defaultImagesRes, defaultLikesRes, defaultViewsRes, defaultBookmarksRes] = await Promise.all([
           db.execute({ sql: imagesQuery, args: imagesArgs }),
           db.execute("SELECT * FROM likes"),
-          db.execute("SELECT imageId, COUNT(*) as count FROM views GROUP BY imageId")
+          db.execute("SELECT imageId, COUNT(*) as count FROM views GROUP BY imageId"),
+          effectiveUid 
+            ? db.execute({ sql: "SELECT imageId FROM bookmarks WHERE userUid = ?", args: [effectiveUid] }).catch(() => ({ rows: [] }))
+            : Promise.resolve({ rows: [] })
         ]);
+
+        const defaultBookmarksSet = new Set((defaultBookmarksRes.rows || []).map(b => b.imageId));
 
         const defaultLikesMap = {};
         defaultLikesRes.rows.forEach(like => {
@@ -745,6 +936,10 @@ export async function onRequest(context) {
           try { parsedFlags = row.flags ? JSON.parse(row.flags) : []; } catch { }
           try { parsedConcepts = row.aiConcepts ? JSON.parse(row.aiConcepts) : []; } catch { }
 
+          const userLikedThis = Boolean(effectiveUid && defaultLikesMap[id] && defaultLikesMap[id].includes(effectiveUid));
+          const userSavedThis = Boolean(effectiveUid && (defaultBookmarksSet.has(id) || userLikedThis));
+          const isLikedCombined = userLikedThis || userSavedThis;
+
           return {
             id: row.id,
             imageUrl: row.imageUrl,
@@ -765,7 +960,20 @@ export async function onRequest(context) {
             viewCount: defaultViewsMap[id] || parseInt(row.viewCount || 0),
             flags: parsedFlags,
             aiConcepts: parsedConcepts,
-            likedBy: defaultLikesMap[id] || []
+            likedBy: defaultLikesMap[id] || [],
+            isLiked: isLikedCombined,
+            isSaved: isLikedCombined,
+            community_id: row.community_id || null,
+            community_slug: row.community_slug || null,
+            community_name: row.community_name || null,
+            community_icon_url: row.community_icon_url || null,
+            community_owner_uid: row.community_owner_uid || null,
+            is_owner: Boolean(userUid && userUid === row.community_owner_uid),
+            is_mod: Boolean(row.viewer_community_role === 'owner' || row.viewer_community_role === 'moderator' || (userUid && userUid === row.community_owner_uid)),
+            is_member: Boolean((row.viewer_community_role && (row.viewer_community_status === 'active' || !row.viewer_community_status)) || (userUid && userUid === row.community_owner_uid)),
+            is_pinned: parseInt(row.is_pinned || 0, 10) === 1,
+            is_locked: parseInt(row.is_locked || 0, 10) === 1,
+            mod_status: row.mod_status || 'approved'
           };
         });
 
@@ -1205,14 +1413,23 @@ Return the response strictly as a JSON object with this exact format:
         return Response.json({ success: true, imageId: id, uploadUrl: `/api/images/upload?id=${id}&filename=${uniqueFileName}` }, { status: 200, headers: corsHeaders });
       }
 
-      // Action: Add/Upload image
+      // Action: Add/Upload image or text post
       if (action === 'upload') {
         const {
-          id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL, title, description, license, licenseUrl, flags, originalWorkUrl, location, keyframes
+          id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL,
+          title, description, license, licenseUrl, flags, originalWorkUrl, location, keyframes,
+          community_id
         } = body;
 
-        if (!id || !imageUrl || !uploaderUid) {
+        const isTextPost = (!imageUrl || imageUrl === 'text://post' || imageUrl.startsWith('text://'));
+        const finalImageUrl = isTextPost ? 'text://post' : imageUrl;
+
+        if (!id || (!isTextPost && !imageUrl) || !uploaderUid) {
           return Response.json({ success: false, error: "Missing required fields." }, { status: 400, headers: corsHeaders });
+        }
+
+        if (isTextPost && !title && !description) {
+          return Response.json({ success: false, error: "Text posts require a title or body text." }, { status: 400, headers: corsHeaders });
         }
 
         let updatedFlags = flags || [];
@@ -1220,8 +1437,60 @@ Return the response strictly as a JSON object with this exact format:
         let isExtreme = false;
         let extremeViolations = [];
         let aiConceptsArr = [];
+
+        // Community verification & automod check
+        let validCommunityId = null;
+        let commObj = null;
+        let modStatus = 'approved';
+        if (community_id) {
+          const commRes = await db.execute({
+            sql: "SELECT id, slug, name, icon_url, type, owner_uid, settings_json FROM communities WHERE id = ? OR slug = ? LIMIT 1",
+            args: [community_id, community_id]
+          });
+          if (commRes.rows && commRes.rows.length > 0) {
+            const comm = commRes.rows[0];
+            commObj = comm;
+            validCommunityId = comm.id;
+            const settings = typeof comm.settings_json === 'string' ? JSON.parse(comm.settings_json || '{}') : (comm.settings_json || {});
+            
+            const memRes = await db.execute({
+              sql: "SELECT role, status FROM community_members WHERE community_id = ? AND uid = ? LIMIT 1",
+              args: [validCommunityId, uploaderUid]
+            });
+            let role = memRes.rows?.[0]?.role || 'none';
+            if (comm.owner_uid === uploaderUid) {
+              role = 'owner';
+            }
+            const isMuted = memRes.rows?.[0]?.status === 'muted';
+            const isBanned = memRes.rows?.[0]?.status === 'banned';
+
+            const banRes = await db.execute({
+              sql: "SELECT id, expires_at FROM community_bans WHERE community_id = ? AND uid = ? LIMIT 1",
+              args: [validCommunityId, uploaderUid]
+            });
+            const activeBan = banRes.rows?.length > 0 && (!banRes.rows[0].expires_at || new Date(banRes.rows[0].expires_at).getTime() > Date.now());
+
+            const isPlatformSuperAdmin = await checkUserPlatformAdmin(db, uploaderUid);
+            if (!canPostInCommunity(comm.type, role, activeBan || isBanned, isMuted, uploaderUid) && !isPlatformSuperAdmin) {
+              return Response.json({ success: false, error: "You do not have permission to post in this community." }, { status: 403, headers: corsHeaders });
+            }
+
+            if (Array.isArray(settings.banned_words) && settings.banned_words.length > 0) {
+              const textContent = `${title || ''} ${description || ''}`.toLowerCase();
+              const hasBannedWord = settings.banned_words.some(w => w && textContent.includes(w.toLowerCase().trim()));
+              if (hasBannedWord) {
+                return Response.json({ success: false, error: "Post violates community content guidelines (prohibited keyword detected)." }, { status: 400, headers: corsHeaders });
+              }
+            }
+
+            if ((settings.require_post_approval || comm.type === 'restricted') && role !== 'owner' && role !== 'moderator' && role !== 'approved' && !isPlatformSuperAdmin) {
+              modStatus = 'pending_approval';
+            }
+          }
+        }
+
         try {
-          const safetyRes = await checkContentSafety(title, description, location, imageUrl, id, env, keyframes);
+          const safetyRes = await checkContentSafety(title, description, location, isTextPost ? '' : finalImageUrl, id, env, keyframes);
           isUnsafe = safetyRes.isUnsafe;
           isExtreme = safetyRes.isExtreme;
           extremeViolations = safetyRes.extremeViolations || [];
@@ -1232,12 +1501,12 @@ Return the response strictly as a JSON object with this exact format:
 
         // HARD BLOCK: Completely block severe gore, CSAM, or explicit sexual content
         if (isExtreme) {
-          console.warn(`[Content Safety Block] Rejecting extreme upload (${extremeViolations.join(', ')}). Purging from R2: ${imageUrl}`);
-          await deleteR2Object(imageUrl, env);
+          console.warn(`[Content Safety Block] Rejecting extreme upload (${extremeViolations.join(', ')}). Purging from R2: ${finalImageUrl}`);
+          if (!isTextPost) await deleteR2Object(finalImageUrl, env);
           return Response.json({
             success: false,
             blocked: true,
-            error: "Upload blocked: This photo was flagged for explicit or graphic content (severe gore or explicit sexual content) violating community guidelines.",
+            error: "Upload blocked: This content was flagged for explicit or graphic content violating community guidelines.",
             violations: extremeViolations
           }, { status: 400, headers: corsHeaders });
         }
@@ -1252,26 +1521,96 @@ Return the response strictly as a JSON object with this exact format:
           sql: `INSERT INTO images (
             id, imageUrl, thumbnailUrl, uploaderUid, uploaderName, uploaderPhotoURL,
             title, description, license, licenseUrl, flags, originalWorkUrl,
-            uploadedAt, likeCount, downloadCount, location, aiConcepts
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+            uploadedAt, likeCount, downloadCount, location, aiConcepts,
+            community_id, mod_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
           args: [
-            id, imageUrl, thumbnailUrl || imageUrl, uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
+            id, finalImageUrl, isTextPost ? '' : (thumbnailUrl || finalImageUrl), uploaderUid, uploaderName || 'Anonymous', uploaderPhotoURL || '',
             title || '', description || '', license || 'CC0', licenseUrl || '',
             JSON.stringify(updatedFlags), originalWorkUrl || '', uploadedAt, location || '',
-            JSON.stringify(aiConceptsArr)
+            JSON.stringify(aiConceptsArr),
+            validCommunityId,
+            modStatus
           ]
         });
 
-        // Trigger IndexNow notification for newly added image
-        const indexNowUrls = [
-          `https://gg.modvc.org/image/${id}`,
-          "https://gg.modvc.org/gallery",
-          "https://gg.modvc.org/"
-        ];
-        if (context.waitUntil) {
-          context.waitUntil(submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err)));
-        } else {
-          submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err));
+        // If approved and part of community, increment post count & log event
+        if (validCommunityId && modStatus === 'approved') {
+          try {
+            await db.execute({
+              sql: "UPDATE communities SET post_count = post_count + 1 WHERE id = ?",
+              args: [validCommunityId]
+            });
+            await db.execute({
+              sql: "INSERT INTO community_events (id, uid, community_id, event, created_at) VALUES (?, ?, ?, 'post', ?)",
+              args: ['ev_' + Math.random().toString(36).substring(2, 11), uploaderUid, validCommunityId, uploadedAt]
+            });
+          } catch (e) {
+            console.warn("[Community Post Count] Error updating:", e.message);
+          }
+        }
+
+        // If pending approval, notify author and community mods/owner
+        if (validCommunityId && modStatus === 'pending_approval' && commObj) {
+          try {
+            const authorNotifId = 'notif_' + Math.random().toString(36).substring(2, 15);
+            await db.execute({
+              sql: `INSERT INTO notifications (id, recipientUid, actorUid, actorName, actorPhotoURL, type, imageId, imageUrl, createdAt, read)
+                    VALUES (?, ?, ?, ?, ?, 'community_post_pending', ?, ?, ?, 0)`,
+              args: [
+                authorNotifId,
+                uploaderUid,
+                'c/' + commObj.slug,
+                commObj.name || ('c/' + commObj.slug),
+                commObj.icon_url || '',
+                id,
+                isTextPost ? '' : (thumbnailUrl || finalImageUrl),
+                uploadedAt
+              ]
+            }).catch(e => console.warn("[Pending Author Notif Error]:", e.message));
+
+            const modRows = await db.execute({
+              sql: `SELECT DISTINCT uid FROM community_members WHERE community_id = ? AND role IN ('owner', 'moderator')`,
+              args: [validCommunityId]
+            });
+            const modUids = new Set((modRows.rows || []).map(r => r.uid));
+            if (commObj.owner_uid) modUids.add(commObj.owner_uid);
+            modUids.delete(uploaderUid);
+
+            for (const modUid of modUids) {
+              const modNotifId = 'notif_' + Math.random().toString(36).substring(2, 15);
+              await db.execute({
+                sql: `INSERT INTO notifications (id, recipientUid, actorUid, actorName, actorPhotoURL, type, imageId, imageUrl, createdAt, read)
+                      VALUES (?, ?, ?, ?, ?, 'community_mod_queue', ?, ?, ?, 0)`,
+                args: [
+                  modNotifId,
+                  modUid,
+                  uploaderUid,
+                  uploaderName || 'A member',
+                  uploaderPhotoURL || '',
+                  id,
+                  isTextPost ? '' : (thumbnailUrl || finalImageUrl),
+                  uploadedAt
+                ]
+              }).catch(e => console.warn("[Mod Queue Notif Error]:", e.message));
+            }
+          } catch (notifErr) {
+            console.warn("[Community Pending Notifications Error]:", notifErr.message);
+          }
+        }
+
+        // Trigger IndexNow notification for newly added image (if approved & public)
+        if (modStatus === 'approved') {
+          const indexNowUrls = [
+            `https://gg.modvc.org/image/${id}`,
+            "https://gg.modvc.org/gallery",
+            "https://gg.modvc.org/"
+          ];
+          if (context.waitUntil) {
+            context.waitUntil(submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err)));
+          } else {
+            submitToIndexNow(indexNowUrls).catch(err => console.warn("[IndexNow Auto-Ping Error]:", err));
+          }
         }
 
         if (isUnsafe) {
@@ -1371,9 +1710,9 @@ Return the response strictly as a JSON object with this exact format:
         }
       }
 
-      // Action: Toggle like
+      // Action: Toggle like (linked with bookmarks)
       if (action === 'like') {
-        const { imageId: rawImageId, userUid, userName, userPhotoURL } = body;
+        const { imageId: rawImageId, userUid, userName, userPhotoURL, targetState } = body;
         const imageId = rawImageId ? rawImageId.split('_loop_')[0] : null;
 
         if (!imageId || !userUid) {
@@ -1385,19 +1724,28 @@ Return the response strictly as a JSON object with this exact format:
           args: [imageId, userUid]
         });
 
-        const hasLiked = checkLike.rows.length > 0;
+        const isCurrentlyLiked = checkLike.rows.length > 0;
+        const shouldLike = typeof targetState === 'boolean' ? targetState : !isCurrentlyLiked;
         let wasLike = false;
 
-        if (hasLiked) {
+        if (!shouldLike) {
           await db.execute({
             sql: "DELETE FROM likes WHERE imageId = ? AND userUid = ?",
             args: [imageId, userUid]
           });
+          await db.execute({
+            sql: "DELETE FROM bookmarks WHERE imageId = ? AND userUid = ?",
+            args: [imageId, userUid]
+          }).catch(() => {});
         } else {
           await db.execute({
-            sql: "INSERT INTO likes (imageId, userUid) VALUES (?, ?)",
+            sql: "INSERT OR IGNORE INTO likes (imageId, userUid) VALUES (?, ?)",
             args: [imageId, userUid]
           });
+          await db.execute({
+            sql: "INSERT OR IGNORE INTO bookmarks (imageId, userUid, createdAt) VALUES (?, ?, ?)",
+            args: [imageId, userUid, new Date().toISOString()]
+          }).catch(() => {});
           wasLike = true;
         }
 
@@ -1435,7 +1783,75 @@ Return the response strictly as a JSON object with this exact format:
           }
         }
 
-        return Response.json({ success: true, hasLiked: !hasLiked }, { status: 200, headers: corsHeaders });
+        return Response.json({
+          success: true,
+          hasLiked: shouldLike,
+          isLiked: shouldLike,
+          isSaved: shouldLike,
+          likeCount: newCount
+        }, { status: 200, headers: corsHeaders });
+      }
+
+      // Action: Toggle save / bookmark (linked with likes)
+      if (action === 'save' || action === 'bookmark') {
+        const { imageId: rawImageId, userUid, userName, userPhotoURL, targetState } = body;
+        const imageId = rawImageId ? rawImageId.split('_loop_')[0] : null;
+
+        if (!imageId || !userUid) {
+          return Response.json({ success: false, error: "Missing imageId or userUid." }, { status: 400, headers: corsHeaders });
+        }
+
+        const checkBookmark = await db.execute({
+          sql: "SELECT 1 FROM bookmarks WHERE imageId = ? AND userUid = ?",
+          args: [imageId, userUid]
+        }).catch(() => ({ rows: [] }));
+
+        const checkLike = await db.execute({
+          sql: "SELECT 1 FROM likes WHERE imageId = ? AND userUid = ?",
+          args: [imageId, userUid]
+        }).catch(() => ({ rows: [] }));
+
+        const isCurrentlySaved = checkBookmark.rows.length > 0 || checkLike.rows.length > 0;
+        const shouldSave = typeof targetState === 'boolean' ? targetState : !isCurrentlySaved;
+
+        if (!shouldSave) {
+          await db.execute({
+            sql: "DELETE FROM bookmarks WHERE imageId = ? AND userUid = ?",
+            args: [imageId, userUid]
+          }).catch(() => {});
+          await db.execute({
+            sql: "DELETE FROM likes WHERE imageId = ? AND userUid = ?",
+            args: [imageId, userUid]
+          }).catch(() => {});
+        } else {
+          await db.execute({
+            sql: "INSERT OR IGNORE INTO bookmarks (imageId, userUid, createdAt) VALUES (?, ?, ?)",
+            args: [imageId, userUid, new Date().toISOString()]
+          }).catch(() => {});
+          await db.execute({
+            sql: "INSERT OR IGNORE INTO likes (imageId, userUid) VALUES (?, ?)",
+            args: [imageId, userUid]
+          }).catch(() => {});
+        }
+
+        const newCountRes = await db.execute({
+          sql: "SELECT COUNT(*) as count FROM likes WHERE imageId = ?",
+          args: [imageId]
+        });
+        const newCount = parseInt(newCountRes.rows[0].count || 0);
+
+        await db.execute({
+          sql: "UPDATE images SET likeCount = ? WHERE id = ?",
+          args: [newCount, imageId]
+        });
+
+        return Response.json({
+          success: true,
+          hasSaved: shouldSave,
+          isSaved: shouldSave,
+          isLiked: shouldSave,
+          likeCount: newCount
+        }, { status: 200, headers: corsHeaders });
       }
 
       // Action: Register user view/click or feed impression batch

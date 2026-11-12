@@ -35,6 +35,9 @@ import MobileAppPromo from './components/MobileAppPromo';
 import TrendingSidebar from './components/TrendingSidebar';
 import AppShowcasePage from './components/AppShowcasePage';
 import ReelsPage from './components/ReelsPage';
+import { CommunityDiscoverPage } from './components/communities/CommunityDiscoverPage';
+import { CommunityView } from './components/communities/CommunityView';
+import { CreateCommunityModal } from './components/communities/CreateCommunityModal';
 
 // Global Fetch Interceptor for Capacitor Native Platform or External Sandbox/Embed Hosts to reroute relative paths to the production API
 const isExternalHost = typeof window !== 'undefined' && 
@@ -466,14 +469,19 @@ const App: React.FC = () => {
   const [targetCommentId, setTargetCommentId] = useState<string | null>(null);
   const [selectedFeedPost, setSelectedFeedPost] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadModalCommunityId, setUploadModalCommunityId] = useState<string>('');
+  const [uploadModalPostType, setUploadModalPostType] = useState<'media' | 'text'>('media');
+  const [communityRefreshKey, setCommunityRefreshKey] = useState<number>(0);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
   
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
   const [initialReelId, setInitialReelId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post' | 'app'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'legal' | 'post' | 'app' | 'communities' | 'community'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'discover' | 'reels' | 'explore' | 'api' | 'legal' | 'app'>('home');
+  const [lastView, setLastView] = useState<'home' | 'discover' | 'reels' | 'explore' | 'api' | 'legal' | 'app' | 'communities' | 'community'>('home');
+  const [selectedCommunitySlug, setSelectedCommunitySlug] = useState<string | null>(null);
+  const [isCreateCommunityOpen, setIsCreateCommunityOpen] = useState(false);
   
   const [exploreSearchTerm, setExploreSearchTerm] = useState('');
   const [homeTopicFilter, setHomeTopicFilter] = useState('');
@@ -515,14 +523,25 @@ const App: React.FC = () => {
 
   const [feedTab, setFeedTab] = useState<'discover' | 'following'>('discover');
   const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
+  const [joinedCommunityIds, setJoinedCommunityIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user) {
       getFollowingList(user.uid).then(users => {
         setFollowingUids(new Set(users.map(u => u.uploaderUid)));
       }).catch(err => console.error("Failed to load following list", err));
+
+      fetch(`/api/communities?my=true&uid=${encodeURIComponent(user.uid)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.communities)) {
+            setJoinedCommunityIds(new Set(data.communities.map((c: any) => c.id)));
+          }
+        })
+        .catch(err => console.error("Failed to load joined communities", err));
     } else {
       setFollowingUids(new Set());
+      setJoinedCommunityIds(new Set());
       if (feedTab === 'following') setFeedTab('discover');
     }
   }, [user]);
@@ -530,7 +549,7 @@ const App: React.FC = () => {
   const activeAllImages = useMemo(() => {
     let result = allImages;
     if (feedTab === 'following') {
-       result = result.filter(img => followingUids.has(img.uploaderUid));
+       result = result.filter(img => followingUids.has(img.uploaderUid) || (img.community_id && (joinedCommunityIds.has(img.community_id) || img.is_member)));
     }
     if (homeTopicFilter) {
        const lowerTopic = homeTopicFilter.toLowerCase();
@@ -542,7 +561,7 @@ const App: React.FC = () => {
        );
     }
     return result;
-  }, [allImages, feedTab, followingUids, homeTopicFilter]);
+  }, [allImages, feedTab, followingUids, joinedCommunityIds, homeTopicFilter]);
 
   const {
     data: feedQueryData,
@@ -550,20 +569,20 @@ const App: React.FC = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? Array.from(followingUids).sort().join(',') : '', homeTopicFilter, exploreSearchTerm, user?.uid, sessionSeed],
+    queryKey: ['feedData', activeView, feedTab, feedTab === 'following' ? `${Array.from(followingUids).sort().join(',')}_${Array.from(joinedCommunityIds).sort().join(',')}` : '', homeTopicFilter, exploreSearchTerm, user?.uid, sessionSeed],
     queryFn: async ({ pageParam = 0 }) => {
       isFetchingRef.current = true;
       try {
         let baseImages = allImagesRef.current.length > 0 ? allImagesRef.current : allImages;
         if (baseImages.length === 0) {
-          const res = await getImagesFromFirestore();
+          const res = await getImagesFromFirestore(user?.uid);
           baseImages = res.images;
           setAllImages(baseImages);
         }
 
         let filtered = baseImages;
         if (feedTab === 'following') {
-          filtered = filtered.filter(img => followingUids.has(img.uploaderUid));
+          filtered = filtered.filter(img => followingUids.has(img.uploaderUid) || (img.community_id && (joinedCommunityIds.has(img.community_id) || img.is_member)));
         }
         if (homeTopicFilter) {
           const lowerTopic = homeTopicFilter.toLowerCase();
@@ -849,6 +868,12 @@ const App: React.FC = () => {
       setAuthLoading(false);
       if (currentUser) {
         setLoginModalOpen(false);
+        // Automatically re-open CreateCommunityModal if there is a saved local draft
+        try {
+          if (localStorage.getItem('gg_draft_community')) {
+            setIsCreateCommunityOpen(true);
+          }
+        } catch {}
         // Load user profile & onboarding state in background
         getUserProfile(currentUser.uid).then(async (profile) => {
           if (!profile) {
@@ -915,8 +940,8 @@ const App: React.FC = () => {
       // Detect @username or direct /username routes (e.g. /@pixeletedthoughts or /pixeletedthoughts)
       const RESERVED_PATHS = new Set([
         'image', 'gallery', 'api', 'legal', 'discover', 'reels', 'explore', 'app', 'download', 'apk',
-        'login', 'notifications', 'feed', 'assets', 'favicon.ico',
-        'robots.txt', 'sitemap.xml', 'manifest.json', 'html', 'run',
+        'c', 'communities', 'login', 'notifications', 'feed', 'assets', 'favicon.ico',
+        'robots.txt', 'sitemap.xml', 'sitemap', 'manifest.json', 'html', 'run',
         'sandbox', 'embed', 'preview', 'index'
       ]);
       const atMatch = window.location.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
@@ -954,7 +979,7 @@ const App: React.FC = () => {
               setSelectedImage(img);
             }
           }
-        });
+        }, user?.uid);
         deepLinkUnsubscribeRef.current = unsubscribe;
       } else {
         setSelectedImage(null);
@@ -984,7 +1009,18 @@ const App: React.FC = () => {
            return handle === cleanTarget;
          });
 
-         if (matchedImg) {
+         const preloaded = (window as any).__PRELOADED_CREATOR_DATA__;
+         const preloadedCreator = preloaded?.creator;
+         const preloadedHandle = (preloadedCreator?.uploaderName || '').toLowerCase().replace(/[@\s]/g, '');
+
+         if (preloadedCreator && preloadedHandle === cleanTarget) {
+           setProfileUser({
+             uploaderUid: preloadedCreator.uploaderUid || '',
+             uploaderName: preloadedCreator.uploaderName || `@${cleanTarget}`,
+             uploaderPhotoURL: preloadedCreator.uploaderPhotoURL || ''
+           });
+           setActiveView('profile');
+         } else if (matchedImg) {
            const profile: ProfileUser = {
              uploaderUid: matchedImg.uploaderUid,
              uploaderName: matchedImg.uploaderName,
@@ -992,13 +1028,20 @@ const App: React.FC = () => {
            };
            setProfileUser(profile);
            setActiveView('profile');
+         } else {
+           setProfileUser({
+             uploaderUid: '',
+             uploaderName: `@${cleanTarget}`,
+             uploaderPhotoURL: ''
+           });
+           setActiveView('profile');
          }
 
          getUserProfileByUsername(cleanTarget).then((fetchedUser) => {
            if (fetchedUser) {
              setProfileUser(fetchedUser);
              setActiveView('profile');
-           } else if (!matchedImg) {
+           } else if (!matchedImg && !preloadedCreator) {
              console.warn(`User profile not found for @${cleanTarget}`);
              setActiveView('home');
              setProfileUser(null);
@@ -1024,6 +1067,19 @@ const App: React.FC = () => {
           setProfileUser(null);
       } else if (viewParam === 'discover' || window.location.pathname === '/discover') {
           setActiveView('discover');
+          setProfileUser(null);
+      } else if (window.location.pathname.startsWith('/c/')) {
+          const cMatch = window.location.pathname.match(/^\/c\/([a-zA-Z0-9_-]+)/);
+          if (cMatch) {
+            setSelectedCommunitySlug(cMatch[1]);
+            setActiveView('community');
+            setProfileUser(null);
+          }
+      } else if (viewParam === 'communities' || window.location.pathname === '/communities' || window.location.pathname === '/communities/new') {
+          setActiveView('communities');
+          if (window.location.pathname === '/communities/new' || params.get('create') === 'true') {
+            setIsCreateCommunityOpen(true);
+          }
           setProfileUser(null);
       } else if (searchTerm) {
           setExploreSearchTerm(searchTerm);
@@ -1096,13 +1152,17 @@ const App: React.FC = () => {
     registerPush();
   }, []);
 
-  const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string; tab?: string } | null) => {
+  const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string; tab?: string; communitySlug?: string } | null) => {
     try {
       const url = new URL(window.location.href);
       url.search = ''; 
       
       if (params?.image) {
         url.pathname = `/image/${params.image}`;
+      } else if (params?.communitySlug || (params?.view === 'community' && params?.communitySlug)) {
+        url.pathname = `/c/${params.communitySlug}`;
+      } else if (params?.view === 'communities') {
+        url.pathname = '/communities';
       } else if (params?.view === 'legal') {
         url.pathname = '/legal';
         if (params?.tab) url.searchParams.set('tab', params.tab);
@@ -1120,7 +1180,9 @@ const App: React.FC = () => {
       
       if (params?.user && !params?.username) url.searchParams.set('user', params.user);
       if (params?.search) url.searchParams.set('search', params.search);
-      if (params?.view && params.view !== 'legal' && params.view !== 'app' && params.view !== 'api' && params.view !== 'reels') url.searchParams.set('view', params.view);
+      if (params?.view && !['legal', 'app', 'api', 'reels', 'communities', 'community'].includes(params.view)) {
+        url.searchParams.set('view', params.view);
+      }
       
       window.history.pushState({}, '', url.toString());
     } catch {
@@ -1242,13 +1304,13 @@ const App: React.FC = () => {
                  
                  return updatedList;
             });
-        });
+        }, user?.uid);
     }
     
     return () => {
         if (unsubscribe) unsubscribe();
     };
-  }, [activeView, isOnline]);
+  }, [activeView, isOnline, user?.uid]);
 
   // Sync selectedImage and selectedFeedPost
   useEffect(() => {
@@ -1405,6 +1467,9 @@ const App: React.FC = () => {
       
       const viewIncremented = { ...original, viewCount: (original.viewCount || 0) + 1 };
       
+      if (activeView !== 'post') {
+        setLastView(activeView as any);
+      }
       setSelectedImage(viewIncremented);
       setAllImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
       setDisplayedImages(prev => prev.map(img => img.id.split('_loop_')[0] === baseId ? { ...img, viewCount: viewIncremented.viewCount } : img));
@@ -1442,6 +1507,9 @@ const App: React.FC = () => {
 
       setSelectedFeedPost(viewIncremented);
       saveScrollPosition();
+      if (activeView !== 'post') {
+        setLastView(activeView as any);
+      }
       setActiveView('post');
       window.scrollTo({ top: 0, behavior: 'instant' });
       updateURL({ image: baseId });
@@ -1507,14 +1575,27 @@ const App: React.FC = () => {
     });
   };
 
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = (commInfo?: { id?: string; slug?: string }) => {
     setUploadModalOpen(false);
     setDroppedFile(null);
     refetchImages(); // Refetch instantly so the new upload shows up instantly!
-    if (activeView !== 'profile') {
-        setActiveView('home');
-        updateURL(null);
+    setCommunityRefreshKey(k => k + 1);
+
+    const commSlug = commInfo?.slug || (commInfo?.id && activeCommunitySlug ? activeCommunitySlug : null);
+
+    if (commSlug) {
+      if (activeView === 'community' && activeCommunitySlug === commSlug) {
         window.scrollTo(0, 0);
+      } else {
+        window.history.pushState(null, '', `/c/${commSlug}`);
+        setActiveCommunitySlug(commSlug);
+        setActiveView('community');
+        window.scrollTo(0, 0);
+      }
+    } else if (activeView !== 'profile' && activeView !== 'community') {
+      setActiveView('home');
+      updateURL(null);
+      window.scrollTo(0, 0);
     }
   };
 
@@ -1570,13 +1651,20 @@ const App: React.FC = () => {
 
   const handleBack = () => {
     saveScrollPosition();
-    setActiveView(lastView);
-    window.scrollTo({ top: scrollPositions.current[lastView] || 0, behavior: 'instant' });
+    const prevView = lastView || 'home';
+    setActiveView(prevView);
+    window.scrollTo({ top: scrollPositions.current[prevView] || 0, behavior: 'instant' });
     setProfileUser(null);
-    updateURL(null);
+    if (prevView === 'community' && selectedCommunitySlug) {
+      updateURL({ communitySlug: selectedCommunitySlug });
+    } else if (prevView === 'explore') {
+      updateURL({ view: 'explore' });
+    } else {
+      updateURL(null);
+    }
   }
   
-  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'reels' | 'notifications' | 'api' | 'app') => {
+  const handleSetView = (view: 'home' | 'explore' | 'discover' | 'reels' | 'notifications' | 'api' | 'app' | 'communities') => {
     savedVirtuosoStateRef.current = {}; // Clear all Virtuoso scroll states on explicit nav click to start fresh
     console.log('[Nav] Explicit navigation click to view:', view, 'Cleared Virtuoso scroll states');
     if (view === activeView && (view === 'home' || view === 'explore' || view === 'discover')) {
@@ -1623,6 +1711,8 @@ const App: React.FC = () => {
           updateURL({ view: 'discover' });
         } else if (view === 'reels') {
           updateURL({ view: 'reels' });
+        } else if (view === 'communities') {
+          updateURL({ view: 'communities' });
         } else {
           updateURL(null);
         }
@@ -1764,6 +1854,54 @@ const App: React.FC = () => {
                     favicon={API_FAVICON}
                 />
                 <ApiDocsPage />
+            </>
+        );
+    }
+
+    if (activeView === 'communities') {
+        return (
+            <>
+                <SEOHead 
+                    title="Communities – Glass Gallery"
+                    description="Discover, join, and post in aesthetic communities on Glass Gallery."
+                    url={window.location.href}
+                />
+                <CommunityDiscoverPage 
+                    user={user}
+                    onSelectCommunity={(slug) => {
+                        setSelectedCommunitySlug(slug);
+                        setActiveView('community');
+                        updateURL({ communitySlug: slug });
+                    }}
+                    onCreateCommunityClick={() => setIsCreateCommunityOpen(true)}
+                />
+            </>
+        );
+    }
+
+    if (activeView === 'community' && selectedCommunitySlug) {
+        return (
+            <>
+                <SEOHead 
+                    title={`c/${selectedCommunitySlug} – Glass Gallery Community`}
+                    description={`Join the c/${selectedCommunitySlug} community on Glass Gallery to share and discuss creative visuals.`}
+                    url={window.location.href}
+                />
+                <CommunityView 
+                    slug={selectedCommunitySlug}
+                    user={user}
+                    onPostClick={(post) => handleFeedImageClick(post)}
+                    onCreatePostClick={(commId, defaultType) => {
+                        setUploadModalCommunityId(commId || '');
+                        setUploadModalPostType(defaultType || 'text');
+                        setUploadModalOpen(true);
+                    }}
+                    onViewProfile={handleViewProfile}
+                    onLikeToggle={handleLikeToggle}
+                    onSaveToggle={handleSaveToggle}
+                    savedImages={savedImages}
+                    refreshTrigger={communityRefreshKey}
+                />
             </>
         );
     }
@@ -1942,7 +2080,6 @@ const App: React.FC = () => {
                                   deepLinkUnsubscribeRef.current();
                                   deepLinkUnsubscribeRef.current = null;
                               }
-                              updateURL(null);
                               handleBack();
                           }
                       };
@@ -1996,6 +2133,11 @@ const App: React.FC = () => {
                 }}
                 topicFilter={homeTopicFilter}
                 onClearTopicFilter={() => setHomeTopicFilter('')}
+                onCreateCommunityClick={() => setIsCreateCommunityOpen(true)}
+                onNavigateCommunities={() => {
+                  setActiveView('communities');
+                  updateURL({ view: 'communities' });
+                }}
                 onEndReached={handleLoadMore}
                 isFetchingNextPage={isFetchingNextPage}
                 virtuosoRef={virtuosoRef}
@@ -2031,6 +2173,17 @@ const App: React.FC = () => {
         <aside className="hidden xl:block w-80 pr-6 pt-6 flex-shrink-0 sticky top-0 h-screen overflow-y-auto hidden-scrollbar self-start">
           <div className="pb-6">
             <TrendingSidebar 
+              user={user}
+              onSelectCommunity={(slug) => {
+                if (slug) {
+                  setSelectedCommunitySlug(slug);
+                  setActiveView('community');
+                  updateURL({ communitySlug: slug });
+                } else {
+                  setActiveView('communities');
+                  updateURL({ view: 'communities' });
+                }
+              }}
               onTopicClick={(topic) => {
                 setHomeTopicFilter(topic);
                 setActiveView('home');
@@ -2058,11 +2211,21 @@ const App: React.FC = () => {
       {isUploadModalOpen && user && (
         <UploadModal
           user={user}
+          initialCommunityId={uploadModalCommunityId}
+          initialPostType={uploadModalPostType}
           onClose={() => {
               setUploadModalOpen(false);
+              setUploadModalCommunityId('');
+              setUploadModalPostType('media');
               setDroppedFile(null);
           }}
-          onUploadSuccess={handleUploadSuccess}
+          onUploadSuccess={(commInfo) => {
+              setUploadModalOpen(false);
+              setUploadModalCommunityId('');
+              setUploadModalPostType('media');
+              setDroppedFile(null);
+              handleUploadSuccess(commInfo);
+          }}
           initialFile={droppedFile}
           allImages={allImages}
         />
@@ -2147,6 +2310,20 @@ const App: React.FC = () => {
           popularCreators={popularCreators}
           onComplete={handleOnboardingComplete}
           onSkip={handleOnboardingSkip}
+        />
+      )}
+
+      {isCreateCommunityOpen && (
+        <CreateCommunityModal
+          user={user}
+          onClose={() => setIsCreateCommunityOpen(false)}
+          onLoginRequired={() => setLoginModalOpen(true)}
+          onSuccess={(newSlug) => {
+            setIsCreateCommunityOpen(false);
+            setSelectedCommunitySlug(newSlug);
+            setActiveView('community');
+            updateURL({ communitySlug: newSlug });
+          }}
         />
       )}
 

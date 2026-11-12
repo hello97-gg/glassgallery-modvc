@@ -198,16 +198,44 @@ const ImageCard: React.FC<ImageCardProps> = ({ image, user, onClick, onViewProfi
           </button>
         </div>
       )}
+      {/* Always-visible Community Pill (Bottom Left) */}
+      {image.community_slug && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.history.pushState(null, '', `/c/${image.community_slug}`);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }}
+          className="absolute bottom-2.5 left-2.5 z-30 flex items-center gap-1.5 px-2.5 py-1 min-h-[36px] sm:min-h-[28px] rounded-full bg-black/80 hover:bg-black/95 backdrop-blur-md border border-white/20 text-white shadow-lg active:scale-95 transition-all cursor-pointer group/pill"
+          title={`c/${image.community_slug}`}
+        >
+          {image.community_icon_url ? (
+            <img src={image.community_icon_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0" />
+          ) : (
+            <span className="w-3.5 h-3.5 rounded-full bg-accent/30 text-accent text-[9px] font-bold flex items-center justify-center shrink-0">
+              {image.community_slug[0]?.toUpperCase()}
+            </span>
+          )}
+          <span className="text-[11px] font-bold text-white/95 group-hover/pill:text-accent truncate max-w-[110px]">
+            c/{image.community_slug}
+          </span>
+        </button>
+      )}
+
       {/* Hidden on mobile (md:flex) to avoid sticky hover states. Added z-10 to ensure clicks are captured. */}
       <div className={`absolute inset-0 z-10 pointer-events-none bg-gradient-to-t from-black/60 to-transparent hidden md:flex items-end justify-between p-3 transition-opacity duration-300 ${isLoaded && (!isFlagged || revealed) ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}>
-        <button onClick={handleProfileClick} className="pointer-events-auto flex items-center space-x-2 group/profile hover:scale-105 transition-transform z-20">
-            <img 
-                src={image.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${image.uploaderName}&backgroundColor=ff5722,e91e63,9c27b0,673ab7,3f51b5,2196f3,03a9f4,00bcd4,009688,4caf50,8bc34a,cddc39,ffeb3b,ffc107,ff9800`}
-                className="w-6 h-6 rounded-full border-2 border-surface"
-                alt={image.uploaderName}
-            />
-            <p className="text-white text-xs font-semibold group-hover/profile:underline">{image.uploaderName}</p>
-        </button>
+        {image.community_slug ? <div /> : (
+          <button onClick={handleProfileClick} className="pointer-events-auto flex items-center space-x-2 group/profile hover:scale-105 transition-transform z-20">
+              <img 
+                  src={image.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${image.uploaderName}&backgroundColor=ff5722,e91e63,9c27b0,673ab7,3f51b5,2196f3,03a9f4,00bcd4,009688,4caf50,8bc34a,cddc39,ffeb3b,ffc107,ff9800`}
+                  className="w-6 h-6 rounded-full border-2 border-surface"
+                  alt={image.uploaderName}
+              />
+              <p className="text-white text-xs font-semibold group-hover/profile:underline">{image.uploaderName}</p>
+          </button>
+        )}
         <button onClick={handleLikeClick} className="pointer-events-auto flex items-center space-x-1.5 text-white bg-black/20 backdrop-blur-sm rounded-full py-1 px-2.5 hover:text-accent hover:scale-105 transition-all z-20">
             <div className={isLikeAnimating ? 'animate-like-bounce' : ''}>
                 {hasLiked ? <HeartIconSolid/> : <HeartIconOutline/>}

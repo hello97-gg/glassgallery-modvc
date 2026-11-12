@@ -65,6 +65,7 @@ export async function onRequest(context) {
         bio: row.bio || '',
         onboarded: parseInt(row.onboarded || 0) === 1,
         isVerified: parseInt(row.isVerified || 0) === 1,
+        isPlatformAdmin: parseInt(row.isPlatformAdmin || 0) === 1,
         hideReplies: parseInt(row.hideReplies || 0) === 1,
         followedTags: row.followedTags ? JSON.parse(row.followedTags) : [],
         ...(includeApiKey === 'true' ? { apiKey: row.apiKey || null } : {})
