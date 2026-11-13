@@ -150,12 +150,13 @@ export async function onRequest(context) {
     let suggestions = [];
     try {
       const relRes = await db.execute({
-        sql: `SELECT id, imageUrl, thumbnailUrl, title, uploaderName, flags, likeCount, uploadedAt
-              FROM images
-              WHERE id != ?
-                AND (mod_status = 'approved' OR mod_status IS NULL)
-                AND (community_id IS NULL OR community_type != 'private')
-              ORDER BY (CASE WHEN ? != '' AND community_id = ? THEN 1 ELSE 0 END) DESC, likeCount DESC, uploadedAt DESC
+        sql: `SELECT i.id, i.imageUrl, i.thumbnailUrl, i.title, i.uploaderName, i.flags, i.likeCount, i.uploadedAt
+              FROM images i
+              LEFT JOIN communities c ON i.community_id = c.id
+              WHERE i.id != ?
+                AND (i.mod_status = 'approved' OR i.mod_status IS NULL)
+                AND (i.community_id IS NULL OR c.id IS NULL OR c.type != 'private')
+              ORDER BY (CASE WHEN ? != '' AND i.community_id = ? THEN 1 ELSE 0 END) DESC, i.likeCount DESC, i.uploadedAt DESC
               LIMIT 12`,
         args: [post.id, post.community_id || '', post.community_id || '']
       });
@@ -1022,6 +1023,17 @@ export async function onRequest(context) {
 
   <script>
     (function() {
+      // Safe HTML escaping inside browser context
+      function escapeHtml(unsafe) {
+        if (!unsafe) return "";
+        return unsafe.toString()
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
       // Prevent browser default context menu
       document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 
