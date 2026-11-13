@@ -62,7 +62,9 @@ export function isAllowedOrigin(referer, origin) {
     /^https?:\/\/localhost(:[0-9]+)?$/i,
     /^https?:\/\/127\.0\.0\.1(:[0-9]+)?$/i,
     /^capacitor:\/\/localhost$/i,
-    /^https?:\/\/[a-z0-9-]+\.pages\.dev$/i
+    /^https?:\/\/[a-z0-9-]+\.pages\.dev$/i,
+    /^https?:\/\/[a-z0-9-]+\.trycloudflare\.com$/i,
+    /^https?:\/\/[a-z0-9-]+\.loca\.lt$/i
   ];
 
   const checkUrl = (str) => {

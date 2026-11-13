@@ -30,8 +30,13 @@ export async function onRequest(context) {
     'Cache-Control': 'public, max-age=60, s-maxage=120'
   };
 
-  const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-  const siteOrigin = isLocal ? url.origin : 'https://gg.modvc.org';
+  const isDev = url.hostname === 'localhost' || 
+                url.hostname === '127.0.0.1' || 
+                url.hostname.endsWith('.trycloudflare.com') ||
+                url.hostname.endsWith('.loca.lt') ||
+                url.hostname.includes('tunnel');
+  const siteOrigin = isDev ? url.origin : 'https://gg.modvc.org';
+  const canonicalSiteOrigin = siteOrigin;
 
   // Rate Limiting check (per-IP bucket in Redis if available)
   const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
@@ -128,7 +133,7 @@ export async function onRequest(context) {
     const signingSecret = getEmbedSigningSecret(env);
     const exp = Math.floor(Date.now() / 1000) + 7200;
     const sig = await signMediaUrl(post.id, exp, signingSecret);
-    const signedMediaSrc = `${siteOrigin}/api/images?action=render&imageId=${encodeURIComponent(post.id)}&exp=${exp}&sig=${sig}`;
+    const signedMediaSrc = `/api/images?action=render&imageId=${encodeURIComponent(post.id)}&exp=${exp}&sig=${sig}`;
 
     const isVideo = Boolean(
       post.isVideo ||
@@ -138,8 +143,42 @@ export async function onRequest(context) {
     const title = post.title || (isVideo ? "Untitled Video" : "Untitled Artwork");
     const creator = post.uploaderName || "Glass Gallery Creator";
     const creatorAvatar = post.uploaderPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(creator)}`;
-    const postPageUrl = `${siteOrigin}/image/${post.id}`;
+    const postPageUrl = `${canonicalSiteOrigin}/image/${post.id}`;
     const isOpenLicense = isFreeLicense(post.license);
+
+    // Fetch up to 6 suggestions server-side during SSR for immediate display
+    let suggestions = [];
+    try {
+      const relRes = await db.execute({
+        sql: `SELECT id, imageUrl, thumbnailUrl, title, uploaderName, flags, likeCount, uploadedAt
+              FROM images
+              WHERE id != ?
+                AND (mod_status = 'approved' OR mod_status IS NULL)
+                AND (community_id IS NULL OR community_type != 'private')
+              ORDER BY (CASE WHEN ? != '' AND community_id = ? THEN 1 ELSE 0 END) DESC, likeCount DESC, uploadedAt DESC
+              LIMIT 12`,
+        args: [post.id, post.community_id || '', post.community_id || '']
+      });
+
+      for (const row of relRes.rows) {
+        let fl = [];
+        try { fl = row.flags ? JSON.parse(row.flags) : []; } catch {}
+        if (!fl.includes('Flagged') && !fl.includes('NSFW')) {
+          const isRowVideo = Boolean(row.imageUrl && row.imageUrl.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i));
+          suggestions.push({
+            id: row.id,
+            imageUrl: row.imageUrl,
+            thumbnailUrl: row.thumbnailUrl || (!isRowVideo && row.imageUrl && row.imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? row.imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : row.imageUrl),
+            isVideo: isRowVideo,
+            title: row.title || 'Artwork',
+            uploaderName: row.uploaderName || 'Creator'
+          });
+          if (suggestions.length >= 6) break;
+        }
+      }
+    } catch (sugErr) {
+      console.warn("[Embed SSR] Error querying suggestions:", sugErr);
+    }
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -280,6 +319,7 @@ export async function onRequest(context) {
       margin-top: 2px;
       white-space: nowrap;
       overflow: hidden;
+      text-overflow: ellipsis;
       text-shadow: 0 1px 3px rgba(0,0,0,0.9);
     }
 
@@ -888,7 +928,7 @@ export async function onRequest(context) {
           <div class="bottom-right interactive">
             <!-- "More Videos" Pill Button (Bottom-Right, YouTube style) -->
             <button class="more-pill" id="morePillBtn" aria-label="More like this">
-              <img id="pillThumbImg" class="more-pill-thumb" alt="" src="" style="display:none;" />
+              <img id="pillThumbImg" class="more-pill-thumb" alt="" src="${suggestions.length > 0 && !suggestions[0].isVideo ? (suggestions[0].thumbnailUrl || suggestions[0].imageUrl) : ''}" style="${suggestions.length > 0 && !suggestions[0].isVideo ? '' : 'display:none;'}" />
               <span id="morePillText">${isVideo ? 'More videos' : 'More like this'}</span>
             </button>
 
@@ -953,7 +993,29 @@ export async function onRequest(context) {
         <button id="closeMorePanel" style="font-size:24px; color:#cbd5e1; padding:4px 8px;">&times;</button>
       </div>
       <div class="panel-grid" id="panelGrid">
-        <!-- Injected lazily via JS -->
+        ${suggestions.map(item => `
+          <a class="panel-card" href="${canonicalSiteOrigin}/image/${encodeURIComponent(item.id)}" target="_blank" rel="noopener">
+            <div class="card-thumb-wrap">
+              ${item.isVideo ? `
+                <video src="${item.imageUrl}#t=0.001" muted playsinline preload="metadata"></video>
+                <span class="card-video-badge">▶ Video</span>
+              ` : `
+                <img src="${item.thumbnailUrl || item.imageUrl}" loading="lazy" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                <div class="card-fallback" style="display:none;"><span>${escapeHtml(item.title)}</span></div>
+              `}
+            </div>
+            <div class="card-info">
+              <div class="card-title">${escapeHtml(item.title)}</div>
+              <div class="card-creator">by ${escapeHtml(item.uploaderName)}</div>
+            </div>
+          </a>
+        `).join('')}
+        ${suggestions.length === 0 ? `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 2.5rem 1rem; color: #94a3b8; font-size: 13px;">
+            <p style="margin-bottom: 12px;">Discover more visual artwork and photography on Glass Gallery.</p>
+            <a href="${canonicalSiteOrigin}" target="_blank" rel="noopener" style="display: inline-block; padding: 6px 16px; background: #f5c3b8; color: #000; border-radius: 9999px; font-weight: 700; font-size: 12px;">Explore Gallery</a>
+          </div>
+        ` : ''}
       </div>
     </div>
   </div>
@@ -1294,8 +1356,8 @@ export async function onRequest(context) {
         }
       }
 
-      // Lazy Fetch Suggestions / Related Media
-      fetch('${siteOrigin}/api/images?action=suggestions&imageId=' + encodeURIComponent('${post.id}') + '&limit=6')
+      // Refresh Suggestions / Related Media dynamically via relative API call
+      fetch('/api/images?action=suggestions&imageId=' + encodeURIComponent('${post.id}') + '&limit=6')
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (!data || !data.images || data.images.length === 0) return;
@@ -1317,12 +1379,12 @@ export async function onRequest(context) {
           }
 
           // Build Panel Cards
-          if (panelGrid) {
+          if (panelGrid && valid.length > 0) {
             panelGrid.innerHTML = '';
             valid.forEach(function(item) {
               var card = document.createElement('a');
               card.className = 'panel-card';
-              card.href = '${siteOrigin}/image/' + item.id;
+              card.href = '${canonicalSiteOrigin}/image/' + encodeURIComponent(item.id);
               card.target = '_blank';
               card.rel = 'noopener';
 
