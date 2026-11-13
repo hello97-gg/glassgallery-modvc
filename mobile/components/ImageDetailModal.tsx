@@ -294,6 +294,56 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
   const [relatedVisibleCount, setRelatedVisibleCount] = useState(12);
   const [isLoadingMoreRelated, setIsLoadingMoreRelated] = useState(false);
 
+  const isCommunityOwner = Boolean(
+    user?.uid && (
+      currentImage.community_owner_uid === user.uid ||
+      currentImage.is_owner
+    )
+  );
+
+  const [isCommunityMember, setIsCommunityMember] = useState(Boolean(currentImage.is_member || isCommunityOwner));
+  const [isCommunityJoining, setIsCommunityJoining] = useState(false);
+
+  useEffect(() => {
+    setIsCommunityMember(Boolean(currentImage.is_member || isCommunityOwner));
+  }, [currentImage.is_member, isCommunityOwner, currentImage.id]);
+
+  const handleCommunityJoinToggle = async () => {
+    if (!user) {
+      onLoginClick();
+      return;
+    }
+    if (!currentImage.community_id) return;
+    if (isCommunityOwner) {
+      showToast("You are the owner of this community.");
+      return;
+    }
+    setIsCommunityJoining(true);
+    try {
+      const action = isCommunityMember ? 'leave' : 'join';
+      const res = await fetch('/api/communities/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityId: currentImage.community_id,
+          action,
+          uid: user.uid
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsCommunityMember(!isCommunityMember);
+        showToast(isCommunityMember ? `Left c/${currentImage.community_slug}` : `Joined c/${currentImage.community_slug}!`);
+      } else {
+        showToast(data.error || 'Failed to update membership');
+      }
+    } catch (err) {
+      showToast('Error updating membership');
+    } finally {
+      setIsCommunityJoining(false);
+    }
+  };
+
   useEffect(() => {
     if (!currentImage?.id) return;
     const baseId = currentImage.id.split('_loop_')[0].split('_rel_loop_')[0];
@@ -589,7 +639,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
     const baseId = image.id.split('_loop_')[0].split('_rel_loop_')[0];
     const unsubscribe = subscribeToImage(baseId, (updatedImage) => {
         if (updatedImage) setCurrentImage(updatedImage);
-    });
+    }, user?.uid);
     return () => unsubscribe();
   }, [image.id]);
   
@@ -1301,7 +1351,105 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           ref={leftPanelRef}
           className="w-full md:w-[48%] flex flex-col md:h-full bg-[#0a0a0a] md:overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10 border-0"
         >
-          {/* Main Hero Image Container - Edge-to-edge on mobile, contained on desktop */}
+          {/* Community Strip */}
+          {currentImage.community_slug && (
+            <div className="flex items-center justify-between px-4 py-2.5 bg-surface/70 border-b border-white/10 backdrop-blur-md flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <a
+                  href={`/c/${currentImage.community_slug}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onClose();
+                    window.history.pushState(null, '', `/c/${currentImage.community_slug}`);
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="flex items-center gap-1.5 hover:opacity-80 transition-opacity min-w-0 cursor-pointer group/comm"
+                >
+                  {currentImage.community_icon_url ? (
+                    <img
+                      src={currentImage.community_icon_url}
+                      alt=""
+                      className="w-5 h-5 rounded-full object-cover shrink-0 border border-white/20"
+                    />
+                  ) : (
+                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent text-[10px] font-bold flex items-center justify-center shrink-0 border border-accent/30">
+                      {currentImage.community_slug[0]?.toUpperCase()}
+                    </span>
+                  )}
+                  <span className="font-bold text-xs text-primary group-hover/comm:text-accent transition-colors truncate">
+                    c/{currentImage.community_slug}
+                  </span>
+                </a>
+
+                <span className="text-secondary/50 text-xs">·</span>
+
+                <a
+                  href={`/c/${currentImage.community_slug}?tab=rules`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onClose();
+                    window.history.pushState(null, '', `/c/${currentImage.community_slug}?tab=rules`);
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="text-[11px] text-secondary hover:text-primary hover:underline transition-colors shrink-0 cursor-pointer"
+                >
+                  Rules
+                </a>
+              </div>
+
+              {isCommunityOwner ? (
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-accent/15 text-accent border border-accent/30 shrink-0">
+                  Owner
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCommunityJoinToggle}
+                  disabled={isCommunityJoining}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                    isCommunityMember
+                      ? 'bg-transparent border border-white/20 text-primary hover:bg-surface/80'
+                      : 'bg-accent text-primary hover:bg-accent/80'
+                  }`}
+                >
+                  {isCommunityMember ? (
+                    <>
+                      <svg className="w-3 h-3 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Joined
+                    </>
+                  ) : (
+                    '+ Join'
+                  )}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Main Hero Container: Discussion card if text post, otherwise media player */}
+          {(!currentImage.imageUrl || currentImage.imageUrl === 'text://post' || currentImage.imageUrl.startsWith('text://')) ? (
+            <div className="bg-gradient-to-b from-surface/90 to-surface/40 border border-white/10 rounded-2xl p-6 md:p-8 m-4 w-full shadow-2xl backdrop-blur-xl flex-shrink-0">
+              {currentImage.community_slug && (
+                <div className="mb-3">
+                  <a
+                    href={`/c/${currentImage.community_slug}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-accent bg-accent/15 border border-accent/25 px-3 py-1 rounded-full hover:bg-accent/25 transition-colors"
+                  >
+                    <span>c/{currentImage.community_slug}</span>
+                  </a>
+                </div>
+              )}
+              {currentImage.title && (
+                <h1 className="text-xl md:text-2xl font-bold text-white mb-4 leading-tight">
+                  {currentImage.title}
+                </h1>
+              )}
+              <div className="text-sm md:text-base text-neutral-200 leading-relaxed whitespace-pre-line font-normal selection:bg-accent/30">
+                {currentImage.description}
+              </div>
+            </div>
+          ) : (
           <div className="bg-[#0a0a0a] flex-shrink-0 flex items-center justify-center p-0 md:p-4 relative select-none w-full min-h-[260px]">
             {isVideoUrl(currentImage.imageUrl) ? (
               <div id="hero-detail-image" className="w-full relative group">
@@ -1366,6 +1514,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
               </div>
             )}
           </div>
+          )}
 
           {/* Staggered Detail Content Container (~150ms delay, 200ms fade) */}
           <div className="animate-detail-content px-4 py-3 sm:px-6 sm:py-4 flex flex-col space-y-4">
@@ -1594,7 +1743,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({
           {/* Small simple label flowing directly into the grid - No icon, no counter, no divider line */}
           <div className="mb-3 px-1 flex-shrink-0">
             <h3 className="text-sm font-semibold text-neutral-400">
-              More like this
+              {currentImage.community_slug ? `More from c/${currentImage.community_slug}` : 'More like this'}
             </h3>
           </div>
 

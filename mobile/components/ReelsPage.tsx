@@ -163,6 +163,7 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
   const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [paginationError, setPaginationError] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Real-time aspect ratio map detected from video elements (id -> isVertical)
@@ -520,14 +521,15 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
     }
   }, [refreshTrigger, forceRefreshReels]);
 
-  // Load more reels when near the bottom
+  // Load more reels when near the bottom (endless loop with refill & reshuffle)
   const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore || nextCursor === null) return;
+    if (isLoadingMore) return;
     setIsLoadingMore(true);
+    setPaginationError(false);
     try {
       const res = await fetchReelsFeed({
         userUid: user?.uid,
-        cursor: nextCursor,
+        cursor: nextCursor ?? 0,
         limit: 10
       });
       if (res.reels && res.reels.length > 0) {
@@ -546,16 +548,28 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
           return rerankNextReels(merged, currentIndex);
         });
         setNextCursor(res.nextCursor);
-        setHasMore(res.hasMore);
+        setHasMore(true);
       } else {
-        setHasMore(false);
+        // Backend ran out of unseen reels: refill with reshuffled pool so scrolling is endless
+        setReels(prev => {
+          if (prev.length === 0) return prev;
+          const shuffled = [...prev].sort(() => Math.random() - 0.5);
+          const loopBatch = shuffled.slice(0, 10).map((r, idx) => ({
+            ...r,
+            id: `${r.id.split('_loop_')[0]}_loop_${Date.now()}_${idx}`
+          }));
+          return [...prev, ...loopBatch];
+        });
+        setHasMore(true);
+        setNextCursor(0);
       }
     } catch (err) {
       console.warn("Failed to paginate reels:", err);
+      setPaginationError(true);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMore, nextCursor, user?.uid, currentIndex]);
+  }, [isLoadingMore, nextCursor, user?.uid, currentIndex]);
 
   // Flush metrics for leaving reel and start tracking entering reel
   const handleReelTransition = useCallback((prevIdx: number, nextIdx: number) => {
@@ -1507,52 +1521,62 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
                     />
                   )}
 
-                  {/* HTML5 Video Element: perfectly contained centered for landscape, covered for vertical */}
-                  <video
-                    ref={(el) => {
-                      if (el) {
-                        videoRefs.current.set(index, el);
-                      } else {
-                        videoRefs.current.delete(index);
-                      }
-                    }}
-                    src={reel.videoUrl}
-                    poster={hasValidImagePoster ? reel.poster : DARK_VIDEO_POSTER}
-                    playsInline
-                    webkit-playsinline="true"
-                    x5-playsinline="true"
-                    loop
-                    autoPlay={false}
-                    preload={isActive ? "auto" : (index === currentIndex + 1 ? "metadata" : "none")}
-                    muted={isMuted}
-                    onLoadedMetadata={(e) => {
-                      handleVideoMetadata(reel.id, e.currentTarget);
-                      firstFrameMap.current.set(index, true);
-                      setFirstFrameVersion(v => v + 1);
-                    }}
-                    onLoadedData={() => {
-                      firstFrameMap.current.set(index, true);
-                      setFirstFrameVersion(v => v + 1);
-                    }}
-                    onWaiting={() => handleVideoWaiting(index)}
-                    onPlaying={() => {
-                      firstFrameMap.current.set(index, true);
-                      setFirstFrameVersion(v => v + 1);
-                      handleVideoPlaying(index);
-                      if (index === currentIndex) setIsPlaying(true);
-                    }}
-                    onPause={() => {
-                      if (index === currentIndex) setIsPlaying(false);
-                    }}
-                    onError={() => handleVideoError(index)}
-                    onEnded={() => {
-                      loopCountRef.current++;
-                      if (index === currentIndex) setIsPlaying(false);
-                    }}
-                    className={`w-full h-full pointer-events-none z-10 ${
-                      isVertical ? 'object-cover' : 'object-contain'
-                    }`}
-                  />
+                  {/* HTML5 Video Element: mounted only within active window (current +/- 1) to prevent video decoder exhaustion */}
+                  {Math.abs(index - currentIndex) <= 1 ? (
+                    <video
+                      ref={(el) => {
+                        if (el) {
+                          videoRefs.current.set(index, el);
+                        } else {
+                          videoRefs.current.delete(index);
+                        }
+                      }}
+                      src={reel.videoUrl}
+                      poster={hasValidImagePoster ? reel.poster : DARK_VIDEO_POSTER}
+                      playsInline
+                      webkit-playsinline="true"
+                      x5-playsinline="true"
+                      loop
+                      autoPlay={false}
+                      preload={isActive ? "auto" : (index === currentIndex + 1 ? "metadata" : "none")}
+                      muted={isMuted}
+                      onLoadedMetadata={(e) => {
+                        handleVideoMetadata(reel.id, e.currentTarget);
+                        firstFrameMap.current.set(index, true);
+                        setFirstFrameVersion(v => v + 1);
+                      }}
+                      onLoadedData={() => {
+                        firstFrameMap.current.set(index, true);
+                        setFirstFrameVersion(v => v + 1);
+                      }}
+                      onWaiting={() => handleVideoWaiting(index)}
+                      onPlaying={() => {
+                        firstFrameMap.current.set(index, true);
+                        setFirstFrameVersion(v => v + 1);
+                        handleVideoPlaying(index);
+                        if (index === currentIndex) setIsPlaying(true);
+                      }}
+                      onPause={() => {
+                        if (index === currentIndex) setIsPlaying(false);
+                      }}
+                      onError={() => handleVideoError(index)}
+                      onEnded={() => {
+                        loopCountRef.current++;
+                        if (index === currentIndex) setIsPlaying(false);
+                      }}
+                      className={`w-full h-full pointer-events-none z-10 ${
+                        isVertical ? 'object-cover' : 'object-contain'
+                      }`}
+                    />
+                  ) : (
+                    <img
+                      src={hasValidImagePoster ? reel.poster : DARK_VIDEO_POSTER}
+                      alt=""
+                      className={`w-full h-full pointer-events-none z-10 ${
+                        isVertical ? 'object-cover' : 'object-contain'
+                      }`}
+                    />
+                  )}
 
                   {/* Persistent Pause Indicator Overlay when paused */}
                   {isActive && !isPlaying && centerIconState === null && (
@@ -1587,6 +1611,22 @@ export const ReelsPage: React.FC<ReelsPageProps> = ({
       >
         {/* Soft Bottom Gradient behind text and action stack */}
         <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
+
+        {paginationError && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40 bg-surface/90 border border-white/20 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-3 shadow-lg pointer-events-auto">
+            <span className="text-xs text-white">Connection lost</span>
+            <button
+              type="button"
+              onClick={() => {
+                setPaginationError(false);
+                loadMore();
+              }}
+              className="text-xs font-bold text-accent hover:underline min-h-[36px] px-1"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         <div className="relative z-10 px-4 pb-2 flex items-end justify-between gap-3 pointer-events-none" style={{ touchAction: 'pan-y' }}>
           {/* Bottom Left: Creator Info, Title, Expandable Description, Tags - Container is pointer-events-none so vertical swipe gestures pass right through */}

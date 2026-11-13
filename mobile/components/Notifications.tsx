@@ -51,6 +51,14 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
                 uploaderName: notification.actorName,
                 uploaderPhotoURL: notification.actorPhotoURL || ''
             });
+        } else if (notification.type.startsWith('community_') || notification.type === 'join_request_approved') {
+            if (notification.actorUid && notification.actorUid.startsWith('c/')) {
+                const slug = notification.actorUid.replace(/^c\//, '');
+                window.history.pushState({}, '', `/c/${slug}`);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            } else if (notification.imageId) {
+                onImageClick({ id: notification.imageId, imageUrl: notification.imageUrl });
+            }
         } else {
             onImageClick({ id: notification.imageId, imageUrl: notification.imageUrl });
         }
@@ -79,6 +87,18 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                   </div>
+                ) : n.type === 'community_ban' ? (
+                  <div className="w-8 h-8 rounded-full bg-red-950/40 text-red-400 flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                  </div>
+                ) : n.type === 'community_post_pending' || n.type === 'community_mod_queue' ? (
+                  <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
                 ) : (
                   <img src={n.actorPhotoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${n.actorName}`} alt={n.actorName} className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
                 )}
@@ -87,12 +107,30 @@ const NotificationsList: React.FC<NotificationProps> = ({ notifications, onClose
                     <p className="text-primary">Your image was <span className="text-red-500 font-semibold">flagged</span> for content safety review.</p>
                   ) : n.type === 'follow' ? (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> followed you.</p>
+                  ) : n.type === 'comment' ? (
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> commented on your image.</p>
+                  ) : n.type === 'reply' ? (
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> replied to your comment.</p>
+                  ) : n.type === 'community_post_pending' ? (
+                    <p className="text-primary">Your post in <span className="font-semibold text-accent">{n.actorName}</span> is pending moderator approval.</p>
+                  ) : n.type === 'community_mod_queue' ? (
+                    <p className="text-primary"><span className="font-semibold">{n.actorName}</span> submitted a post awaiting review in mod queue.</p>
+                  ) : n.type === 'community_post_approved' ? (
+                    <p className="text-primary">Your post in <span className="font-semibold text-accent">{n.actorName}</span> was <span className="text-emerald-400 font-semibold">approved</span>.</p>
+                  ) : n.type === 'community_post_removed' ? (
+                    <p className="text-primary">Your post in <span className="font-semibold text-accent">{n.actorName}</span> was <span className="text-red-400 font-semibold">removed</span> by a moderator.</p>
+                  ) : n.type === 'community_ban' ? (
+                    <p className="text-primary">You were <span className="text-red-400 font-semibold">banned</span> from <span className="font-semibold text-accent">{n.actorName}</span>.</p>
+                  ) : n.type === 'join_request_approved' ? (
+                    <p className="text-primary">Your request to join <span className="font-semibold text-accent">{n.actorName}</span> was <span className="text-emerald-400 font-semibold">approved</span>.</p>
+                  ) : n.type === 'community_invite' ? (
+                    <p className="text-primary">You were invited to join <span className="font-semibold text-accent">{n.actorName}</span>.</p>
                   ) : (
                     <p className="text-primary"><span className="font-semibold">{n.actorName}</span> liked your image.</p>
                   )}
                   <p className="text-xs text-secondary">{timeAgo(n.createdAt.toDate())} ago</p>
                 </div>
-                {n.type !== 'follow' && n.imageUrl ? (
+                {n.type !== 'follow' && n.imageUrl && n.imageUrl !== 'text://post' && !n.imageUrl.startsWith('text://') ? (
                   <img src={n.imageUrl} alt="notification thumbnail" className="w-10 h-10 rounded object-cover flex-shrink-0" />
                 ) : null}
               </div>

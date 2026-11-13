@@ -33,7 +33,8 @@ export async function onRequest(context) {
       status: 404,
       headers: {
         'Content-Type': 'text/html; charset=UTF-8',
-        'Cache-Control': 'no-cache, no-store, must-revalidate'
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'X-Robots-Tag': 'noindex, follow'
       }
     });
   }
@@ -67,7 +68,8 @@ export async function onRequest(context) {
         status: 404,
         headers: {
           'Content-Type': 'text/html; charset=UTF-8',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'X-Robots-Tag': 'noindex, follow'
         }
       });
     }

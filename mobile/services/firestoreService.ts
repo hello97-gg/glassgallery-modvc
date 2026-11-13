@@ -31,7 +31,8 @@ export const addImageToFirestore = async (
     licenseUrl?: string,
     location?: string,
     keyframes?: string[],
-    thumbnailUrl?: string
+    thumbnailUrl?: string,
+    communityId?: string
 ) => {
     try {
         const id = generateImageId();
@@ -52,7 +53,8 @@ export const addImageToFirestore = async (
                 flags,
                 originalWorkUrl: originalWorkUrl || '',
                 location: location || '',
-                keyframes: keyframes || []
+                keyframes: keyframes || [],
+                community_id: communityId || null
             })
         });
 
@@ -66,9 +68,48 @@ export const addImageToFirestore = async (
     }
 };
 
-export const getImagesFromFirestore = async (): Promise<{ images: ImageMeta[] }> => {
+export const addTextPostToFirestore = async (
+    user: User,
+    title: string,
+    description: string,
+    communityId: string,
+    flags: string[] = []
+) => {
     try {
-        const response = await fetch('/api/images');
+        const id = generateImageId();
+        const response = await fetch('/api/images?action=upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id,
+                imageUrl: 'text://post',
+                thumbnailUrl: '',
+                uploaderUid: user.uid,
+                uploaderName: user.displayName || 'Anonymous',
+                uploaderPhotoURL: user.photoURL || '',
+                title: title || '',
+                description: description || '',
+                license: 'CC0',
+                flags,
+                community_id: communityId
+            })
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || "Failed to publish discussion post.");
+        }
+        return data;
+    } catch (error) {
+        console.error("Error creating discussion post: ", error);
+        throw error;
+    }
+};
+
+export const getImagesFromFirestore = async (userUid?: string): Promise<{ images: ImageMeta[] }> => {
+    try {
+        const url = userUid ? `/api/images?userUid=${encodeURIComponent(userUid)}` : '/api/images';
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Server returned status ${response.status}`);
         }
@@ -140,13 +181,13 @@ export const recordImageView = async (imageId: string, userUid: string): Promise
 };
 
 // Real-time subscription for the feed (simulated via client polling)
-export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
+export const subscribeToImages = (callback: (images: ImageMeta[]) => void, userUid?: string) => {
     let active = true;
 
     const poll = async () => {
         if (document.visibilityState !== 'visible') return;
         try {
-            const { images } = await getImagesFromFirestore();
+            const { images } = await getImagesFromFirestore(userUid);
             if (active) {
                 callback(images);
             }
@@ -173,14 +214,15 @@ export const subscribeToImages = (callback: (images: ImageMeta[]) => void) => {
 };
 
 // Real-time subscription for a single image (simulated via client polling)
-export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) => void) => {
+export const subscribeToImage = (imageId: string, callback: (image: ImageMeta) => void, userUid?: string) => {
     let active = true;
     const baseId = imageId ? imageId.split('_loop_')[0].split('_rel_loop_')[0] : imageId;
 
     const poll = async () => {
         if (document.visibilityState !== 'visible') return;
         try {
-            const response = await fetch(`/api/images?action=get_single&imageId=${baseId}`);
+            const url = `/api/images?action=get_single&imageId=${baseId}${userUid ? `&userUid=${encodeURIComponent(userUid)}` : ''}`;
+            const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`Server returned status ${response.status}`);
             }

@@ -9,8 +9,8 @@ interface SidebarProps {
   user: User | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'explore' | 'profile' | 'notifications' | 'api';
-  setView: (view: 'home' | 'explore' | 'notifications' | 'api') => void;
+  activeView: 'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'app' | 'communities' | 'community';
+  setView: (view: 'home' | 'discover' | 'reels' | 'explore' | 'notifications' | 'api' | 'app' | 'communities') => void;
   onViewProfile: (user: ProfileUser) => void;
   notifications: Notification[];
   onImageClick: (image: ImageMeta) => void;
@@ -37,26 +37,26 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
 
   const handleMyProfileClick = () => {
     if (user) {
-        onViewProfile({
-            uploaderUid: user.uid,
-            uploaderName: user.displayName || 'User',
-            uploaderPhotoURL: user.photoURL || ''
-        });
-        setDropdownOpen(false);
+      onViewProfile({
+        uploaderUid: user.uid,
+        uploaderName: user.displayName || 'User',
+        uploaderPhotoURL: user.photoURL || ''
+      });
+      setDropdownOpen(false);
     }
   }
 
   return (
     <aside className="h-screen w-20 bg-background border-r border-border p-3 flex flex-col items-center fixed top-0 left-0 z-30">
       <div className="flex items-center justify-center p-2 mb-4 cursor-pointer" onClick={() => setView('home')} title="Glass Gallery">
-         <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden hover:scale-105 transition-transform p-1">
-            <img 
-              src="/favicon-96x96.png?v=2" 
-              className="w-6 h-6 object-contain" 
-              alt="Glass Gallery Logo"
-              width={24}
-              height={24}
-            />
+        <div className="w-10 h-10 rounded-xl bg-surface border border-border/50 flex-shrink-0 flex items-center justify-center shadow-md overflow-hidden hover:scale-105 transition-transform p-1">
+          <img
+            src="/favicon-96x96.png?v=2"
+            className="w-6 h-6 object-contain"
+            alt="Glass Gallery Logo"
+            width={24}
+            height={24}
+          />
         </div>
       </div>
 
@@ -67,24 +67,50 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
           </svg>
         </NavItem>
-         <NavItem label="Explore" active={activeView === 'explore'} onClick={() => setView('explore')}>
+        <NavItem label="Discover" active={activeView === 'discover'} onClick={() => setView('discover')}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+          </svg>
+        </NavItem>
+        <NavItem label="Reels" active={activeView === 'reels'} onClick={() => setView('reels')}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <rect x="2.5" y="3" width="19" height="18" rx="4" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
+            <line x1="2.5" y1="8" x2="21.5" y2="8" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
+            <line x1="7.5" y1="3" x2="5.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+            <line x1="13" y1="3" x2="11" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+            <line x1="18.5" y1="3" x2="16.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
+            <polygon points="10,11.5 15.5,14.5 10,17.5" fill={activeView === 'reels' ? "currentColor" : "none"} strokeWidth={activeView === 'reels' ? 1.5 : 1.75} strokeLinejoin="round" />
+          </svg>
+        </NavItem>
+        <NavItem label="Explore" active={activeView === 'explore'} onClick={() => setView('explore')}>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" />
             <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
           </svg>
         </NavItem>
+        <NavItem label="Communities" active={activeView === 'communities' || activeView === 'community'} onClick={() => setView('communities')}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+        </NavItem>
+        <NavItem label="Android App" active={activeView === 'app'} onClick={() => setView('app')}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 18c0 .55.45 1 1 1h1v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h2v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h1c.55 0 1-.45 1-1V8H6v10zM3.5 8C2.67 8 2 8.67 2 9.5v6c0 .83.67 1.5 1.5 1.5S5 16.33 5 15.5v-6C5 8.67 4.33 8 3.5 8zm17 0c-.83 0-1.5.67-1.5 1.5v6c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-6c0-.83-.67-1.5-1.5-1.5zm-4.97-4.84l1.3-1.3c.2-.2.2-.51 0-.71-.2-.2-.51-.2-.71 0l-1.48 1.48C13.85 2.23 12.95 2 12 2c-.96 0-1.86.23-2.66.63L7.85.99c-.2-.2-.51-.2-.71 0-.2.2-.2.51 0 .71l1.31 1.31C6.97 4.26 6 6.01 6 8h12c0-1.99-.97-3.75-2.47-4.84zM10 5.5c-.41 0-.75-.34-.75-.75s.34-.75.75-.75.75.34.75.75-.34.75-.75.75zm4 0c-.41 0-.75-.34-.75-.75s.34-.75.75-.75.75.34.75.75-.34.75-.75.75z" />
+          </svg>
+        </NavItem>
         <NavItem label="API" active={activeView === 'api'} onClick={() => setView('api')}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
         </NavItem>
         {user && (
-            <NotificationBell 
-                notifications={notifications} 
-                onImageClick={onImageClick} 
-                isSidebar={true}
-                onViewProfile={onViewProfile}
-            />
+          <NotificationBell
+            notifications={notifications}
+            onImageClick={onImageClick}
+            isSidebar={true}
+            onViewProfile={onViewProfile}
+            onClick={() => setView('notifications')}
+          />
         )}
         <NavItem label="Create" onClick={onCreateClick} isProminent>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
@@ -93,25 +119,25 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
         </NavItem>
 
         <div className="mt-2 pt-2 border-t border-border flex flex-col items-center w-full">
-            <NavItem label="Legal & Terms" onClick={onOpenLegal}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-            </NavItem>
-             
-            {/* Open Source Link */}
-            <a 
-              href="https://github.com/hello97-gg/glassgallery-modvc" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              title="GitHub Open Source"
-              className="flex items-center justify-center w-12 h-12 my-1.5 rounded-xl text-secondary hover:text-primary hover:bg-surface/80 transition-colors"
-              aria-label="GitHub"
-            >
-              <div className="w-6 h-6 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-              </div>
-            </a>
+          <NavItem label="Legal & Terms" onClick={onOpenLegal}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </NavItem>
+
+          {/* Open Source Link */}
+          <a
+            href="https://github.com/hello97-gg/glassgallery-modvc"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub Open Source"
+            className="flex items-center justify-center w-12 h-12 my-1.5 rounded-xl text-secondary hover:text-primary hover:bg-surface/80 transition-colors"
+            aria-label="GitHub"
+          >
+            <div className="w-6 h-6 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" /></svg>
+            </div>
+          </a>
         </div>
       </nav>
 
@@ -119,7 +145,12 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onCreateClick, onLoginClick, ac
       <div className="mt-auto flex justify-center w-full pb-2">
         {user ? (
           <div className="relative">
-            <button onClick={() => setDropdownOpen(!dropdownOpen)} className="p-1 rounded-full hover:ring-2 hover:ring-accent transition-all" title={user.displayName || 'User Profile'}>
+            <button 
+              onClick={() => setDropdownOpen(!dropdownOpen)} 
+              className="p-1 rounded-full hover:ring-2 hover:ring-accent transition-all" 
+              title={user.displayName || 'User Profile'}
+              aria-label={user.displayName ? `${user.displayName}'s profile menu` : 'User profile menu'}
+            >
               <img
                 src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`}
                 alt="User Avatar"

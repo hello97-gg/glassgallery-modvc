@@ -10,7 +10,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Share } from '@capacitor/share';
 import { SendIntent } from '@supernotes/capacitor-send-intent';
 import { Filesystem } from '@capacitor/filesystem';
-import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, getUserProfileByUsername, updateUserProfile, markNotificationsAsRead } from './services/firestoreService';
+import { subscribeToImages, deleteImageFromFirestore, getNotificationsForUser, toggleImageLike, PAGE_SIZE, subscribeToImage, getImagesByUploader, getImagesFromFirestore, getPersonalizedFeed, recordImageView, getUserProfile, getUserProfileByUsername, updateUserProfile, markNotificationsAsRead, getFollowingList } from './services/firestoreService';
 import { getInterestBoost, recordClickInterest, shouldFetchPersonalizedFeed, markPersonalizedFeedFetched } from './services/interestTracker';
 import type { ImageMeta, ProfileUser, Notification } from './types';
 import { calculateDynamicBatchSize } from './utils/performanceUtils';
@@ -35,33 +35,40 @@ import OnboardingModal, { generateSvgAvatar, generateUniqueName } from './compon
 import { DARK_VIDEO_POSTER } from './components/VideoPlayer';
 import SkeletonGrid from './components/SkeletonGrid';
 import ReelsPage from './components/ReelsPage';
+import { CommunityDiscoverPage } from './components/communities/CommunityDiscoverPage';
+import { CommunityView } from './components/communities/CommunityView';
+import { CreateCommunityModal } from './components/communities/CreateCommunityModal';
+import InfiniteFeed from './components/InfiniteFeed';
+import { PostDetailView } from './components/PostDetailView';
+import PullToRefresh from './components/PullToRefresh';
+import { toggleLikeSaveUnified, hydrateLikeSaveFromImages } from './services/likeSaveStore';
+import { getApiBaseUrl } from './services/apiClient';
 
 // Global Fetch Interceptor for Capacitor Native Platform to reroute relative paths to the production API
-if (Capacitor.isNativePlatform()) {
-  const originalFetch = window.fetch;
-  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-    let url = '';
-    if (typeof input === 'string') {
-      url = input;
-    } else if (input instanceof URL) {
-      url = input.toString();
-    } else if (input && typeof input === 'object' && 'url' in input) {
-      url = (input as any).url;
-    }
+const originalFetch = window.fetch;
+window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+  let url = '';
+  if (typeof input === 'string') {
+    url = input;
+  } else if (input instanceof URL) {
+    url = input.toString();
+  } else if (input && typeof input === 'object' && 'url' in input) {
+    url = (input as any).url;
+  }
 
-    if (url.startsWith('/')) {
-      const newUrl = `https://gg.modvc.org${url}`;
-      if (typeof input === 'string') {
-        input = newUrl;
-      } else if (input instanceof URL) {
-        input = new URL(newUrl);
-      } else if (input && typeof input === 'object') {
-        input = new Request(newUrl, input as any);
-      }
+  const base = getApiBaseUrl();
+  if (base && url.startsWith('/')) {
+    const newUrl = `${base}${url}`;
+    if (typeof input === 'string') {
+      input = newUrl;
+    } else if (input instanceof URL) {
+      input = new URL(newUrl);
+    } else if (input && typeof input === 'object') {
+      input = new Request(newUrl, input as any);
     }
-    return originalFetch(input, init);
-  };
-}
+  }
+  return originalFetch(input, init);
+};
 
 // --- Favicon SVG Data URIs ---
 // Compass Icon for Explore
@@ -311,7 +318,24 @@ const App: React.FC = () => {
   const selectedImage = pinHistory.length > 0 ? pinHistory[pinHistory.length - 1] : null;
   const [longPressedImage, setLongPressedImage] = useState<ImageMeta | null>(null);
   const [isUploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadModalCommunityId, setUploadModalCommunityId] = useState<string>('');
+  const [uploadModalPostType, setUploadModalPostType] = useState<'media' | 'text'>('media');
+  const [communityRefreshKey, setCommunityRefreshKey] = useState<number>(0);
   const [isLoginModalOpen, setLoginModalOpen] = useState(false);
+
+  // Home Feed Discover vs Following Tab state
+  const [feedTab, setFeedTab] = useState<'discover' | 'following'>('discover');
+  const [followingUids, setFollowingUids] = useState<Set<string>>(new Set());
+  const [joinedCommunityIds, setJoinedCommunityIds] = useState<Set<string>>(new Set());
+
+  // Saved / Bookmarked Images
+  const [savedImages, setSavedImages] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('savedImages');
+      if (saved) setSavedImages(new Set(JSON.parse(saved)));
+    } catch {}
+  }, []);
 
   // Mobile Top Header Visibility (controlled via direct GPU transform for 0ms scroll overhead)
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
@@ -323,9 +347,13 @@ const App: React.FC = () => {
   // Legal Tab State
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy' | 'guidelines'>('terms');
 
-  const [activeView, setActiveView] = useState<'home' | 'explore' | 'reels' | 'profile' | 'notifications' | 'api' | 'followers_following' | 'legal'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'discover' | 'explore' | 'reels' | 'profile' | 'notifications' | 'api' | 'followers_following' | 'legal' | 'communities' | 'community'>('home');
   const [profileUser, setProfileUser] = useState<ProfileUser | null>(null);
-  const [lastView, setLastView] = useState<'home' | 'explore' | 'reels' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal'>('home');
+  const [lastView, setLastView] = useState<'home' | 'discover' | 'explore' | 'reels' | 'notifications' | 'profile' | 'api' | 'followers_following' | 'legal' | 'communities' | 'community'>('home');
+  const tabScrollPositions = useRef<Record<string, number>>({});
+  const postScrollPositions = useRef<Record<string, number>>({});
+  const [selectedCommunitySlug, setSelectedCommunitySlug] = useState<string | null>(null);
+  const [isCreateCommunityOpen, setIsCreateCommunityOpen] = useState(false);
   const [initialReelId, setInitialReelId] = useState<string | null>(null);
   const [reelsRefreshTrigger, setReelsRefreshTrigger] = useState<number>(0);
   const savedPinHistoryRef = useRef<ImageMeta[]>([]);
@@ -432,14 +460,33 @@ const App: React.FC = () => {
 
     const stateListener = CapApp.addListener('appStateChange', (state) => {
       if (state.isActive) {
+        window.dispatchEvent(new Event('resize'));
         setTimeout(() => {
           checkShareIntent();
         }, 500);
       }
     });
 
+    const resumeListener = CapApp.addListener('resume', () => {
+      window.dispatchEvent(new Event('resize'));
+      setTimeout(checkShareIntent, 300);
+    });
+
+    const urlOpenListener = CapApp.addListener('appUrlOpen', () => {
+      window.dispatchEvent(new Event('resize'));
+      setTimeout(checkShareIntent, 300);
+    });
+
+    const handleVisualResize = () => {
+      window.dispatchEvent(new Event('resize'));
+    };
+    window.visualViewport?.addEventListener('resize', handleVisualResize);
+
     return () => {
       stateListener.then(l => l.remove());
+      resumeListener.then(l => l.remove());
+      urlOpenListener.then(l => l.remove());
+      window.visualViewport?.removeEventListener('resize', handleVisualResize);
     };
   }, [checkShareIntent]);
 
@@ -596,6 +643,106 @@ const App: React.FC = () => {
     }
   }, [user]);
 
+  // Following feed state with server-side cursor pagination
+  const [followingFeedImages, setFollowingFeedImages] = useState<ImageMeta[]>([]);
+  const [followingFeedCursor, setFollowingFeedCursor] = useState<string | null>(null);
+  const [followingFeedHasMore, setFollowingFeedHasMore] = useState(true);
+  const [isFetchingFollowingNextPage, setIsFetchingFollowingNextPage] = useState(false);
+  const [followingFeedError, setFollowingFeedError] = useState<string | null>(null);
+  const [isFollowingInitialLoading, setIsFollowingInitialLoading] = useState(false);
+  const isFetchingFollowingRef = useRef(false);
+
+  useEffect(() => {
+    if (user) {
+      getFollowingList(user.uid)
+        .then(users => {
+          setFollowingUids(new Set(users.map(u => u.uploaderUid)));
+        })
+        .catch(err => console.error("Failed to load following list", err));
+
+      fetch(`/api/communities?my=true&uid=${encodeURIComponent(user.uid)}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.success && Array.isArray(d.communities)) {
+            setJoinedCommunityIds(new Set(d.communities.map((c: any) => c.id)));
+          }
+        })
+        .catch(err => console.error("Failed to load joined communities", err));
+    } else {
+      setFollowingUids(new Set());
+      setJoinedCommunityIds(new Set());
+      setFollowingFeedImages([]);
+      setFollowingFeedCursor(null);
+      setFollowingFeedError(null);
+      if (feedTab === 'following') setFeedTab('discover');
+    }
+  }, [user]);
+
+  const fetchFollowingFeed = useCallback(async (reset = false) => {
+    if (!user) {
+      setFollowingFeedImages([]);
+      setFollowingFeedError(null);
+      return;
+    }
+    if (isFetchingFollowingRef.current) return;
+    isFetchingFollowingRef.current = true;
+    if (reset) {
+      setIsFollowingInitialLoading(true);
+      setFollowingFeedError(null);
+      setIsFetchingFollowingNextPage(false);
+    } else {
+      setIsFetchingFollowingNextPage(true);
+    }
+
+    try {
+      const cursorParam = (!reset && followingFeedCursor) ? `&cursor=${encodeURIComponent(followingFeedCursor)}` : '';
+      const res = await fetch(`/api/images?feed=following&userUid=${encodeURIComponent(user.uid)}&limit=20${cursorParam}`);
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to load following feed');
+      }
+
+      const newImages: ImageMeta[] = data.images || [];
+      const nextCursor: string | null = data.nextCursor || null;
+
+      setFollowingFeedImages(prev => reset ? newImages : [...prev, ...newImages]);
+      setFollowingFeedCursor(nextCursor);
+      setFollowingFeedHasMore(Boolean(nextCursor && newImages.length > 0));
+      setFollowingFeedError(null);
+    } catch (err: any) {
+      console.error("Error fetching following feed:", err);
+      if (reset) {
+        setFollowingFeedError(err.message || 'Unable to connect to server. Please try again.');
+      }
+    } finally {
+      isFetchingFollowingRef.current = false;
+      setIsFetchingFollowingNextPage(false);
+      setIsFollowingInitialLoading(false);
+    }
+  }, [user, followingFeedCursor]);
+
+  useEffect(() => {
+    if (feedTab === 'following' && user) {
+      fetchFollowingFeed(true);
+    }
+  }, [feedTab, user?.uid]);
+
+  const loadMoreFollowingImages = useCallback(() => {
+    if (followingFeedHasMore && !isFetchingFollowingRef.current && followingFeedCursor) {
+      fetchFollowingFeed(false);
+    }
+  }, [followingFeedHasMore, followingFeedCursor, fetchFollowingFeed]);
+
+  const homeFeedImages = useMemo(() => {
+    if (feedTab === 'following') {
+      return followingFeedImages;
+    }
+    return displayedImages.length > 0 ? displayedImages : allImages;
+  }, [allImages, displayedImages, feedTab, followingFeedImages]);
+
   // --- DEEP LINKING & ROUTING HANDLER ---
   useEffect(() => {
     const handleRouting = () => {
@@ -609,8 +756,8 @@ const App: React.FC = () => {
       // Detect @username or direct /username routes (e.g. /@pixeletedthoughts or /pixeletedthoughts)
       const RESERVED_PATHS = new Set([
         'image', 'gallery', 'api', 'legal', 'discover', 'explore',
-        'login', 'notifications', 'feed', 'assets', 'favicon.ico',
-        'robots.txt', 'sitemap.xml', 'manifest.json'
+        'c', 'communities', 'login', 'notifications', 'feed', 'assets', 'favicon.ico',
+        'robots.txt', 'sitemap.xml', 'sitemap', 'manifest.json'
       ]);
       const atMatch = window.location.pathname.match(/^\/@([a-zA-Z0-9_.-]+)/);
       const directMatch = !atMatch ? window.location.pathname.match(/^\/([a-zA-Z0-9_.-]+)$/) : null;
@@ -630,7 +777,7 @@ const App: React.FC = () => {
               return [...prev, img];
             });
           }
-        });
+        }, user?.uid);
         deepLinkUnsubscribeRef.current = unsubscribe;
       } else {
         setPinHistory([]);
@@ -653,6 +800,13 @@ const App: React.FC = () => {
          }).catch(() => {});
       } else if (usernameParam) {
          const cleanTarget = usernameParam.toLowerCase().replace(/[@\s]/g, '');
+         setProfileUser({
+           uploaderUid: '',
+           uploaderName: `@${cleanTarget}`,
+           uploaderPhotoURL: ''
+         });
+         setActiveView('profile');
+
          getUserProfileByUsername(cleanTarget).then((fetchedUser) => {
            if (fetchedUser) {
              setProfileUser(fetchedUser);
@@ -665,6 +819,19 @@ const App: React.FC = () => {
          }).catch((err) => {
            console.error("Failed to load user profile by username:", err);
          });
+      } else if (window.location.pathname.startsWith('/c/')) {
+          const cMatch = window.location.pathname.match(/^\/c\/([a-zA-Z0-9_-]+)/);
+          if (cMatch) {
+            setSelectedCommunitySlug(cMatch[1]);
+            setActiveView('community');
+            setProfileUser(null);
+          }
+      } else if (viewParam === 'communities' || window.location.pathname === '/communities' || window.location.pathname === '/communities/new') {
+          setActiveView('communities');
+          if (window.location.pathname === '/communities/new' || params.get('create') === 'true') {
+            setIsCreateCommunityOpen(true);
+          }
+          setProfileUser(null);
       } else if (viewParam === 'api' || window.location.pathname === '/api') {
           setActiveView('api');
           setProfileUser(null);
@@ -773,12 +940,16 @@ const App: React.FC = () => {
     registerPush();
   }, []);
 
-  const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string } | null) => {
+  const updateURL = (params: { image?: string; user?: string; username?: string; search?: string; view?: string; communitySlug?: string } | null) => {
     const url = new URL(window.location.href);
     url.search = ''; 
     
     if (params?.image) {
       url.pathname = `/image/${params.image}`;
+    } else if (params?.communitySlug || (params?.view === 'community' && params?.communitySlug)) {
+      url.pathname = `/c/${params.communitySlug}`;
+    } else if (params?.view === 'communities') {
+      url.pathname = '/communities';
     } else if (params?.username) {
       url.pathname = `/@${params.username.replace(/^@/, '')}`;
     } else {
@@ -787,7 +958,7 @@ const App: React.FC = () => {
     
     if (params?.user && !params?.username) url.searchParams.set('user', params.user);
     if (params?.search) url.searchParams.set('search', params.search);
-    if (params?.view) url.searchParams.set('view', params.view);
+    if (params?.view && !['communities', 'community'].includes(params.view)) url.searchParams.set('view', params.view);
     
     window.history.pushState({}, '', url.toString());
   };
@@ -884,13 +1055,13 @@ const App: React.FC = () => {
                  
                  return updatedList;
             });
-        });
+        }, user?.uid);
     }
     
     return () => {
         if (unsubscribe) unsubscribe();
     };
-  }, [activeView, currentUserProfile, isOnline]);
+  }, [activeView, currentUserProfile, isOnline, user?.uid]);
 
   // Sync selectedImage in pinHistory
   useEffect(() => {
@@ -958,7 +1129,7 @@ const App: React.FC = () => {
 
   // Zero-cost IntersectionObserver for Infinite Feed loading (replaces forced layout scroll polling)
   useEffect(() => {
-    if (activeView !== 'home') return;
+    if (activeView !== 'discover') return;
     const sentinel = loadMoreSentinelRef.current;
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
 
@@ -1015,7 +1186,7 @@ const App: React.FC = () => {
 
   // Auto-fill effect: if initial or rendered feed is shorter than viewport + 300px, immediately load more images
   useEffect(() => {
-    if (activeView === 'home' && displayedImages.length > 0 && !imagesLoading && !isLoadingMore.current) {
+    if ((activeView === 'discover' || activeView === 'home') && displayedImages.length > 0 && !imagesLoading && !isLoadingMore.current) {
       if (document.documentElement.scrollHeight <= window.innerHeight + 300 && currentIndex < allImages.length) {
         loadMoreImages();
       }
@@ -1089,18 +1260,16 @@ const App: React.FC = () => {
     const baseId = image.id.split('_loop_')[0].split('_rel_loop_')[0];
     const original = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId) || image;
 
+    if (selectedImage) {
+      postScrollPositions.current[selectedImage.id] = window.scrollY || document.documentElement.scrollTop || 0;
+    }
+
     const pushPin = () => {
       setPinHistory(prev => [...prev, original]);
       updateURL({ image: original.id });
+      window.scrollTo({ top: 0, behavior: 'instant' });
     };
 
-    // If modal is already open (e.g. clicking More Like This), push immediately without expensive full-document view transition
-    if (pinHistory.length > 0) {
-      pushPin();
-      return;
-    }
-
-    // Instant native-style modal open (zero frame delay, no DOM freeze)
     pushPin();
 
     // Record view for server-side taste profile (fire-and-forget)
@@ -1120,6 +1289,10 @@ const App: React.FC = () => {
       const prevPin = nextHistory[nextHistory.length - 1];
       setPinHistory(nextHistory);
       updateURL({ image: prevPin.id });
+      const savedScroll = postScrollPositions.current[prevPin.id] || 0;
+      setTimeout(() => {
+        window.scrollTo({ top: savedScroll, behavior: 'instant' });
+      }, 50);
     } else {
       // Pop pin A -> feed
       setPinHistory([]);
@@ -1127,8 +1300,15 @@ const App: React.FC = () => {
         deepLinkUnsubscribeRef.current();
         deepLinkUnsubscribeRef.current = null;
       }
-      if (activeView === 'profile' && profileUser) {
-        updateURL({ user: profileUser.uploaderUid });
+      if (activeView === 'community' && selectedCommunitySlug) {
+        updateURL({ communitySlug: selectedCommunitySlug });
+      } else if (activeView === 'profile' && profileUser) {
+        const cleanUsername = profileUser.uploaderName ? profileUser.uploaderName.replace(/\s+/g, '').toLowerCase() : '';
+        if (cleanUsername && cleanUsername !== 'loading...' && cleanUsername !== 'user') {
+          updateURL({ username: cleanUsername });
+        } else if (profileUser.uploaderUid) {
+          updateURL({ user: profileUser.uploaderUid });
+        }
       } else if (activeView === 'explore' && exploreSearchTerm) {
         updateURL({ search: exploreSearchTerm });
       } else if (activeView === 'api') {
@@ -1137,7 +1317,7 @@ const App: React.FC = () => {
         updateURL(null);
       }
     }
-  }, [pinHistory, activeView, profileUser, exploreSearchTerm]);
+  }, [pinHistory, activeView, profileUser, exploreSearchTerm, selectedCommunitySlug]);
   
   const handleImageClickFromNotification = (partialImage: Partial<ImageMeta>) => {
     const fullImage = allImages.find(i => i.id === partialImage.id);
@@ -1179,14 +1359,27 @@ const App: React.FC = () => {
     });
   };
 
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = (commInfo?: { id?: string; slug?: string }) => {
     setUploadModalOpen(false);
     setDroppedFile(null);
     refetchImages(); // Refetch instantly so the new upload shows up instantly!
-    if (activeView !== 'profile') {
-        setActiveView('home');
-        updateURL(null);
+    setCommunityRefreshKey(k => k + 1);
+
+    const commSlug = commInfo?.slug || (commInfo?.id && activeCommunitySlug ? activeCommunitySlug : null);
+
+    if (commSlug) {
+      if (activeView === 'community' && activeCommunitySlug === commSlug) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        window.history.pushState(null, '', `/c/${commSlug}`);
+        setActiveCommunitySlug(commSlug);
+        setActiveView('community');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } else if (activeView !== 'profile' && activeView !== 'community') {
+      setActiveView('home');
+      updateURL(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -1267,7 +1460,7 @@ const App: React.FC = () => {
     setActiveView('followers_following');
   };
   
-  const handleSetView = (view: 'home' | 'explore' | 'reels' | 'notifications' | 'api') => {
+  const handleSetView = (view: 'home' | 'discover' | 'explore' | 'reels' | 'notifications' | 'api' | 'communities') => {
     if (pinHistory.length > 0) {
       setPinHistory([]);
       setIsModalNavVisible(true);
@@ -1275,6 +1468,7 @@ const App: React.FC = () => {
 
     if (view === 'reels') {
       if (activeView !== 'reels') {
+        tabScrollPositions.current[activeView] = window.scrollY || document.documentElement.scrollTop || 0;
         setLastView(activeView);
         window.scrollTo({ top: 0, behavior: 'instant' });
         setActiveView('reels');
@@ -1289,34 +1483,48 @@ const App: React.FC = () => {
       return;
     }
 
-    if (view === activeView && (view === 'home' || view === 'explore')) {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Re-tapping the active tab: scroll to top!
+    if (view === activeView) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      tabScrollPositions.current[view] = 0;
+      if (view === 'discover') {
         setAllImages(prevImages => {
-             const reshuffled = smartSortImages(prevImages, currentUserProfile);
-             setDisplayedImages(reshuffled.slice(0, FEED_BATCH_SIZE));
-             setCurrentIndex(FEED_BATCH_SIZE);
-             return reshuffled;
+          const reshuffled = smartSortImages(prevImages, currentUserProfile);
+          setDisplayedImages(reshuffled.slice(0, FEED_BATCH_SIZE));
+          setCurrentIndex(FEED_BATCH_SIZE);
+          return reshuffled;
         });
-        if (view === 'explore') {
-            setExploreSearchTerm('');
-            updateURL(null);
-        }
-    } else {
-        if (activeView !== view) {
-            setLastView(activeView);
-        }
-        window.scrollTo({ top: 0, behavior: 'instant' });
-        setActiveView(view);
-        setInitialReelId(null);
-        setProfileUser(null);
+      }
+      if (view === 'explore') {
         setExploreSearchTerm('');
-        
-        if (view === 'api') {
-            updateURL({ view: 'api' });
-        } else {
-            updateURL(null);
-        }
+        updateURL(null);
+      }
+      return;
     }
+
+    // Switching to a different tab: save current scroll position and switch view
+    tabScrollPositions.current[activeView] = window.scrollY || document.documentElement.scrollTop || 0;
+    if (activeView !== view) {
+      setLastView(activeView);
+    }
+    setActiveView(view);
+    setInitialReelId(null);
+    setProfileUser(null);
+    if (view !== 'explore') setExploreSearchTerm('');
+    
+    if (view === 'api') {
+      updateURL({ view: 'api' });
+    } else if (view === 'communities') {
+      updateURL({ view: 'communities' });
+    } else {
+      updateURL(null);
+    }
+
+    // Restore target tab's scroll position
+    const targetY = tabScrollPositions.current[view] || 0;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: targetY, behavior: 'instant' });
+    });
   };
 
   const handleOpenInReels = useCallback((videoId: string) => {
@@ -1361,6 +1569,9 @@ const App: React.FC = () => {
             (window as any).__glassGalleryModalCloseSubState();
             return;
           }
+          if ((window as any).__glassGalleryPostDetailBack && (window as any).__glassGalleryPostDetailBack()) {
+            return;
+          }
           handlePopPin();
           return;
         } else if (longPressedImage) {
@@ -1382,8 +1593,13 @@ const App: React.FC = () => {
         } else if (activeView === 'notifications') {
           handleBack();
         } else if (activeView === 'profile') {
+          if ((window as any).__glassGalleryProfileBack && (window as any).__glassGalleryProfileBack()) {
+            return;
+          }
           handleBack();
-        } else if (activeView === 'explore') {
+        } else if (activeView === 'communities' || activeView === 'community') {
+          handleBack();
+        } else if (activeView === 'discover' || activeView === 'explore') {
           handleSetView('home');
         } else {
           CapApp.exitApp();
@@ -1435,45 +1651,36 @@ const App: React.FC = () => {
 
   const handleLikeToggle = async (image: ImageMeta) => {
     if (!user) {
-        setLoginModalOpen(true);
-        return;
+      setLoginModalOpen(true);
+      return;
     }
-    
-    // Resolve canonical base image and ID
     const baseId = image.id.split('_loop_')[0].split('_rel_loop_')[0];
-    if (inFlightLikesRef.current.has(baseId)) return;
-    inFlightLikesRef.current.add(baseId);
-
     const originalImage = allImages.find(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId) || image;
-    
-    const oldLikedBy = originalImage.likedBy || image.likedBy || [];
-    const hasLiked = oldLikedBy.includes(user.uid);
-    const newLikedBy = hasLiked
-        ? oldLikedBy.filter(id => id !== user.uid)
-        : [...oldLikedBy, user.uid];
-
-    const currentCount = typeof originalImage.likeCount === 'number' 
-        ? originalImage.likeCount 
-        : (typeof image.likeCount === 'number' ? image.likeCount : oldLikedBy.length);
-    const newLikeCount = hasLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
-
-    const updatedImage = { ...originalImage, id: baseId, likedBy: newLikedBy, likeCount: newLikeCount };
-    handleImageUpdate(updatedImage); 
-
-    try {
-        const res = await toggleImageLike({ ...originalImage, id: baseId }, user);
-        if (res && typeof res.likeCount === 'number') {
-           const finalLikedBy = res.hasLiked 
-             ? (newLikedBy.includes(user.uid) ? newLikedBy : [...newLikedBy, user.uid])
-             : newLikedBy.filter(id => id !== user.uid);
-           handleImageUpdate({ ...updatedImage, likeCount: res.likeCount, likedBy: finalLikedBy });
-        }
-    } catch (error) {
-        console.error("Failed to toggle like:", error);
-        handleImageUpdate(originalImage);
-    } finally {
-        inFlightLikesRef.current.delete(baseId);
+    const res = await toggleLikeSaveUnified(originalImage, user as any, showToast);
+    if (res) {
+      const finalLikedBy = res.isLiked
+        ? [...new Set([...(originalImage.likedBy || []), user.uid])]
+        : (originalImage.likedBy || []).filter(id => id !== user.uid);
+      const updated = {
+        ...originalImage,
+        id: baseId,
+        likeCount: res.likeCount,
+        likedBy: finalLikedBy,
+        isLiked: res.isLiked,
+        isSaved: res.isSaved
+      };
+      handleImageUpdate(updated);
+      setSavedImages(prev => {
+        const next = new Set(prev);
+        if (res.isSaved) next.add(baseId);
+        else next.delete(baseId);
+        return next;
+      });
     }
+  };
+
+  const handleSaveToggle = async (img: ImageMeta) => {
+    return handleLikeToggle(img);
   };
 
   const handleImageDelete = async (imageId: string) => {
@@ -1498,6 +1705,40 @@ const App: React.FC = () => {
   }, []);
 
   const renderContent = () => {
+    if (activeView === 'communities') {
+        return (
+            <CommunityDiscoverPage 
+                user={user}
+                onSelectCommunity={(slug) => {
+                    setSelectedCommunitySlug(slug);
+                    setActiveView('community');
+                    updateURL({ communitySlug: slug });
+                }}
+                onCreateCommunityClick={() => setIsCreateCommunityOpen(true)}
+            />
+        );
+    }
+
+    if (activeView === 'community' && selectedCommunitySlug) {
+        return (
+            <CommunityView 
+                slug={selectedCommunitySlug}
+                user={user}
+                onPostClick={(post) => handleImageClick(post)}
+                onCreatePostClick={(commId, defaultType) => {
+                    setUploadModalCommunityId(commId || '');
+                    setUploadModalPostType(defaultType || 'text');
+                    setUploadModalOpen(true);
+                }}
+                onViewProfile={handleViewProfile}
+                onLikeToggle={handleLikeToggle}
+                onSaveToggle={handleSaveToggle}
+                savedImages={savedImages}
+                refreshTrigger={communityRefreshKey}
+            />
+        );
+    }
+
     if (activeView === 'api') {
         return (
             <>
@@ -1630,8 +1871,39 @@ const App: React.FC = () => {
         );
     }
 
-    // HOME
-    if (displayedImages.length === 0) {
+    // EXPLORE TAB (4-squares icon -> DISCOVER masonry grid screen with ImageGrid)
+    if (activeView === 'discover') {
+      if (displayedImages.length === 0 && imagesLoading) {
+        return <SkeletonGrid />;
+      }
+
+      return (
+        <>
+          <SEOHead 
+            title="Explore Images"
+            description="Explore images, art, and community posts on Glass Gallery."
+            url={window.location.href}
+            favicon={EXPLORE_FAVICON}
+          />
+          <PullToRefresh onRefresh={async () => { await fetchImages(); }}>
+            <div className="pt-16 pb-20 px-2 sm:px-3">
+              <ImageGrid 
+                images={displayedImages} 
+                user={user} 
+                onImageClick={handleImageClick} 
+                onViewProfile={handleViewProfile} 
+                onLikeToggle={handleLikeToggle} 
+                onLongPress={setLongPressedImage} 
+              />
+              <div ref={loadMoreSentinelRef} className="h-12 w-full flex items-center justify-center pointer-events-none" />
+            </div>
+          </PullToRefresh>
+        </>
+      );
+    }
+
+    // HOME: Single-column vertical feed (X/Reddit style) with Discover / Following tabs using react-virtuoso
+    if (displayedImages.length === 0 && imagesLoading) {
       return <SkeletonGrid />;
     }
 
@@ -1643,8 +1915,32 @@ const App: React.FC = () => {
                 url={window.location.href}
                 favicon={DEFAULT_FAVICON}
             />
-            <ImageGrid images={displayedImages} user={user} onImageClick={handleImageClick} onViewProfile={handleViewProfile} onLikeToggle={handleLikeToggle} onLongPress={setLongPressedImage} />
-            <div ref={loadMoreSentinelRef} className="h-12 w-full flex items-center justify-center pointer-events-none" />
+            <InfiniteFeed
+                images={homeFeedImages}
+                user={user}
+                onImageClick={handleImageClick}
+                onViewProfile={handleViewProfile}
+                onLikeToggle={handleLikeToggle}
+                onLoginClick={() => setLoginModalOpen(true)}
+                feedTab={feedTab}
+                setFeedTab={setFeedTab}
+                onCreateClick={(type) => {
+                  setUploadModalPostType(type || 'media');
+                  setUploadModalCommunityId('');
+                  setUploadModalOpen(true);
+                }}
+                savedImages={savedImages}
+                onSaveToggle={handleSaveToggle}
+                onImageDelete={handleImageDelete}
+                onImageEdit={handleImageUpdate}
+                onEndReached={feedTab === 'following' ? loadMoreFollowingImages : loadMoreImages}
+                isFetchingNextPage={feedTab === 'following' ? isFetchingFollowingNextPage : isLoadingMore.current}
+                followingError={followingFeedError}
+                isLoadingFollowing={isFollowingInitialLoading}
+                onRetryFollowing={() => fetchFollowingFeed(true)}
+                onRefresh={async () => { await fetchImages(); }}
+                onRefreshFollowing={async () => { await fetchFollowingFeed(true); }}
+            />
         </>
     );
   }
@@ -1662,8 +1958,8 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Premium Minimalist Mobile Header - Only visible on Home feed */}
-      {activeView === 'home' && !profileUser && (
+      {/* Premium Minimalist Mobile Header - Only visible on Explore (4-squares masonry grid) */}
+      {activeView === 'discover' && !profileUser && (
         <header 
           ref={headerRef}
           className="fixed top-0 left-0 right-0 z-40 bg-transparent flex items-center justify-between px-4 sm:px-5 md:hidden select-none transition-transform duration-300 ease-in-out pointer-events-none translate-y-0"
@@ -1677,7 +1973,7 @@ const App: React.FC = () => {
             className="pointer-events-auto flex items-center cursor-pointer active:scale-95 transition-transform" 
             onClick={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
-              handleSetView('home');
+              handleSetView('discover');
             }}
           >
             <div className="w-10 h-10 rounded-full bg-surface/50 backdrop-blur-md border border-white/10 flex-shrink-0 flex items-center justify-center shadow-lg p-1.5">
@@ -1749,13 +2045,15 @@ const App: React.FC = () => {
 
       {/* Dynamic main wrapper padding: accommodates safe-area status bar on all mobile screens */}
       <main 
-        className={`flex-1 min-w-0 px-2 sm:px-4 md:p-8 pb-24 md:pb-8 transition-opacity duration-300 ${
+        className={`flex-1 min-w-0 ${
+          activeView === 'home' && !profileUser ? 'px-0' : 'px-2 sm:px-4 md:p-8'
+        } pb-24 md:pb-8 transition-opacity duration-300 ${
           selectedImage ? 'opacity-25 pointer-events-none' : 'opacity-100'
         }`}
         style={{
-          paddingTop: activeView === 'home' && !profileUser 
+          paddingTop: activeView === 'discover' && !profileUser 
             ? 'calc(3.5rem + env(safe-area-inset-top, 0px))' 
-            : 'env(safe-area-inset-top, 0px)'
+            : (activeView === 'home' && !profileUser ? '0px' : 'env(safe-area-inset-top, 0px)')
         }}
       >
         {renderContent()}
@@ -1763,6 +2061,7 @@ const App: React.FC = () => {
 
       <BottomNav
         user={user}
+        currentUserProfile={currentUserProfile}
         onCreateClick={handleCreateClick}
         onLoginClick={() => setLoginModalOpen(true)}
         activeView={activeView}
@@ -1784,11 +2083,21 @@ const App: React.FC = () => {
       {isUploadModalOpen && user && (
         <UploadModal
           user={user}
+          initialCommunityId={uploadModalCommunityId}
+          initialPostType={uploadModalPostType}
           onClose={() => {
               setUploadModalOpen(false);
+              setUploadModalCommunityId('');
+              setUploadModalPostType('media');
               setDroppedFile(null);
           }}
-          onUploadSuccess={handleUploadSuccess}
+          onUploadSuccess={(commInfo) => {
+              setUploadModalOpen(false);
+              setUploadModalCommunityId('');
+              setUploadModalPostType('media');
+              setDroppedFile(null);
+              handleUploadSuccess(commInfo);
+          }}
           initialFile={droppedFile}
           allImages={allImages}
         />
@@ -1872,19 +2181,19 @@ const App: React.FC = () => {
       )}
 
       {selectedImage && (
-        <ImageDetailModal
+        <PostDetailView
+          key={selectedImage.id}
           image={selectedImage}
           user={user}
-          allImages={allImages}
+          suggestedImages={allImages}
           onClose={handlePopPin}
           onViewProfile={handleViewProfile}
-          onImageUpdate={handleImageUpdate}
-          onImageDelete={handleImageDelete}
           onLikeToggle={handleLikeToggle}
-          onLocationClick={handleLocationClick}
-          onSelectImage={handleImageClick}
-          onOpenInReels={handleOpenInReels}
-          onNavVisibilityChange={setIsModalNavVisible}
+          onLoginClick={() => setLoginModalOpen(true)}
+          onImageClick={handleImageClick}
+          savedImages={savedImages}
+          onSaveToggle={handleSaveToggle}
+          onImageUpdate={handleImageUpdate}
         />
       )}
 
@@ -2048,6 +2357,19 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {isCreateCommunityOpen && (
+        <CreateCommunityModal
+          user={user}
+          onClose={() => setIsCreateCommunityOpen(false)}
+          onSuccess={(newSlug) => {
+            setIsCreateCommunityOpen(false);
+            setSelectedCommunitySlug(newSlug);
+            setActiveView('community');
+            updateURL({ communitySlug: newSlug });
+          }}
+        />
       )}
     </div>
   );

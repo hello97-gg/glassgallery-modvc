@@ -1,34 +1,41 @@
+
 import React from 'react';
 import type { User } from 'firebase/auth';
 import { ProfileUser, Notification } from '../types';
 
 interface BottomNavProps {
   user: User | null;
+  currentUserProfile?: ProfileUser | null;
   onCreateClick: () => void;
   onLoginClick: () => void;
-  activeView: 'home' | 'explore' | 'reels' | 'profile' | 'notifications' | 'api';
-  setView: (view: 'home' | 'explore' | 'reels' | 'notifications' | 'api') => void;
+  activeView: 'home' | 'discover' | 'reels' | 'explore' | 'profile' | 'notifications' | 'api' | 'app' | 'legal' | 'post' | 'communities' | 'community';
+  setView: (view: 'home' | 'discover' | 'reels' | 'explore' | 'notifications' | 'api' | 'app' | 'communities') => void;
   onViewProfile: (user: ProfileUser) => void;
-  notifications?: Notification[];
-  onNotificationsClick?: () => void;
-  visible?: boolean;
+  notifications: Notification[];
+  onNotificationsClick: () => void;
 }
 
-const BottomNav: React.FC<BottomNavProps> = ({ 
-  user, 
-  onCreateClick, 
-  onLoginClick, 
-  activeView, 
-  setView, 
-  onViewProfile,
-  notifications,
-  onNotificationsClick,
-  visible = true
-}) => {
+const NavItem: React.FC<{
+  children: React.ReactNode;
+  onClick?: () => void;
+  active?: boolean;
+}> = ({ children, onClick, active }) => (
+  <button
+    onClick={onClick}
+    className={`flex flex-col items-center justify-center flex-1 h-16 transition-colors duration-200 focus:outline-none relative ${active ? 'text-primary' : 'text-secondary hover:text-primary'}`}
+    aria-current={active ? 'page' : undefined}
+  >
+    {children}
+  </button>
+);
+
+const BottomNav: React.FC<BottomNavProps> = ({ user, currentUserProfile, onCreateClick, onLoginClick, activeView, setView, onViewProfile, notifications, onNotificationsClick }) => {
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleProfileClick = () => {
     if (user) {
-        onViewProfile({
+        onViewProfile(currentUserProfile || {
             uploaderUid: user.uid,
             uploaderName: user.displayName || 'User',
             uploaderPhotoURL: user.photoURL || ''
@@ -36,72 +43,28 @@ const BottomNav: React.FC<BottomNavProps> = ({
     } else {
         onLoginClick();
     }
-  };
-
-  const isNavVisible = visible;
-
-  const btnBaseStyle: React.CSSProperties = {
-    WebkitTapHighlightColor: 'transparent',
-    outline: 'none',
-    touchAction: 'manipulation',
-    userSelect: 'none',
-  };
+  }
 
   return (
-    <div 
-      className={`fixed left-1/2 -translate-x-1/2 bg-[#111111]/95 border border-white/10 rounded-[32px] px-3.5 py-2 flex items-center justify-between gap-1 shadow-2xl z-[65] md:hidden w-[295px] backdrop-blur-md select-none transition-all duration-300 ease-out ${
-        isNavVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-20 pointer-events-none'
-      }`}
-      style={{ 
-        bottom: 'calc(max(env(safe-area-inset-bottom, 0px), 16px) + 8px)',
-        WebkitTapHighlightColor: 'transparent',
-        touchAction: 'manipulation',
-        userSelect: 'none'
-      }}
-    >
-      {/* Home Button */}
-      <button
-        onClick={() => setView('home')}
-        style={btnBaseStyle}
-        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
-          activeView === 'home' ? 'text-white' : 'text-neutral-400 hover:text-white'
-        }`}
-      >
+    <footer className="fixed bottom-0 left-0 right-0 h-16 bg-surface border-t border-border flex justify-around items-center z-40 md:hidden">
+      <NavItem onClick={() => setView('home')} active={activeView === 'home'}>
         {activeView === 'home' ? (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-          </svg>
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+            </svg>
         ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.25}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
         )}
-        <span className="text-[10px] font-bold mt-1 tracking-wide">Home</span>
-      </button>
-
-      {/* Explore/Search Button */}
-      <button
-        onClick={() => setView('explore')}
-        style={btnBaseStyle}
-        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
-          activeView === 'explore' ? 'text-white' : 'text-neutral-400 hover:text-white'
-        }`}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={activeView === 'explore' ? 3 : 2.25}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </NavItem>
+      <NavItem onClick={() => setView('discover')} active={activeView === 'discover'}>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
         </svg>
-        <span className="text-[10px] font-bold mt-1 tracking-wide">Search</span>
-      </button>
-
-      {/* Reels Button */}
-      <button
-        onClick={() => setView('reels')}
-        style={btnBaseStyle}
-        className={`flex flex-col items-center justify-center py-1.5 px-2.5 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
-          activeView === 'reels' ? 'text-white' : 'text-neutral-400 hover:text-white'
-        }`}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      </NavItem>
+      <NavItem onClick={() => setView('reels')} active={activeView === 'reels'}>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <rect x="2.5" y="3" width="19" height="18" rx="4" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
           <line x1="2.5" y1="8" x2="21.5" y2="8" strokeWidth={activeView === 'reels' ? 2.25 : 1.75} />
           <line x1="7.5" y1="3" x2="5.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
@@ -109,35 +72,44 @@ const BottomNav: React.FC<BottomNavProps> = ({
           <line x1="18.5" y1="3" x2="16.5" y2="8" strokeWidth={activeView === 'reels' ? 2 : 1.75} strokeLinecap="round" />
           <polygon points="10,11.5 15.5,14.5 10,17.5" fill={activeView === 'reels' ? "currentColor" : "none"} strokeWidth={activeView === 'reels' ? 1.5 : 1.75} strokeLinejoin="round" />
         </svg>
-        <span className="text-[10px] font-bold mt-1 tracking-wide">Reels</span>
-      </button>
-
-      {/* Profile/Saved Button */}
-      <button
-        onClick={handleProfileClick}
-        style={btnBaseStyle}
-        className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-2xl transition-transform duration-100 ease-out active:scale-[0.94] focus:outline-none ${
-          activeView === 'profile' ? 'text-white' : 'text-neutral-400 hover:text-white'
-        }`}
-      >
+      </NavItem>
+      <NavItem onClick={() => setView('explore')} active={activeView === 'explore'}>
+         <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </NavItem>
+      <NavItem onClick={() => setView('communities')} active={activeView === 'communities' || activeView === 'community'}>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      </NavItem>
+      <NavItem onClick={onCreateClick}>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-accent" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+        </svg>
+      </NavItem>
+       {user && (
+          <NavItem onClick={onNotificationsClick}>
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+             {unreadCount > 0 && (
+                <span className="absolute top-2 right-1/2 mr-[-24px] flex items-center justify-center w-5 h-5 text-xs font-bold text-primary bg-red-500 rounded-full">{unreadCount}</span>
+             )}
+          </NavItem>
+      )}
+      <NavItem onClick={handleProfileClick} active={activeView === 'profile'}>
         {user ? (
-          <img 
-            src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`}
-            alt="Saved avatar" 
-            className={`w-6 h-6 rounded-full object-cover transition-all duration-200 ${
-              activeView === 'profile' ? 'ring-2 ring-white ring-offset-1 ring-offset-[#111]' : 'opacity-85'
-            }`}
-          />
+            <img 
+                src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}&backgroundColor=ff5722,e91e63,9c27b0,673ab7,3f51b5,2196f3,03a9f4,00bcd4,009688,4caf50,8bc34a,cddc39,ffeb3b,ffc107,ff9800`}
+                alt="User Avatar" 
+                className={`w-7 h-7 rounded-full ${activeView === 'profile' ? 'ring-2 ring-offset-2 ring-offset-surface ring-primary' : ''}`}
+            />
         ) : (
-          <div className="w-6.5 h-6.5 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6.5 w-6.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.25}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </div>
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center`}>
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="currentColor" viewBox="0 0 16 16"><path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1H3zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+            </div>
         )}
-        <span className="text-[10px] font-bold mt-1 tracking-wide">Saved</span>
-      </button>
-    </div>
+      </NavItem>
+    </footer>
   );
 };
 

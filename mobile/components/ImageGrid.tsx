@@ -2,6 +2,7 @@ import React from 'react';
 import type { User } from 'firebase/auth';
 import type { ImageMeta, ProfileUser } from '../types';
 import ImageCard from './ImageCard';
+import TextPostCard from './TextPostCard';
 
 interface ImageGridProps {
   images: ImageMeta[];
@@ -27,8 +28,20 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
 
   return (
     <div className="columns-2 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-2 md:gap-3">
-      {images.map((image) => (
-        <ImageCard 
+      {images.map((image) => {
+        const isText = !image.imageUrl || image.imageUrl === 'text://post' || image.imageUrl.startsWith('text://');
+        return isText ? (
+          <TextPostCard
+            key={image.id}
+            image={image}
+            user={user}
+            onClick={() => onImageClick(image)}
+            onViewProfile={onViewProfile}
+            onLikeToggle={onLikeToggle}
+            className="mb-2 md:mb-3"
+          />
+        ) : (
+          <ImageCard 
             key={image.id} 
             image={image}
             user={user}
@@ -36,8 +49,9 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, user, onImageClick, onVie
             onViewProfile={onViewProfile}
             onLikeToggle={onLikeToggle}
             onLongPress={onLongPress}
-        />
-      ))}
+          />
+        );
+      })}
     </div>
   );
 };

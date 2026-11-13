@@ -11,7 +11,7 @@ function escapeHtml(unsafe) {
 }
 
 const RESERVED_ROUTES = new Set([
-  'image', 'gallery', 'api', 'legal', 'discover', 'explore', 'reels',
+  'image', 'embed', 'gallery', 'api', 'legal', 'discover', 'explore', 'reels',
   'c', 'communities', 'login', 'notifications', 'feed', 'assets', 'favicon.ico',
   'robots.txt', 'sitemap.xml', 'sitemap', 'manifest.json'
 ]);
@@ -292,8 +292,15 @@ export const onRequest = async (context) => {
   // Site-wide security headers
   newResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   newResponse.headers.set('X-Content-Type-Options', 'nosniff');
-  newResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
   newResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // Embed routes allow embedding anywhere and omit X-Frame-Options
+  if (url.pathname.startsWith('/embed/')) {
+    newResponse.headers.delete('X-Frame-Options');
+    newResponse.headers.set('Content-Security-Policy', "frame-ancestors *;");
+  } else {
+    newResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
+  }
 
   return newResponse;
 };

@@ -3,6 +3,7 @@ import { submitToIndexNow } from "./lib/indexnow.js";
 import { canPostInCommunity, checkUserPlatformAdmin } from "./lib/communityPermissions.js";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon";
+import { getEmbedSigningSecret, verifyMediaSignature, isFreeLicense, isAllowedOrigin } from "./lib/embedCrypto.js";
 
 const corsHeaders = {
   'Access-Control-Allow-Credentials': 'true',
@@ -127,6 +128,8 @@ export async function onRequest(context) {
       if (action === 'render') {
         const category = url.searchParams.get('category') || url.searchParams.get('tag');
         const format = url.searchParams.get('format'); // 'json' for metadata instead of redirect
+        const sig = url.searchParams.get('sig');
+        const exp = url.searchParams.get('exp');
         const embedHeaders = {
           ...corsHeaders,
           'Cache-Control': 'public, max-age=300, s-maxage=600', // Cache 5-10 min
@@ -137,14 +140,14 @@ export async function onRequest(context) {
         if (imageId) {
           // Render specific image by ID
           const res = await db.execute({
-            sql: "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images WHERE id = ?",
+            sql: "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount, mod_status FROM images WHERE id = ?",
             args: [imageId]
           });
           if (res.rows.length > 0) targetImage = res.rows[0];
         } else if (category) {
           // Render random image from a category/tag
           const res = await db.execute(
-            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY uploadedAt DESC"
+            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount, mod_status FROM images ORDER BY uploadedAt DESC"
           );
           const matching = res.rows.filter(row => {
             try {
@@ -158,17 +161,46 @@ export async function onRequest(context) {
         } else {
           // Render completely random image
           const res = await db.execute(
-            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount FROM images ORDER BY RANDOM() LIMIT 1"
+            "SELECT id, imageUrl, thumbnailUrl, title, uploaderName, license, flags, likeCount, downloadCount, mod_status FROM images ORDER BY RANDOM() LIMIT 1"
           );
           if (res.rows.length > 0) targetImage = res.rows[0];
         }
 
-        if (!targetImage) {
-          return Response.json({ success: false, error: "No image found." }, { status: 404, headers: embedHeaders });
+        if (!targetImage || targetImage.mod_status === 'removed' || targetImage.mod_status === 'pending_approval') {
+          return Response.json({ success: false, error: "Media not found or unavailable." }, { status: 404, headers: embedHeaders });
+        }
+
+        // --- SIGNATURE & HOTLINK PROTECTION ---
+        const secret = getEmbedSigningSecret(env);
+        let hasValidSignature = false;
+        if (sig && exp) {
+          hasValidSignature = await verifyMediaSignature(targetImage.id, exp, sig, secret);
+          if (!hasValidSignature) {
+            return Response.json({ success: false, error: "Embed media signature has expired or is invalid." }, { status: 403, headers: embedHeaders });
+          }
+        }
+
+        const isFree = isFreeLicense(targetImage.license);
+        const isThumb = url.searchParams.get('thumb') === '1' || url.searchParams.get('thumbnail') === '1';
+        const referer = request.headers.get('referer');
+        const originHeader = request.headers.get('origin');
+        const isAllowedSite = isAllowedOrigin(referer, originHeader);
+
+        // If not a free license, not signed, not a public thumbnail, and originating from an external third-party site -> Block hotlinking
+        if (!isFree && !hasValidSignature && !isAllowedSite && !isThumb) {
+          return Response.json({
+            success: false,
+            error: "Hotlinking copyrighted media is not permitted. Please use the official embed player: " + url.origin + "/embed/" + targetImage.id,
+            embedUrl: `${url.origin}/embed/${targetImage.id}`,
+            pageUrl: `${url.origin}/image/${targetImage.id}`
+          }, { status: 403, headers: embedHeaders });
         }
 
         // JSON format: return metadata + URL for programmatic use
         if (format === 'json') {
+          if (!isFree && !isAllowedSite) {
+            return Response.json({ success: false, error: "JSON metadata API is only available for open-licensed content." }, { status: 403, headers: embedHeaders });
+          }
           let parsedFlags = [];
           try { parsedFlags = targetImage.flags ? JSON.parse(targetImage.flags) : []; } catch { }
           return Response.json({
@@ -179,17 +211,17 @@ export async function onRequest(context) {
               thumbnailUrl: targetImage.thumbnailUrl || (targetImage.imageUrl && targetImage.imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? targetImage.imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : targetImage.imageUrl),
               title: targetImage.title || '',
               uploaderName: targetImage.uploaderName || '',
-              license: targetImage.license || 'CC0',
+              license: targetImage.license || 'All Rights Reserved',
               tags: parsedFlags,
               likeCount: parseInt(targetImage.likeCount || 0),
               downloadCount: parseInt(targetImage.downloadCount || 0),
-              embedUrl: `${url.origin}/api/images?action=render&imageId=${targetImage.id}`,
+              embedUrl: `${url.origin}/embed/${targetImage.id}`,
               pageUrl: `${url.origin}/image/${targetImage.id}`,
             }
           }, { status: 200, headers: embedHeaders });
         }
 
-        // Default: 302 redirect to CDN image (works directly in <img src="...">)
+        // Default: 302 redirect to CDN image (works directly in <video src="..."> or <img src="...">)
         return Response.redirect(targetImage.imageUrl, 302);
       }
 
@@ -571,11 +603,15 @@ export async function onRequest(context) {
           const sameCommunityBoost = (target.community_id && row.community_id === target.community_id) ? 1000.0 : 0.0;
           const totalScore = (conceptOverlap * 5.0) + (tagOverlap * 4.5) + (metadataMatch * 3.0) + (tasteScore * 3.0) + sameCreatorBoost + sameCommunityBoost + popularity + followBoostScore + targetCreatorRelationBoost + globalFollowerBoost + videoBoost;
 
+          const isRowVideo = Boolean(row.imageUrl && row.imageUrl.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i));
+          const cleanThumb = row.thumbnailUrl || (!isRowVideo && row.imageUrl && row.imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? row.imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : row.imageUrl);
+
           return {
             image: {
               id: row.id,
               imageUrl: row.imageUrl,
-              thumbnailUrl: row.thumbnailUrl || row.imageUrl,
+              thumbnailUrl: cleanThumb,
+              isVideo: isRowVideo,
               uploaderUid: row.uploaderUid,
               uploaderName: row.uploaderName,
               uploaderPhotoURL: row.uploaderPhotoURL || '',
@@ -615,7 +651,45 @@ export async function onRequest(context) {
         const pageSize = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '24', 10), 1), 60);
         const cursorParam = url.searchParams.get('cursor');
         const offset = cursorParam ? parseInt(cursorParam, 10) || 0 : 0;
-        const suggestionsPage = scoredImages.slice(offset, offset + pageSize).map(item => item.image);
+        let suggestionsPage = scoredImages.slice(offset, offset + pageSize).map(item => item.image);
+
+        // Fill with trending posts if fewer than 6 items are available
+        if (suggestionsPage.length < 6) {
+          try {
+            const existingIds = new Set([imageId, ...suggestionsPage.map(x => x.id)]);
+            const trendingRes = await db.execute({
+              sql: `SELECT id, imageUrl, thumbnailUrl, title, uploaderName, uploaderPhotoURL, flags, likeCount, uploadedAt, license
+                    FROM images
+                    WHERE (mod_status = 'approved' OR mod_status IS NULL)
+                    ORDER BY likeCount DESC, uploadedAt DESC
+                    LIMIT 20`
+            });
+            for (const tr of trendingRes.rows) {
+              if (!existingIds.has(tr.id)) {
+                let tFlags = [];
+                try { tFlags = tr.flags ? JSON.parse(tr.flags) : []; } catch {}
+                if (!tFlags.includes('Flagged') && !tFlags.includes('NSFW')) {
+                  const isTrVideo = Boolean(tr.imageUrl && tr.imageUrl.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i));
+                  suggestionsPage.push({
+                    id: tr.id,
+                    imageUrl: tr.imageUrl,
+                    thumbnailUrl: tr.thumbnailUrl || (!isTrVideo && tr.imageUrl && tr.imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? tr.imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : tr.imageUrl),
+                    isVideo: isTrVideo,
+                    uploaderName: tr.uploaderName || '',
+                    uploaderPhotoURL: tr.uploaderPhotoURL || '',
+                    title: tr.title || '',
+                    license: tr.license || 'All Rights Reserved'
+                  });
+                  existingIds.add(tr.id);
+                  if (suggestionsPage.length >= 6) break;
+                }
+              }
+            }
+          } catch (tErr) {
+            console.warn("[Suggestions] Trending fallback query error:", tErr);
+          }
+        }
+
         const nextOffset = offset + suggestionsPage.length;
         const nextCursor = nextOffset < scoredImages.length ? String(nextOffset) : null;
 
@@ -624,7 +698,7 @@ export async function onRequest(context) {
           images: suggestionsPage,
           nextCursor,
           hasMore: Boolean(nextCursor),
-          total: scoredImages.length
+          total: Math.max(scoredImages.length, suggestionsPage.length)
         }, { status: 200, headers: cacheHeaders });
       }
 

@@ -95,6 +95,31 @@ const ImagePage: React.FC<ImagePageProps> = ({ image, error }) => {
             {/* Right Column: Metadata Details */}
             <div className="flex flex-col justify-between space-y-6">
               <div>
+                {/* Community Strip */}
+                {image.community_slug && (
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-border/50">
+                    <a
+                      href={`/c/${image.community_slug}`}
+                      className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                    >
+                      {image.community_icon_url ? (
+                        <img src={image.community_icon_url} alt="" className="w-5 h-5 rounded-full object-cover" />
+                      ) : (
+                        <span className="w-5 h-5 rounded-full bg-accent/20 text-accent text-[10px] font-bold flex items-center justify-center">
+                          {image.community_slug[0]?.toUpperCase()}
+                        </span>
+                      )}
+                      <span className="font-bold text-xs text-primary hover:text-accent">c/{image.community_slug}</span>
+                    </a>
+                    <a
+                      href={`/c/${image.community_slug}?tab=rules`}
+                      className="text-xs text-secondary hover:text-primary hover:underline"
+                    >
+                      Rules
+                    </a>
+                  </div>
+                )}
+
                 {/* Uploader Profile Row */}
                 <div className="flex items-center gap-3 mb-6">
                   <img 
@@ -184,7 +209,7 @@ const ImagePage: React.FC<ImagePageProps> = ({ image, error }) => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                 </svg>
-                More like this
+                {image.community_slug ? `More from c/${image.community_slug}` : 'More like this'}
               </h3>
               <span className="text-xs text-secondary font-medium">{suggestions.length} related pins</span>
             </div>

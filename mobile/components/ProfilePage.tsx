@@ -11,6 +11,7 @@ import EditProfileModal from './EditProfileModal';
 import FollowersModal from './FollowersModal';
 import CreatorDashboard from './CreatorDashboard';
 import SkeletonGrid from './SkeletonGrid';
+import { subscribeLikeSave } from '../services/likeSaveStore';
 
 // Throttle utility
 const throttle = (func: (...args: any[]) => void, limit: number) => {
@@ -172,42 +173,36 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     }
   };
 
-  // Android Hardware Back Button listener
+  // Register sub-state handler for the central Android Hardware Back Button listener in App.tsx
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    let active = true;
-    let listener: any;
-    (async () => {
-      try {
-        const { App: CapApp } = await import('@capacitor/app');
-        listener = await CapApp.addListener('backButton', () => {
-          if (!active) return;
-          if (deleteConfirmCommentId) {
-            setDeleteConfirmCommentId(null);
-          } else if (isEditModalOpen) {
-            setIsEditModalOpen(false);
-          } else if (isFollowersModalOpen) {
-            setIsFollowersModalOpen(false);
-          } else if (showVerifiedModal) {
-            setShowVerifiedModal(false);
-          } else if (activeTab === 'replies' || activeTab === 'saved' || activeTab === 'dashboard') {
-            setActiveTab('created');
-            if (navigator.vibrate) navigator.vibrate(10);
-          } else {
-            onBack();
-          }
-        });
-      } catch (err) {
-        console.warn("Back button setup error:", err);
+    (window as any).__glassGalleryProfileBack = () => {
+      if (deleteConfirmCommentId) {
+        setDeleteConfirmCommentId(null);
+        return true;
       }
-    })();
-    return () => {
-      active = false;
-      if (listener && typeof listener.remove === 'function') {
-        listener.remove();
+      if (isEditModalOpen) {
+        setIsEditModalOpen(false);
+        return true;
       }
+      if (isFollowersModalOpen) {
+        setIsFollowersModalOpen(false);
+        return true;
+      }
+      if (showVerifiedModal) {
+        setShowVerifiedModal(false);
+        return true;
+      }
+      if (activeTab === 'replies' || activeTab === 'saved' || activeTab === 'dashboard') {
+        setActiveTab('created');
+        if (navigator.vibrate) navigator.vibrate(10);
+        return true;
+      }
+      return false;
     };
-  }, [deleteConfirmCommentId, isEditModalOpen, isFollowersModalOpen, showVerifiedModal, activeTab, onBack]);
+    return () => {
+      delete (window as any).__glassGalleryProfileBack;
+    };
+  }, [deleteConfirmCommentId, isEditModalOpen, isFollowersModalOpen, showVerifiedModal, activeTab]);
 
   // Touch Gesture Swipe Handler
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -384,8 +379,17 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
     }
     try {
       const { images } = await getImagesFromFirestore();
-      // Filter images liked by this profile user
-      const liked = images.filter(img => img.likedBy?.includes(user.uploaderUid));
+      let localSavedSet: Set<string> = new Set();
+      try {
+        const raw = localStorage.getItem('savedImages');
+        if (raw) localSavedSet = new Set(JSON.parse(raw));
+      } catch {}
+
+      // Filter images liked or saved by this profile user
+      const liked = images.filter(img => {
+        const baseId = img.id.split('_loop_')[0].split('_rel_loop_')[0];
+        return Boolean(img.isSaved || img.isLiked || localSavedSet.has(baseId) || img.likedBy?.includes(user.uploaderUid));
+      });
       setLikedImages(liked);
       setDisplayedLikedImages(liked.slice(0, PAGE_SIZE));
       setLikedCurrentIndex(PAGE_SIZE);
@@ -395,6 +399,29 @@ const ProfilePage: React.FC<ProfilePageProps> = ({
       setIsLoadingLikes(false);
     }
   }, [user.uploaderUid, likedImages.length]);
+
+  useEffect(() => {
+    const unsub = subscribeLikeSave((baseId, state) => {
+      if (!state.isSaved && !state.isLiked) {
+        setLikedImages(prev => prev.filter(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] !== baseId));
+        setDisplayedLikedImages(prev => prev.filter(img => img.id.split('_loop_')[0].split('_rel_loop_')[0] !== baseId));
+      } else {
+        setLikedImages(prev => prev.map(img => {
+          if (img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId) {
+            return { ...img, likeCount: state.likeCount, isLiked: state.isLiked, isSaved: state.isSaved };
+          }
+          return img;
+        }));
+        setDisplayedLikedImages(prev => prev.map(img => {
+          if (img.id.split('_loop_')[0].split('_rel_loop_')[0] === baseId) {
+            return { ...img, likeCount: state.likeCount, isLiked: state.isLiked, isSaved: state.isSaved };
+          }
+          return img;
+        }));
+      }
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'saved') {
