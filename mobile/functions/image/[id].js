@@ -126,8 +126,10 @@ export async function onRequest(context) {
       'CC BY-NC': 'https://creativecommons.org/licenses/by-nc/4.0/',
     };
 
+    const isVideo = Boolean(image.isVideo || (image.imageUrl && image.imageUrl.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/i)));
     const imageUrl = image.imageUrl || "";
-    const thumbUrl = image.thumbnailUrl || (imageUrl && imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : imageUrl);
+    const cleanThumb = image.thumbnailUrl || (imageUrl && imageUrl.match(/\.(jpg|jpeg|png|webp)$/i) ? imageUrl.replace(/\.[a-zA-Z0-9]+$/, '-thumb.jpg') : (isVideo ? `${baseUrl}/web-app-manifest-512x512.png` : imageUrl));
+    const thumbUrl = cleanThumb;
     const location = image.location || "";
     const license = (image.license || "CC0").trim();
     const rawLicense = license;
@@ -193,8 +195,6 @@ export async function onRequest(context) {
       "sameAs": []
     });
 
-    const isVideo = /\b(mp4|webm|mov|ogg|avi|mkv|m4v)\b/i.test(imageUrl);
-
     const jsonLdScripts = schemas.map(s => 
       `<script type="application/ld+json">${JSON.stringify(s)}</script>`
     ).join('\n    ');
@@ -216,7 +216,7 @@ export async function onRequest(context) {
     <meta property="og:title" content="${escapeHtml(seoTitle)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
     <meta property="og:url" content="${pageUrl}" />
-    <meta property="og:image" content="${thumbUrl || imageUrl}" />
+    <meta property="og:image" content="${thumbUrl}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="${isVideo ? '675' : '800'}" />
     <meta property="article:author" content="${uploaderName}" />
@@ -229,10 +229,10 @@ export async function onRequest(context) {
     <meta property="og:video:width" content="1280" />
     <meta property="og:video:height" content="720" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="${thumbUrl || `${baseUrl}/web-app-manifest-512x512.png`}" />
+    <meta name="twitter:image" content="${thumbUrl}" />
     ` : `
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="${thumbUrl || imageUrl}" />
+    <meta name="twitter:image" content="${thumbUrl}" />
     `}
     <meta name="twitter:title" content="${escapeHtml(seoTitle)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />

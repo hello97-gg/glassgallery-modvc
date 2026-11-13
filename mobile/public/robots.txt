@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
+Allow: /api/share
 Disallow: /api/
 
 Sitemap: https://gg.modvc.org/sitemap.xml
