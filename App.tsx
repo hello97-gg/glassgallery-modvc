@@ -868,9 +868,10 @@ const App: React.FC = () => {
       setAuthLoading(false);
       if (currentUser) {
         setLoginModalOpen(false);
-        // Automatically re-open CreateCommunityModal if there is a saved local draft
+        // Only re-open CreateCommunityModal if the user explicitly began creating a community and was prompted to sign in
         try {
-          if (localStorage.getItem('gg_draft_community')) {
+          if (sessionStorage.getItem('gg_pending_community_login') === '1') {
+            sessionStorage.removeItem('gg_pending_community_login');
             setIsCreateCommunityOpen(true);
           }
         } catch {}

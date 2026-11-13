@@ -277,8 +277,10 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({ user
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden">
-                  {iconUrl ? (
+                <div className="w-9 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden relative">
+                  {isUploadingIcon ? (
+                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  ) : iconUrl ? (
                     <img src={iconUrl} alt="Icon preview" className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-xs font-bold text-accent uppercase">
@@ -286,13 +288,29 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({ user
                     </span>
                   )}
                 </div>
-                <input
-                  type="url"
-                  value={iconUrl}
-                  onChange={(e) => setIconUrl(e.target.value)}
-                  placeholder="Paste URL or click Upload File"
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-                />
+                <div className="relative flex-1">
+                  <input
+                    type="url"
+                    value={isUploadingIcon ? 'Uploading...' : iconUrl}
+                    disabled={isUploadingIcon}
+                    onChange={(e) => setIconUrl(e.target.value)}
+                    placeholder="Paste URL or click Upload File"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent pr-8 disabled:opacity-80"
+                  />
+                  {iconUrl && !isUploadingIcon && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIconUrl('');
+                        if (iconInputRef.current) iconInputRef.current.value = '';
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary hover:text-red-400 text-sm font-bold p-1 leading-none"
+                      title="Remove icon"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -313,7 +331,7 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({ user
                   type="button"
                   onClick={() => bannerInputRef.current?.click()}
                   disabled={isUploadingBanner}
-                  className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
+                  className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1 disabled:opacity-50"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -323,8 +341,10 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({ user
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-12 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden">
-                  {bannerUrl ? (
+                <div className="w-12 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden relative">
+                  {isUploadingBanner ? (
+                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  ) : bannerUrl ? (
                     <img src={bannerUrl} alt="Banner preview" className="w-full h-full object-cover" />
                   ) : (
                     <svg className="w-4 h-4 text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -332,13 +352,29 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({ user
                     </svg>
                   )}
                 </div>
-                <input
-                  type="url"
-                  value={bannerUrl}
-                  onChange={(e) => setBannerUrl(e.target.value)}
-                  placeholder="Paste URL or click Upload File"
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-                />
+                <div className="relative flex-1">
+                  <input
+                    type="url"
+                    value={isUploadingBanner ? 'Uploading...' : bannerUrl}
+                    disabled={isUploadingBanner}
+                    onChange={(e) => setBannerUrl(e.target.value)}
+                    placeholder="Paste URL or click Upload File"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent pr-8 disabled:opacity-80"
+                  />
+                  {bannerUrl && !isUploadingBanner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBannerUrl('');
+                        if (bannerInputRef.current) bannerInputRef.current.value = '';
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary hover:text-red-400 text-sm font-bold p-1 leading-none"
+                      title="Remove banner"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

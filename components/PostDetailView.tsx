@@ -212,6 +212,29 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const handleShareClick = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const shareUrl = `${window.location.origin}/image/${currentImage.id}`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: currentImage.title || 'Glass Gallery Post',
+          text: currentImage.description || 'Check out this post on Glass Gallery',
+          url: shareUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast('Link copied to clipboard!');
+    } catch {
+      setShowEmbed(true);
+    }
+  };
+
   useEffect(() => {
     if (user && currentImage.uploaderUid && user.uid !== currentImage.uploaderUid) {
       getFollowStats(currentImage.uploaderUid, user.uid).then(stats => {
@@ -1181,10 +1204,8 @@ const PostDetailView: React.FC<PostDetailViewProps> = ({
 
               {/* Share */}
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDropdown(!showDropdown);
-                }}
+                onClick={handleShareClick}
+                title="Share post"
                 className="flex items-center gap-1.5 group transition-colors hover:text-accent"
               >
                 <div className="w-10 h-10 rounded-full flex items-center justify-center group-hover:bg-accent/10 transition-colors">

@@ -25,7 +25,12 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
   const initialDraft = (() => {
     try {
       const saved = localStorage.getItem('gg_draft_community');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.iconUrl === 'Local file selected') parsed.iconUrl = '';
+        if (parsed.bannerUrl === 'Local file selected') parsed.bannerUrl = '';
+        return parsed;
+      }
     } catch {}
     return null;
   })();
@@ -39,6 +44,8 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
   const [bannerUrl, setBannerUrl] = useState(initialDraft?.bannerUrl || '');
   const [isNsfw, setIsNsfw] = useState(Boolean(initialDraft?.isNsfw));
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Slug availability status
@@ -102,8 +109,8 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
     return () => clearTimeout(timer);
   }, [slug]);
 
-  // Handle local icon select (zero server calls while drafting)
-  const handleIconFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle icon selection: upload immediately to storage if logged in, or draft locally if offline
+  const handleIconFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -112,8 +119,24 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
       return;
     }
 
-    iconFileRef.current = file;
     setError(null);
+
+    if (user) {
+      setIsUploadingIcon(true);
+      try {
+        const { url } = await uploadImage(file);
+        setIconUrl(url);
+        iconFileRef.current = null;
+        saveDraftToLocalStorage({ iconUrl: url });
+      } catch (err: any) {
+        setError(err.message || 'Failed to upload icon.');
+      } finally {
+        setIsUploadingIcon(false);
+      }
+      return;
+    }
+
+    iconFileRef.current = file;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
@@ -123,8 +146,8 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Handle local banner select (zero server calls while drafting)
-  const handleBannerFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle banner selection: upload immediately to storage if logged in, or draft locally if offline
+  const handleBannerFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -133,8 +156,24 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
       return;
     }
 
-    bannerFileRef.current = file;
     setError(null);
+
+    if (user) {
+      setIsUploadingBanner(true);
+      try {
+        const { url } = await uploadImage(file);
+        setBannerUrl(url);
+        bannerFileRef.current = null;
+        saveDraftToLocalStorage({ bannerUrl: url });
+      } catch (err: any) {
+        setError(err.message || 'Failed to upload banner.');
+      } finally {
+        setIsUploadingBanner(false);
+      }
+      return;
+    }
+
+    bannerFileRef.current = file;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
@@ -142,6 +181,25 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
       saveDraftToLocalStorage({ bannerUrl: dataUrl });
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleClearDraft = () => {
+    try {
+      localStorage.removeItem('gg_draft_community');
+      sessionStorage.removeItem('gg_pending_community_login');
+    } catch {}
+    setName('');
+    setSlug('');
+    setDescription('');
+    setIconUrl('');
+    setBannerUrl('');
+    setIsNsfw(false);
+    setType('public');
+    setCategory(CATEGORIES[0]);
+    iconFileRef.current = null;
+    bannerFileRef.current = null;
+    if (iconInputRef.current) iconInputRef.current.value = '';
+    if (bannerInputRef.current) bannerInputRef.current.value = '';
   };
 
   const saveDraftToLocalStorage = (overrides?: Partial<any>) => {
@@ -198,6 +256,9 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
     // If user is NOT signed in, save draft locally and prompt sign in
     if (!user) {
       saveDraftToLocalStorage();
+      try {
+        sessionStorage.setItem('gg_pending_community_login', '1');
+      } catch {}
       if (onLoginRequired) {
         onClose();
         onLoginRequired();
@@ -264,6 +325,7 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
       // 3. Clear draft and navigate
       try {
         localStorage.removeItem('gg_draft_community');
+        sessionStorage.removeItem('gg_pending_community_login');
       } catch {}
 
       onSuccess(cleanSlug);
@@ -282,13 +344,25 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
             <h2 className="text-xl font-bold text-primary">Create a Community</h2>
             <p className="text-xs text-secondary mt-0.5">Build a home for creators, curators, and discussions.</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-secondary hover:text-primary transition-colors text-2xl leading-none"
-            aria-label="Close"
-          >
-            &times;
-          </button>
+          <div className="flex items-center gap-3">
+            {Boolean(name || slug || description || iconUrl || bannerUrl) && (
+              <button
+                type="button"
+                onClick={handleClearDraft}
+                className="text-xs text-secondary hover:text-red-400 transition-colors font-medium px-2 py-1 rounded-lg hover:bg-red-500/10"
+                title="Discard saved draft"
+              >
+                Clear Draft
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-secondary hover:text-primary transition-colors text-2xl leading-none p-1"
+              aria-label="Close"
+            >
+              &times;
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -434,18 +508,21 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
                 <button
                   type="button"
                   onClick={() => iconInputRef.current?.click()}
-                  className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
+                  disabled={isUploadingIcon}
+                  className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1 disabled:opacity-50"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
-                  <span>Choose Image</span>
+                  <span>{isUploadingIcon ? 'Uploading...' : 'Choose Image'}</span>
                 </button>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden">
-                  {iconUrl ? (
+                <div className="w-9 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden relative">
+                  {isUploadingIcon ? (
+                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  ) : iconUrl ? (
                     <img src={iconUrl} alt="Icon preview" className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-xs font-bold text-accent uppercase">
@@ -453,17 +530,41 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
                     </span>
                   )}
                 </div>
-                <input
-                  type="url"
-                  value={iconUrl.startsWith('data:') ? 'Local file selected' : iconUrl}
-                  onChange={(e) => {
-                    setIconUrl(e.target.value);
-                    iconFileRef.current = null;
-                    saveDraftToLocalStorage({ iconUrl: e.target.value });
-                  }}
-                  placeholder="Paste URL or Choose Image"
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-                />
+                <div className="relative flex-1">
+                  <input
+                    type="url"
+                    value={
+                      isUploadingIcon
+                        ? 'Uploading image...'
+                        : iconUrl.startsWith('data:')
+                        ? 'Image selected (local preview)'
+                        : iconUrl
+                    }
+                    disabled={isUploadingIcon || iconUrl.startsWith('data:')}
+                    onChange={(e) => {
+                      setIconUrl(e.target.value);
+                      iconFileRef.current = null;
+                      saveDraftToLocalStorage({ iconUrl: e.target.value });
+                    }}
+                    placeholder="Paste URL or Choose Image"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent pr-8 disabled:opacity-80"
+                  />
+                  {iconUrl && !isUploadingIcon && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIconUrl('');
+                        iconFileRef.current = null;
+                        if (iconInputRef.current) iconInputRef.current.value = '';
+                        saveDraftToLocalStorage({ iconUrl: '' });
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary hover:text-red-400 text-sm font-bold p-1 leading-none"
+                      title="Remove icon"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -483,18 +584,21 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
                 <button
                   type="button"
                   onClick={() => bannerInputRef.current?.click()}
-                  className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
+                  disabled={isUploadingBanner}
+                  className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1 disabled:opacity-50"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
-                  <span>Choose Image</span>
+                  <span>{isUploadingBanner ? 'Uploading...' : 'Choose Image'}</span>
                 </button>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="w-12 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden">
-                  {bannerUrl ? (
+                <div className="w-12 h-9 rounded-xl bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden relative">
+                  {isUploadingBanner ? (
+                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  ) : bannerUrl ? (
                     <img src={bannerUrl} alt="Banner preview" className="w-full h-full object-cover" />
                   ) : (
                     <svg className="w-4 h-4 text-secondary/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -502,17 +606,41 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
                     </svg>
                   )}
                 </div>
-                <input
-                  type="url"
-                  value={bannerUrl.startsWith('data:') ? 'Local file selected' : bannerUrl}
-                  onChange={(e) => {
-                    setBannerUrl(e.target.value);
-                    bannerFileRef.current = null;
-                    saveDraftToLocalStorage({ bannerUrl: e.target.value });
-                  }}
-                  placeholder="Paste URL or Choose Image"
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-                />
+                <div className="relative flex-1">
+                  <input
+                    type="url"
+                    value={
+                      isUploadingBanner
+                        ? 'Uploading image...'
+                        : bannerUrl.startsWith('data:')
+                        ? 'Image selected (local preview)'
+                        : bannerUrl
+                    }
+                    disabled={isUploadingBanner || bannerUrl.startsWith('data:')}
+                    onChange={(e) => {
+                      setBannerUrl(e.target.value);
+                      bannerFileRef.current = null;
+                      saveDraftToLocalStorage({ bannerUrl: e.target.value });
+                    }}
+                    placeholder="Paste URL or Choose Image"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent pr-8 disabled:opacity-80"
+                  />
+                  {bannerUrl && !isUploadingBanner && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBannerUrl('');
+                        bannerFileRef.current = null;
+                        if (bannerInputRef.current) bannerInputRef.current.value = '';
+                        saveDraftToLocalStorage({ bannerUrl: '' });
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary hover:text-red-400 text-sm font-bold p-1 leading-none"
+                      title="Remove banner"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
